@@ -20,7 +20,7 @@ Java 是它的绑定；其他语言可使用自己的 Future/Promise、回调或
   暂停先持久化意图，PAUSED 确认已到达安全边界；恢复需要观察到的版本。
 - requestId 标识提交或控制。turnId/runId/stepId/messageId/eventId/interactionId/executionId 各有自己的范围，不能互换。
 - Session “空闲”从队列和 Turn 状态推导。QUEUED/RUNNING/WAITING/PAUSING/PAUSED/CANCELLING 不是终态；
-  SUCCEEDED/FAILED/CANCELLED 才是终态。TurnView.output 为公开 JSON，AgentScope 输出标准 Message。
+  SUCCEEDED/FAILED/CANCELLED/CONVERTED 为终态。TurnView.output 为公开 JSON，AgentScope 输出标准 Message。
 - `DurableRuntime` 是 Java 唯一装配、业务操作和生命周期入口，直接创建、查询和列举
   Session。Session/Thread/Turn 是可重新查找的身份句柄。
 - API-only Runtime 不需要 Agent/模型/Executor，不扫描或认领任务。配置执行能力并显式 start
@@ -93,6 +93,7 @@ PROVIDER_ATTEMPTS 表示共用请求边界的可观测重试；MODEL_CALL 表示
 | kind / Java 方法 | target / value | 状态约束与效果 |
 | --- | --- | --- |
 | STEER / `turn.steer(requestId, Input)` | null / Input | 仅活动非终态 Turn；下一原生 reasoning 安全边界应用用户指令 |
+| STEER_QUEUED / `thread.convertQueuedTurnToSteer(operationId, queuedRequestId, activeTurnId)` | 原提交请求 ID / null | 将尚未开始的输入移到同 Thread 内的活动 Turn，来源进入 CONVERTED |
 | INJECT / `turn.inject(requestId, Input)` | null / Input | 同上，注入上下文；不提升为 system 权限、不承诺即时打断模型 |
 | WITHDRAW / `turn.withdraw(requestId, signalId)` | 原控制 requestId / null | 必须存在未应用信号；与应用竞争，已应用 CONFLICT |
 | CANCEL / `turn.cancel(requestId)` | null / null | QUEUED 立即取消；活动任务进入取消流程，核实后终态；已终态保持原结果 |
@@ -127,6 +128,7 @@ Hands sequence 均不能代替它。用户公开视图不包含私有 checkpoint
 | --- | --- |
 | submit | 原子提交 turn.queued + user message.completed，随后 started/等待/结果/终态 |
 | steer / inject | signal.accepted + user message.completed；后续 applied 或 withdrawn |
+| 排队转 steer | 同事务提交 signal.accepted 和 turn.converted。两个 Turn 都可观察到 turn.converted，事件中的输入保留原消息 ID |
 | respond | 同上，message.data 额外包含 interactionId；随后 interaction.resolved |
 | cancel | turn.cancel_requested；排队任务同事务 cancelled，活动任务核实后 cancelled 或真实终态 |
 | pause / resume | turn.pause_requested、turn.paused、turn.resumed；不生成用户聊天内容 |

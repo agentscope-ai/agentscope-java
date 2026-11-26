@@ -22,7 +22,7 @@ but operation scope, state conditions, identities, idempotency, events and error
 - requestId identifies admission/control. turnId/runId/stepId/messageId/eventId/interactionId/executionId
   have distinct scopes and are not interchangeable.
 - Session idle is derived from queue/Turn state. QUEUED/RUNNING/WAITING/PAUSING/PAUSED/CANCELLING are nonterminal;
-  SUCCEEDED/FAILED/CANCELLED are terminal. TurnView.output is public JSON; AgentScope returns Message.
+  SUCCEEDED/FAILED/CANCELLED/CONVERTED are terminal. TurnView.output is public JSON; AgentScope returns Message.
 - DurableRuntime is Java's sole assembly, business-operation and lifecycle entry. It creates, gets
   and lists Sessions directly. Session/Thread/Turn handles retain rehydratable identities.
 - API-only Runtime needs no Agent/model/Executor, scans or claims. Explicit start with execution
@@ -110,6 +110,7 @@ Validation, signal, public input and receipt commit in one authoritative transac
 | kind / Java method | target / value | Condition and effect |
 | --- | --- | --- |
 | STEER / `turn.steer(requestId, Input)` | null / Input | Active nonterminal Turn; instructions at the next native reasoning boundary |
+| STEER_QUEUED / `thread.convertQueuedTurnToSteer(operationId, queuedRequestId, activeTurnId)` | Original submit request ID / null | Moves unstarted input to the active Turn in the same Thread; the source becomes CONVERTED |
 | INJECT / `turn.inject(requestId, Input)` | null / Input | Same condition, context input; no system elevation or immediate model interruption |
 | WITHDRAW / `turn.withdraw(requestId, signalId)` | Original control requestId / null | Existing unapplied signal; atomic race with apply, already applied is CONFLICT |
 | CANCEL / `turn.cancel(requestId)` | null / null | QUEUED cancels immediately; active cancellation verifies outcome; terminal result stays unchanged |
@@ -147,6 +148,7 @@ sequences are separate. Public views never expose native checkpoints or reasonin
 | --- | --- |
 | submit | Atomic turn.queued + user message.completed, then started/waits/results/terminal outcome |
 | steer / inject | signal.accepted + user message.completed; later applied or withdrawn |
+| convert queued to steer | signal.accepted + turn.converted in one transaction; turn.converted is visible to both Turns and carries the relocated message with its original ID |
 | respond | Same, with interactionId in message data; later interaction.resolved |
 | cancel | turn.cancel_requested; queued cancelled in the same transaction, active cancellation verifies real outcome |
 | pause / resume | turn.pause_requested, turn.paused, turn.resumed; no user chat message |

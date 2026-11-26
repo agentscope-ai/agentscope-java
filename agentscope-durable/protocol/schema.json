@@ -33,8 +33,31 @@
         "CANCELLING",
         "SUCCEEDED",
         "FAILED",
-        "CANCELLED"
+        "CANCELLED",
+        "CONVERTED"
       ]
+    },
+    "turnConversion": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["operationId", "message"],
+      "properties": {
+        "operationId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "message": {
+          "$ref": "#/$defs/projectedMessage",
+          "required": ["turnId", "requestId", "inputKind", "message", "sequence"],
+          "properties": {
+            "threadId": { "type": "string", "minLength": 1 },
+            "turnId": { "type": "string", "minLength": 1 },
+            "inputKind": { "const": "steer" },
+            "complete": { "const": true }
+          }
+        }
+      }
     },
     "wait": {
       "type": "object",
@@ -734,7 +757,8 @@
         "atomicCheckpointAndIntent",
         "fencedOwnership",
         "durableWaits",
-        "eventReplay"
+        "eventReplay",
+        "messageDrivenScheduling"
       ],
       "properties": {
         "protocolVersion": {
@@ -761,6 +785,9 @@
           "type": "boolean"
         },
         "eventReplay": {
+          "type": "boolean"
+        },
+        "messageDrivenScheduling": {
           "type": "boolean"
         }
       }
@@ -1060,6 +1087,16 @@
                   ]
                 }
               }
+            }
+          }
+        },
+        {
+          "properties": {
+            "type": {
+              "const": "turn.converted"
+            },
+            "data": {
+              "$ref": "#/$defs/turnConversion"
             }
           }
         },
@@ -2159,6 +2196,16 @@
                   ]
                 }
               }
+            }
+          }
+        },
+        {
+          "properties": {
+            "type": {
+              "const": "turn.converted"
+            },
+            "data": {
+              "$ref": "#/$defs/turnConversion"
             }
           }
         },
@@ -3700,14 +3747,22 @@
           "const": "durable.v1"
         },
         "result": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/lease"
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["status", "lease", "discoveryDelayMillis"],
+          "properties": {
+            "status": {
+              "enum": ["ACQUIRED", "REUSED", "NO_WORK", "LEASE_HELD", "NOT_DUE", "WAITING", "STALE_DISPATCH", "UNKNOWN"]
             },
-            {
-              "type": "null"
+            "lease": {
+              "anyOf": [{"$ref": "#/$defs/lease"}, {"type": "null"}]
+            },
+            "discoveryDelayMillis": {
+              "type": ["integer", "null"],
+              "minimum": 0,
+              "maximum": 9007199254740991
             }
-          ]
+          }
         }
       }
     },
@@ -5266,6 +5321,9 @@
             "limit"
           ],
           "properties": {
+            "session": {
+              "$ref": "#/$defs/session"
+            },
             "harnesses": {
               "type": "array",
               "maxItems": 128,
@@ -6891,6 +6949,7 @@
         "kind": {
           "enum": [
             "STEER",
+            "STEER_QUEUED",
             "INJECT",
             "WITHDRAW",
             "CANCEL",
@@ -6950,6 +7009,7 @@
             "properties": {
               "kind": {
                 "enum": [
+                  "STEER_QUEUED",
                   "WITHDRAW",
                   "RESPOND",
                   "SIGNAL"
@@ -6973,6 +7033,7 @@
               "kind": {
                 "enum": [
                   "CANCEL",
+                  "STEER_QUEUED",
                   "WITHDRAW",
                   "RESUME",
                   "PAUSE"
@@ -7015,6 +7076,7 @@
             "properties": {
               "kind": {
                 "enum": [
+                  "STEER_QUEUED",
                   "WITHDRAW",
                   "RESPOND",
                   "SIGNAL"
@@ -7072,6 +7134,7 @@
         "operation": {
           "enum": [
             "STEER",
+            "STEER_QUEUED",
             "INJECT",
             "WITHDRAW",
             "CANCEL",

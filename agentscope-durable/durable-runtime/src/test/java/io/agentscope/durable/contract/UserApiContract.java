@@ -50,8 +50,10 @@ import io.agentscope.durable.EventStreamOptions;
 import io.agentscope.durable.HarnessAdapter;
 import io.agentscope.durable.HarnessContext;
 import io.agentscope.durable.SessionBackend;
+import io.agentscope.durable.SessionBackend.ClaimStatus;
 import io.agentscope.durable.SessionEventClient;
 import io.agentscope.durable.SessionStreamEvent;
+import io.agentscope.durable.TurnDispatch;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.ArrayList;
@@ -628,6 +630,188 @@ public abstract class UserApiContract {
             code(DurableException.Code.CONFLICT, () -> recovered.steer("late", "too late"));
             assertEquals(completed.cursor(), session.snapshot().cursor());
             assertEquals(TurnStatus.SUCCEEDED, recovered.result().status());
+        }
+    }
+
+    @Test
+    void queuedSubmissionBecomesOneSteerAndPreservesQueueOrderAndProjection() {
+        var thread = session.mainThread();
+        var first = thread.submit("first", "active");
+        var lease = claim();
+        var queued = thread.submit("queued", "one input");
+        var tail = thread.submit("tail", "later");
+        var before = queued.snapshot().projection().path("messages").elements().next();
+        var receipt = thread.convertQueuedTurnToSteer("convert", "queued", first.turnId());
+        assertEquals(first.turnId(), receipt.turnId());
+        assertEquals("STEER_QUEUED", receipt.operation());
+        assertEquals(receipt, thread.convertQueuedTurnToSteer("convert", "queued", first.turnId()));
+        code(
+                DurableException.Code.CONFLICT,
+                () -> thread.convertQueuedTurnToSteer("convert", "tail", first.turnId()));
+        code(
+                DurableException.Code.CONFLICT,
+                () -> thread.convertQueuedTurnToSteer("convert-again", "queued", first.turnId()));
+        assertEquals(TurnStatus.CONVERTED, queued.result().status());
+        assertEquals(TurnStatus.QUEUED, tail.status().status());
+        assertEquals(queued.turnId(), thread.submit("queued", "one input").turnId());
+        var steer = backend.frame(lease).signals();
+        assertEquals(1, steer.size());
+        assertEquals("convert", steer.get(0).id());
+        assertEquals("input:steer", steer.get(0).key());
+        assertEquals(
+                DurableJson.value(DurableMessages.Input.text("one input")), steer.get(0).value());
+
+        String messageId = before.path("messageId").asText();
+        var after = first.snapshot().projection().path("messages").path(messageId);
+        assertEquals(first.turnId(), after.path("turnId").asText());
+        assertEquals("queued", after.path("requestId").asText());
+        assertEquals("steer", after.path("inputKind").asText());
+        assertEquals(before.path("sequence"), after.path("sequence"));
+        assertEquals(before.path("message"), after.path("message"));
+        assertTrue(queued.snapshot().projection().path("messages").isEmpty());
+        var full = new EventProjection(key);
+        session.events(null, 100).events().forEach(full::accept);
+        assertEquals(
+                DurableJson.parse(session.snapshot().projection().toString()),
+                DurableJson.parse(full.value().toString()));
+        for (var turn : List.of(first, queued)) {
+            var view = new EventProjection(key, new EventFilter("main", turn.turnId(), null));
+            turn.events(null, 100).events().forEach(view::accept);
+            assertEquals(
+                    DurableJson.parse(turn.snapshot().projection().path("messages").toString()),
+                    DurableJson.parse(view.value().path("messages").toString()));
+        }
+
+        checkpoint(lease, TurnStatus.SUCCEEDED, null, List.of(), List.of("convert"));
+        assertEquals(tail.turnId(), claim().turnId());
+        assertTrue(queued.listRuns(null, 10).items().isEmpty());
+    }
+
+    @Test
+    void queuedConversionDoesNotSatisfyAnUnrelatedWait() {
+        var thread = session.mainThread();
+        var first = thread.submit("first", "active");
+        var lease = claim();
+        var wait = new WaitCondition("x.result", 0);
+        checkpoint(lease, TurnStatus.WAITING, wait, List.of(), List.of());
+        var queued = thread.submit("queued", "steer");
+        thread.convertQueuedTurnToSteer("convert", "queued", first.turnId());
+        assertEquals(TurnStatus.CONVERTED, queued.status().status());
+        assertEquals(wait, first.status().waiting());
+        assertTrue(backend.claim(thread.key(), "other", Duration.ofSeconds(5)).isEmpty());
+        first.signal("result", "x.result", DurableJson.value("ready"));
+        assertEquals(first.turnId(), claim().turnId());
+    }
+
+    @Test
+    void queuedConversionConflictsWithCompletionAndClaimWithoutMovingInput() {
+        var thread = session.mainThread();
+        var first = thread.submit("first", "active");
+        var lease = claim();
+        var queued = thread.submit("queued", "keep it queued");
+        checkpoint(lease, TurnStatus.SUCCEEDED, null, List.of(), List.of());
+        code(
+                DurableException.Code.CONFLICT,
+                () -> thread.convertQueuedTurnToSteer("late", "queued", first.turnId()));
+        assertEquals(TurnStatus.QUEUED, queued.status().status());
+        var running = claim();
+        assertEquals(queued.turnId(), running.turnId());
+        code(
+                DurableException.Code.CONFLICT,
+                () -> thread.convertQueuedTurnToSteer("late-started", "queued", queued.turnId()));
+        assertTrue(backend.frame(running).signals().isEmpty());
+        assertEquals(
+                "submit",
+                queued.snapshot()
+                        .projection()
+                        .path("messages")
+                        .elements()
+                        .next()
+                        .path("inputKind")
+                        .asText());
+    }
+
+    @Test
+    void dispatchClaimChecksTargetAndGenerationBeforeStartingCurrentHead() {
+        var thread = session.mainThread();
+        var first = thread.submit("first", "active");
+        TurnDispatch work = backend.pendingDispatch(thread.key()).orElseThrow();
+        var lease = backend.claim(work, "runner", Duration.ofSeconds(5)).orElseThrow();
+        var queued = thread.submit("queued", "one input");
+        var tail = thread.submit("tail", "later");
+        thread.convertQueuedTurnToSteer("convert", "queued", first.turnId());
+        checkpoint(lease, TurnStatus.SUCCEEDED, null, List.of(), List.of("convert"));
+        var next = backend.pendingDispatch(thread.key()).orElseThrow();
+        assertEquals(tail.turnId(), next.turnId());
+        assertEquals(
+                ClaimStatus.STALE_DISPATCH,
+                backend.claimOutcome(work, "late", Duration.ofSeconds(5)).status());
+        var wrongTurn =
+                new TurnDispatch(
+                        TurnDispatch.VERSION,
+                        thread.key(),
+                        queued.turnId(),
+                        next.generation(),
+                        queued.status().revision(),
+                        TurnDispatch.Reason.SUBMIT);
+        assertEquals(TurnDispatch.Reason.SUBMIT, work.reason());
+        assertEquals(TurnDispatch.Reason.NEXT_HEAD, next.reason());
+        assertTrue(backend.claim(wrongTurn, "late", Duration.ofSeconds(5)).isEmpty());
+        assertEquals(TurnStatus.QUEUED, tail.status().status());
+        assertEquals(next, backend.pendingDispatches(10).get(0));
+        assertTrue(backend.reserveDispatch(next, Duration.ofSeconds(5)));
+        assertFalse(backend.reserveDispatch(next, Duration.ofSeconds(5)));
+        assertEquals(
+                tail.turnId(),
+                backend.claim(next, "runner", Duration.ofSeconds(5)).orElseThrow().turnId());
+    }
+
+    @Test
+    void queuedConversionAndTurnCompletionHaveOnlyOneWinner() throws Exception {
+        var thread = session.mainThread();
+        var first = thread.submit("first", "active");
+        var lease = claim();
+        var queued = thread.submit("queued", "steer");
+        var start = new CountDownLatch(1);
+        var pool = Executors.newFixedThreadPool(2);
+        try {
+            var conversion =
+                    pool.submit(
+                            () -> {
+                                start.await();
+                                try {
+                                    thread.convertQueuedTurnToSteer(
+                                            "convert", "queued", first.turnId());
+                                    return true;
+                                } catch (DurableException e) {
+                                    assertEquals(DurableException.Code.CONFLICT, e.code());
+                                    return false;
+                                }
+                            });
+            var completion =
+                    pool.submit(
+                            () -> {
+                                start.await();
+                                try {
+                                    checkpoint(
+                                            lease,
+                                            TurnStatus.SUCCEEDED,
+                                            null,
+                                            List.of(),
+                                            List.of());
+                                    return true;
+                                } catch (DurableException e) {
+                                    assertEquals(DurableException.Code.CONFLICT, e.code());
+                                    return false;
+                                }
+                            });
+            start.countDown();
+            boolean converted = conversion.get(30, TimeUnit.SECONDS);
+            assertNotEquals(converted, completion.get(30, TimeUnit.SECONDS));
+            assertEquals(
+                    converted ? TurnStatus.CONVERTED : TurnStatus.QUEUED, queued.status().status());
+        } finally {
+            pool.shutdownNow();
         }
     }
 

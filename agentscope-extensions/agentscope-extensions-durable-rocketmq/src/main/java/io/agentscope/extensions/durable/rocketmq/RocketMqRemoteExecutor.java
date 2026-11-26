@@ -26,14 +26,12 @@ import io.agentscope.durable.ExecutionMessages.Kind;
 import io.agentscope.durable.ManagedExecutor;
 import io.agentscope.durable.SessionBackend;
 import io.agentscope.durable.worker.QueuedExecutor;
+import io.agentscope.extensions.durable.rocketmq.RocketMqLoop.Subscription;
 import java.time.Duration;
-import java.util.Map;
 import java.util.Objects;
 import java.util.function.Consumer;
 import org.apache.rocketmq.client.apis.ClientConfiguration;
 import org.apache.rocketmq.client.apis.ClientServiceProvider;
-import org.apache.rocketmq.client.apis.consumer.FilterExpression;
-import org.apache.rocketmq.client.apis.consumer.SimpleConsumer;
 import org.apache.rocketmq.client.apis.producer.Producer;
 
 /** Brain-side remote execution over RocketMQ, bound and managed by DurableRuntime. */
@@ -42,7 +40,6 @@ public final class RocketMqRemoteExecutor implements ManagedExecutor {
     private RocketMqLoop loop;
     private QueuedExecutor executor;
     private Producer producer;
-    private SimpleConsumer consumer;
     private boolean ownsClients;
 
     private RocketMqRemoteExecutor(Builder builder) {
@@ -74,14 +71,6 @@ public final class RocketMqRemoteExecutor implements ManagedExecutor {
                                 .setClientConfiguration(configuration.clientConfiguration)
                                 .setTopics(topology.commands(), topology.controls())
                                 .build();
-                consumer =
-                        provider.newSimpleConsumerBuilder()
-                                .setClientConfiguration(configuration.clientConfiguration)
-                                .setConsumerGroup(topology.brainConsumerGroup())
-                                .setAwaitDuration(Duration.ofSeconds(10))
-                                .setSubscriptionExpressions(
-                                        Map.of(topology.updates(), FilterExpression.SUB_ALL))
-                                .build();
             } catch (Exception error) {
                 closeClients();
                 throw new DurableException(
@@ -91,18 +80,25 @@ public final class RocketMqRemoteExecutor implements ManagedExecutor {
             }
         } else {
             producer = configuration.producer;
-            consumer = configuration.consumer;
         }
+        Subscription subscription =
+                configuration.consumer != null
+                        ? configuration.consumer
+                        : RocketMqLoop.subscription(
+                                provider,
+                                configuration.clientConfiguration,
+                                topology.updates(),
+                                topology.brainConsumerGroup(),
+                                configuration.receiveBatchSize);
         loop =
                 new RocketMqLoop(
                         provider,
                         producer,
-                        consumer,
+                        subscription,
                         topology.updates(),
                         configuration.errors,
                         storage.objects(),
-                        storage.records(),
-                        configuration.receiveBatchSize);
+                        storage.records());
         executor =
                 new QueuedExecutor(
                         route,
@@ -113,19 +109,26 @@ public final class RocketMqRemoteExecutor implements ManagedExecutor {
                                         command.kind() == Kind.EXECUTE
                                                 ? topology.commands()
                                                 : topology.controls(),
+                                        RocketMqLiteRouting.session(command.request().session()),
                                         command.commandId(),
                                         command),
-                        configuration.retry);
+                        configuration.retry,
+                        configuration.responseTimeout);
     }
 
     @Override
     public synchronized void open() {
         bound();
         loop.start(
-                body -> {
-                    var value = DurableJson.parse(body);
+                (value, message) -> {
                     DurableProtocol.validate("executionEvent", value);
-                    executor.receive(DurableJson.convert(value, Event.class));
+                    var event = DurableJson.convert(value, Event.class);
+                    RocketMqLiteRouting.require(
+                            message,
+                            RocketMqLiteRouting.execution(event.request()),
+                            event.eventId());
+                    executor.receive(event);
+                    wake(event.request());
                 },
                 () -> executor.tick(loop::report),
                 configuration.interval);
@@ -141,7 +144,9 @@ public final class RocketMqRemoteExecutor implements ManagedExecutor {
     @Override
     public ExecutionResult startExecution(ExecutionRequest request) {
         bound().ensureOpen();
-        return executor.startExecution(request);
+        var result = executor.startExecution(request);
+        wake(request);
+        return result;
     }
 
     @Override
@@ -153,7 +158,14 @@ public final class RocketMqRemoteExecutor implements ManagedExecutor {
     @Override
     public ExecutionResult cancel(ExecutionRequest request, String handle) {
         bound().ensureOpen();
-        return executor.cancel(request, handle);
+        var result = executor.cancel(request, handle);
+        wake(request);
+        return result;
+    }
+
+    private void wake(ExecutionRequest request) {
+        loop.wake(
+                RocketMqLiteRouting.execution(request), () -> executor.tick(request, loop::report));
     }
 
     @Override
@@ -177,7 +189,6 @@ public final class RocketMqRemoteExecutor implements ManagedExecutor {
 
     private void closeClients() {
         if (!ownsClients) return;
-        close(consumer);
         close(producer);
         ownsClients = false;
     }
@@ -197,10 +208,11 @@ public final class RocketMqRemoteExecutor implements ManagedExecutor {
         private ClientServiceProvider provider = ClientServiceProvider.loadService();
         private ClientConfiguration clientConfiguration;
         private Producer producer;
-        private SimpleConsumer consumer;
+        private Subscription consumer;
         private int receiveBatchSize = 16;
-        private Duration interval = Duration.ofMillis(100);
+        private Duration interval = Duration.ofSeconds(2);
         private Duration retry = Duration.ofSeconds(5);
+        private Duration responseTimeout = Duration.ofSeconds(30);
         private Consumer<Throwable> errors =
                 error ->
                         System.getLogger(RocketMqRemoteExecutor.class.getName())
@@ -221,7 +233,7 @@ public final class RocketMqRemoteExecutor implements ManagedExecutor {
         }
 
         Builder clients(
-                ClientServiceProvider factory, Producer publisher, SimpleConsumer updatesConsumer) {
+                ClientServiceProvider factory, Producer publisher, Subscription updatesConsumer) {
             provider = Objects.requireNonNull(factory);
             producer = Objects.requireNonNull(publisher);
             consumer = Objects.requireNonNull(updatesConsumer);
@@ -242,6 +254,14 @@ public final class RocketMqRemoteExecutor implements ManagedExecutor {
 
         public Builder retryInterval(Duration value) {
             retry = positive(value);
+            return this;
+        }
+
+        /** Time without a new execution event before requesting a status or event replay. */
+        public Builder responseTimeout(Duration value) {
+            responseTimeout = Objects.requireNonNull(value);
+            if (value.toMillis() < 1)
+                throw new IllegalArgumentException("Positive response timeout required");
             return this;
         }
 

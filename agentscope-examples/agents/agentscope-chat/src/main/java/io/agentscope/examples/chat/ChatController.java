@@ -47,6 +47,8 @@ public class ChatController {
 
     public record ControlRequest(String requestId, Long expectedRevision) {}
 
+    public record SteerQueuedRequest(String requestId, String queuedRequestId) {}
+
     public record AnswerRequest(String requestId, String interactionId, String output) {}
 
     private final ChatSessions sessions;
@@ -84,6 +86,14 @@ public class ChatController {
     public Mono<String> steer(
             @PathVariable String id, @PathVariable String turn, @RequestBody InputRequest body) {
         return json(() -> sessions.steer(id, turn, body.requestId(), body.message()));
+    }
+
+    @PostMapping("/sessions/{id}/turns/{turn}/steer-queued")
+    public Mono<String> steerQueued(
+            @PathVariable String id,
+            @PathVariable String turn,
+            @RequestBody SteerQueuedRequest body) {
+        return json(() -> sessions.steerQueued(id, turn, body.requestId(), body.queuedRequestId()));
     }
 
     @PostMapping("/sessions/{id}/turns/{turn}/inject")

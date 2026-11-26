@@ -206,6 +206,16 @@ summary.cancel("cancel-summary-1");
 也不会撤销已发出的工具调用。`withdraw` 只能撤回尚未应用的输入。
 控制与任务完成发生竞争时，应重新读取 Turn，不能假定控制已生效。
 
+可以把尚未开始的排队请求改为向活动 Turn 插话。调用时传入原提交请求 ID 和活动 Turn ID。
+
+```java
+conversation.mainThread().convertQueuedTurnToSteer(
+        "redirect-summary-1", "summary-1", investigation.turnId());
+```
+
+原 Turn 进入 `CONVERTED` 状态，输入保留原消息 ID。活动 Turn 已完成或排队 Turn 已开始时，
+操作返回冲突。重试时使用同一操作 ID。
+
 控制回执表示已受理；通过 `signal.applied` 或最终 Turn 状态确认后续处理。
 排队中的任务可以立即取消；活动任务需要结清外部操作，受理取消不代表远端进程已经停止。
 
@@ -508,22 +518,44 @@ worker.start();
 
 Brain 的传输账本与 ObjectStore 自动复用 SessionBackend 的本地存储，Runtime 负责绑定、
 启动和关闭远程 Executor；用户不再重复传入 store、backend 或 route name。Worker 的执行
-账本、工具 Executor 和授权策略由宿主提供。默认轮询 100ms，
-Brain 每 5s 重试未确认命令或查询已受理任务，可用 pollInterval/retryInterval 调整。
+账本、工具 Executor 和授权策略由宿主提供。命令入库、Worker 受理和 Outbox 事件提交后按
+execution 触发处理。索引补漏默认每 2 秒运行。Brain 按 `retryInterval` 重试未确认命令，
+默认 5 秒。发现序列缺口时立即请求重放，连续 `responseTimeout` 未收到新进度时请求补查，
+默认 30 秒。可分别配置 `RocketMqWorker` 的 `discoveryInterval`、`publicationRepairInterval`
+和 `providerPollInterval`，控制账本发现、Outbox 补漏及 provider 重试间隔。
 用户只需要装配两侧适配；命令待发送记录、结果去重、补发与消费回调由内部管理。
 Runtime 和 Worker 会关闭根据 ClientConfiguration 创建的 MQ 客户端；存储、SessionBackend
 和底层工具 Executor 仍由宿主持有。
 
-默认 namespace `durable` 与 route `hands` 自动派生 commands、controls、updates 三个普通
-Topic 和对应消费组；两端无需分别配置物理名称。控制 Topic 独立，取消和查询不会被新执行
-积压阻塞。
+在支持 LiteTopic 的 Broker 和独立 Cluster Proxy 上创建 LITE 父 Topic，并分别配置
+Shared wildcard 消费组。默认 MQ namespace 是 `durable`。
+
+| 父 Topic | 消费组 | LiteTopic 作用域 |
+| --- | --- | --- |
+| `durable-turn-dispatch` | `durable-turn-runner` | Session + Thread |
+| `durable-turn-signal` | `durable-turn-signal` | Session + Thread |
+| `durable-hands-commands` | `durable-hands-worker` | Session |
+| `durable-hands-controls` | `durable-hands-worker-controls` | Session |
+| `durable-hands-updates` | `durable-hands-brain` | Session + execution |
+
+将 `durable` 替换为部署 namespace，将 `hands` 替换为执行 route。
+对每一组父 Topic 和消费组执行以下配置。
+
+```sh
+mqadmin updateTopic -n "$NAMESRV" -c "$CLUSTER" -t "$PARENT" -a '+message.type=LITE'
+mqadmin updateSubGroup -n "$NAMESRV" -c "$CLUSTER" -g "$GROUP" -o true -m true \
+  --attributes "+lite.bind.topic=$PARENT,+lite.sub.model=Shared,+lite.sub.wildcard=true"
+```
+
 每个 Worker 池使用独立命令路由及消费组；同池副本共用该组与执行账本。
 Brain 结果消费者使用另一个组，同组副本必须共享 Brain 交付记录和 SessionBackend。
 不同部署若使用不同数据库，应使用独立 namespace，避免互相消费无法识别的任务。
 派生后的 Topic、消费组、ACL、TLS、凭证和消息保留期由应用部署管理；Worker 的 authorize
 在账本访问前执行。
+Cluster Proxy 保持 `enableProxyAutoRenew` 开启。Lite PushConsumer 接收消息时使用
+Proxy 配置的消息不可见时长。
 
-接入使用 [RocketMQ SimpleConsumer](https://rocketmq.apache.org/docs/featureBehavior/06consumertype/)：
+接入使用 [RocketMQ LiteTopic](https://rocketmq.apache.org/docs/domainModel/03litetopic/)。
 Worker 持久受理后才确认命令；Brain 持久去重并向 SessionBackend 提交后才确认事件。
 Broker ACK 不代表工具完成。控制命令乱序、重复消息和发布响应丢失不改变执行身份。
 取消先于执行到达会留下墓碑；查询只重发原状态，不创建工具副作用。
@@ -539,9 +571,41 @@ Broker ACK 不代表工具完成。控制命令乱序、重复消息和发布响
 `objects(...)` 配置同一可访问的 ObjectStore，将大型信封转为对象引用；引用校验作用域和
 摘要，不可访问或无效载荷不会被确认。
 
-RocketMqWakeups 仍单独用于 Session/订阅唤醒，不承载执行命令或结果；
-SSE 继续读取 SessionBackend 的公共事件。MQ 执行不要求同时配置 RocketMqWakeups：
-单 Brain 进程可使用本地通知，多进程也保留持久扫描恢复。
+要启用两条 Turn 通道，创建 `RocketMqTurnScheduler` 并通过
+`PostgresBackend.builder().notifications(scheduler)` 传入，也可以对本地后端调用
+`backend.withWakeups(scheduler)`。执行 Runtime 启动消费，宿主在 Runtime 停止后关闭
+scheduler。后端通过 `messageDrivenScheduling` 报告此装配。数据库保留 FIFO 顺序和调度代次。
+提交方在事务成功后发布已到期的 dispatch，仅提供 API 的宿主也可以发布。消息携带生成时的
+Turn 修订号和调度原因。消费者校验父 Topic、LiteTopic 和消息键，后端在领取事务中校验
+具体 Turn 和代次。dispatch 已确认但领取尚未提交时，持久调度记录仍可补发。Turn 信号
+提示读取已提交状态。
+
+`DurableRuntime.Builder.repairInterval` 控制 MQ 执行宿主的补漏扫描，默认 30 秒。
+其他宿主通过 `pollInterval` 配置数据库发现。收到 Session 提示时，只查询该 Session
+的待运行工作。`releaseDelay` 控制未完成工作释放租约后的重新调度间隔。
+创建调度器时传入 `RocketMqTurnScheduler.Options`，可以配置 Outbox 补漏间隔、
+未领取 dispatch 的重发间隔，以及 dispatch 和 signal 各自的消费缓存大小。
+默认值分别为 2 秒、5 秒和每个消费者 32 条。Hands 可用
+`RocketMqWorker.Builder.controlCacheSize` 独立设置控制通道缓存。
+
+滚动发布时先将宿主摘流，Brain 调用 `runtime.drain(timeout)`，Hands 调用
+`worker.drain(timeout)`，再关闭适配器和存储。排空会停止新受理，并让进行中的调用到达
+可恢复边界。调用返回后立即释放尚未完成的工作，已持久化的重试时间继续生效。
+Brain 排空时退出 dispatch 消费，保留信号消费和 Outbox 发布。Hands 还会等待待发送结果。
+发布终止窗口需覆盖排空和 SDK 关闭时间。替换实例可在租约到期后接管剩余工作。
+
+通过 `runtime.schedulingStatistics()` 导出 Turn 调度指标。扫描次数按发现来源分组，
+取一段时间内的 `total` 增量即可计算扫描 QPS。`emptyRatio()` 以完成的扫描为分母，
+排除失败的扫描。领取结果区分新领取、复用租约、队列为空、租约占用、等待外部事件、
+未到期和陈旧投递。用同一采样区间内各结果的增量除以全部结果的增量，可计算对应比例。
+领取异常单独计数。发现延迟使用存储时钟，统计调度意图到期可领取至取得新租约的毫秒数。
+直方图按区间独立计数，最后一档记录超过最大上界的样本。引入该指标前已生成的
+调度意图可能缺少时间戳，领取时没有延迟样本。
+
+`activeDispatchDuplicates` 统计同一 Runtime 对正在执行或已排队的相同调度意图的去重次数。
+`scheduler.statistics()` 提供 Turn Outbox 补漏扫描次数、已确认补发次数、被发送资格检查
+拦下的次数和发送失败次数。计数在进程内累计，标签固定，不包含 Session 或 Turn ID。
+尚未出现的来源或结果按零处理。
 
 
 ## SessionBackend 部署适配
@@ -714,8 +778,9 @@ limit 限制扫描的 Session 事件数：空的过滤页仍可能推进游标�
 highWatermark 判断本次是否追平。过滤流的 sequence 可以不连续；
 `EventProjection(session, filter)` 接受这种稀疏流，完整 Session 投影仍检查序号连续性。
 
-每个订阅的回调串行运行，使用独立于 Agent 执行的观察线程。重复提示合并，
-轮询补偿丢失提示；回调或后端失败后按 Runtime 的 `pollInterval` 重试。
+每个订阅的回调串行运行，使用独立于 Agent 执行的观察线程。Session 变更提示会唤醒
+`await()` 和事件订阅。`observationInterval` 控制低频补读，有通知时默认为 2 秒，
+纯轮询传输默认为 100 毫秒。`observationRetryInterval` 控制事件读取或回调失败后的重试。
 只有回调成功返回才推进游标。错误交给 Runtime 的 `onError`，
 订阅提供 `cursor()`、`lastFailure()` 和 `isClosed()`；
 错误报告失败不会阻断重试。`observerParallelism` 配置共享回调容量，默认为 2。

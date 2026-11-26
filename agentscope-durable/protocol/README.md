@@ -90,7 +90,7 @@ head Turn blocks later work in the same Thread.
 
 Sessions and Threads are `OPEN` or `CLOSED`. Nonterminal work prevents closure.
 Closing does not erase history, and retrying creation does not reopen a closed
-resource. Turn terminal states are `SUCCEEDED`, `FAILED`, and `CANCELLED`.
+resource. Turn terminal states are `SUCCEEDED`, `FAILED`, `CANCELLED`, and `CONVERTED`.
 Recovery preserves `turnId` while creating new Run/Step identities.
 
 ## Envelopes and validation

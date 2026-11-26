@@ -91,6 +91,11 @@ public final class EventProjection {
                 event.threadId(),
                 event.turnId(),
                 event.sequence());
+        if ("turn.converted".equals(event.type())
+                && Objects.equals(filter.turnId(), event.turnId())) {
+            updated.withObject("/messages")
+                    .remove(event.data().path("message").path("messageId").asText());
+        }
         value = updated;
         sequence = next;
         cursor = event.cursor();
@@ -143,6 +148,19 @@ public final class EventProjection {
             String turnId,
             String sequence) {
         JsonNode d = event.data();
+        if ("turn.converted".equals(event.type())) {
+            JsonNode message = d.path("message");
+            if (turnId == null
+                    || !Objects.equals(threadId, message.path("threadId").asText(null))
+                    || Objects.equals(turnId, message.path("turnId").asText(null)))
+                throw new DurableException(
+                        DurableException.Code.INVALID,
+                        "Converted input has invalid Turn ownership");
+            projection
+                    .withObject("/messages")
+                    .set(message.path("messageId").asText(), message.deepCopy());
+            return;
+        }
         if (event.type().startsWith("session.")) {
             projection.set("session", d.deepCopy());
             return;

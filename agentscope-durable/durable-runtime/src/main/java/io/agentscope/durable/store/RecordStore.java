@@ -69,6 +69,11 @@ public interface RecordStore extends AutoCloseable {
     /** Indexed, bounded discovery using authoritative store time; does not grant ownership. */
     List<Work> ready(String queue, int limit);
 
+    /** Optional scoped discovery for change hints. Periodic discovery still uses the global index. */
+    default List<Work> ready(String queue, String scope, int limit) {
+        return List.of();
+    }
+
     /** Stable key pagination; discovery never claims execution ownership. */
     List<String> keys(String prefix, String after, int limit);
 

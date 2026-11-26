@@ -44,6 +44,7 @@ public final class QueuedExecutor implements Executor {
     private final SessionBackend backend;
     private final Consumer<Command> sender;
     private final long retryMillis;
+    private final long responseMillis;
 
     public QueuedExecutor(
             String name,
@@ -51,13 +52,26 @@ public final class QueuedExecutor implements Executor {
             SessionBackend backend,
             Consumer<Command> sender,
             Duration retry) {
+        this(name, records, backend, sender, retry, Duration.ofSeconds(30));
+    }
+
+    public QueuedExecutor(
+            String name,
+            RecordStore records,
+            SessionBackend backend,
+            Consumer<Command> sender,
+            Duration retry,
+            Duration responseTimeout) {
         this.name = DurableJson.text(name, "executor name");
         prefix = "queued:" + DurableJson.hash(name) + ":";
         this.records = Objects.requireNonNull(records);
         this.backend = Objects.requireNonNull(backend);
         this.sender = Objects.requireNonNull(sender);
         retryMillis = retry.toMillis();
-        if (retryMillis < 1) throw new IllegalArgumentException("Retry interval must be positive");
+        responseMillis = responseTimeout.toMillis();
+        if (retryMillis < 1 || responseMillis < 1)
+            throw new IllegalArgumentException(
+                    "Retry interval and response timeout must be positive");
     }
 
     public static final class State {
@@ -181,7 +195,11 @@ public final class QueuedExecutor implements Executor {
                                 DurableException.Code.CONFLICT, "Event after terminal outcome");
                     tx.put(eventKey(event.sequence()), DurableJson.value(event));
                     state.receivedSequence = Math.max(state.receivedSequence, event.sequence());
-                    if (event.sequence() > state.deliveredSequence + 1) state.nextSendAt = 0;
+                    if (old == null || old.isNull()) {
+                        if (event.sequence() > state.deliveredSequence + 1) state.nextSendAt = 0;
+                        else if (!state.cancelled)
+                            state.nextSendAt = Math.addExact(tx.now(), responseMillis);
+                    }
                     save(tx, state);
                     return null;
                 });
@@ -195,6 +213,7 @@ public final class QueuedExecutor implements Executor {
                             key,
                             tx -> {
                                 var state = read(tx);
+                                if (state == null) return null;
                                 var value = tx.get(eventKey(state.deliveredSequence + 1));
                                 return value == null || value.isNull()
                                         ? null
@@ -219,6 +238,9 @@ public final class QueuedExecutor implements Executor {
                                 state.outputSealed = page.terminal();
                             } else state.result = event.result();
                             state.deliveredSequence = event.sequence();
+                            if (state.receivedSequence > state.deliveredSequence
+                                    && tx.get(eventKey(state.deliveredSequence + 1)) == null)
+                                state.nextSendAt = 0;
                             save(tx, state);
                         }
                         return null;
@@ -256,35 +278,52 @@ public final class QueuedExecutor implements Executor {
 
     public synchronized void tick(Consumer<Throwable> errors) {
         var keys = records.ready(prefix, 100).stream().map(RecordStore.Work::scope).toList();
-        for (var key : keys) {
+        for (var key : keys) advance(key, errors);
+    }
+
+    /** Publishes any newly staged or due work for this execution after the caller's commit. */
+    public synchronized void tick(ExecutionRequest request, Consumer<Throwable> errors) {
+        advance(key(request), errors);
+    }
+
+    private void advance(String key, Consumer<Throwable> errors) {
+        try {
             try {
-                try {
-                    deliver(key);
-                } catch (RuntimeException failure) {
-                    errors.accept(failure);
-                }
-                var command =
-                        records.transaction(
-                                key,
-                                tx -> {
-                                    var state = read(tx);
-                                    if (state.result.state().terminal()
-                                            || state.nextSendAt > tx.now()) return null;
-                                    state.nextSendAt = tx.now() + retryMillis;
-                                    var kind =
-                                            state.cancelled
-                                                    ? Kind.CANCEL
-                                                    : state.receivedSequence == 0
-                                                            ? Kind.EXECUTE
-                                                            : Kind.QUERY;
-                                    save(tx, state);
-                                    return ExecutionMessages.command(
-                                            kind, state.request, state.deliveredSequence);
-                                });
-                if (command != null) sender.accept(command);
+                deliver(key);
             } catch (RuntimeException failure) {
                 errors.accept(failure);
             }
+            var command =
+                    records.transaction(
+                            key,
+                            tx -> {
+                                var state = read(tx);
+                                if (state == null
+                                        || state.result.state().terminal()
+                                        || state.nextSendAt > tx.now()) return null;
+                                var kind =
+                                        state.cancelled
+                                                ? Kind.CANCEL
+                                                : state.receivedSequence == 0
+                                                        ? Kind.EXECUTE
+                                                        : Kind.QUERY;
+                                boolean gap =
+                                        state.receivedSequence > state.deliveredSequence
+                                                && tx.get(eventKey(state.deliveredSequence + 1))
+                                                        == null;
+                                state.nextSendAt =
+                                        Math.addExact(
+                                                tx.now(),
+                                                kind == Kind.QUERY && !gap
+                                                        ? responseMillis
+                                                        : retryMillis);
+                                save(tx, state);
+                                return ExecutionMessages.command(
+                                        kind, state.request, state.deliveredSequence);
+                            });
+            if (command != null) sender.accept(command);
+        } catch (RuntimeException failure) {
+            errors.accept(failure);
         }
     }
 

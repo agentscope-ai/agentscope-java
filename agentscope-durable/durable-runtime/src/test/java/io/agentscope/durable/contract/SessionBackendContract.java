@@ -79,6 +79,7 @@ import io.agentscope.durable.Executor;
 import io.agentscope.durable.HarnessAdapter;
 import io.agentscope.durable.HarnessContext;
 import io.agentscope.durable.SessionBackend;
+import io.agentscope.durable.SessionBackend.ClaimStatus;
 import io.agentscope.durable.SessionEventClient;
 import io.agentscope.durable.SessionResources;
 import io.agentscope.durable.SessionResources.Operation;
@@ -174,6 +175,10 @@ public abstract class SessionBackendContract {
 
                                     public List<Work> ready(String queue, int limit) {
                                         return store.ready(queue, limit);
+                                    }
+
+                                    public List<Work> ready(String queue, String scope, int limit) {
+                                        return store.ready(queue, scope, limit);
                                     }
 
                                     public List<String> keys(
@@ -1259,6 +1264,17 @@ public abstract class SessionBackendContract {
         var all = backend.ready(List.of(HarnessSelector.all("test"), selected), 100);
         assertEquals(13, all.size());
         assertEquals(13, all.stream().distinct().count());
+        assertEquals(
+                List.of(new ThreadKey(key, "main")),
+                backend.ready(key, List.of(HarnessSelector.all("test")), 1).stream()
+                        .map(ThreadSpec::key)
+                        .toList());
+        assertTrue(
+                backend.ready(
+                                new SessionKey(key.namespace(), "missing"),
+                                List.of(HarnessSelector.all("test")),
+                                1)
+                        .isEmpty());
     }
 
     @Test
@@ -1679,6 +1695,10 @@ public abstract class SessionBackendContract {
 
     @Test
     protected void claimRetryRecoversSameLeaseAndReadyIndexTracksWaits() {
+        var thread = new ThreadKey(key, "main");
+        var duration = Duration.ofSeconds(30);
+        assertEquals(
+                ClaimStatus.NO_WORK, backend.claimOutcome(thread, "runner", duration).status());
         submit();
         assertEquals(
                 List.of(new ThreadKey(key, "main")),
@@ -1686,14 +1706,25 @@ public abstract class SessionBackendContract {
                         .map(ThreadSpec::key)
                         .toList());
         assertTrue(backend.ready(List.of(HarnessSelector.all("unserved")), 10).isEmpty());
-        var lease = claim();
+        clock.addAndGet(12);
+        var initial = backend.claimOutcome(thread, "runner", duration);
+        assertEquals(ClaimStatus.ACQUIRED, initial.status());
+        assertEquals(12L, initial.discoveryDelayMillis());
+        var retry = backend.claimOutcome(thread, "runner", duration);
+        assertEquals(ClaimStatus.REUSED, retry.status());
+        assertEquals(initial.lease(), retry.lease());
+        assertNull(retry.discoveryDelayMillis());
         assertEquals(
-                lease,
-                backend.claim(new ThreadKey(key, "main"), lease.owner(), Duration.ofSeconds(30))
-                        .orElseThrow());
-        assertTrue(
-                backend.claim(new ThreadKey(key, "main"), "competitor", Duration.ofSeconds(30))
-                        .isEmpty());
+                ClaimStatus.LEASE_HELD,
+                backend.claimOutcome(thread, "competitor", duration).status());
+        backend.release(initial.lease(), Duration.ofMillis(30));
+        assertEquals(
+                ClaimStatus.NOT_DUE, backend.claimOutcome(thread, "runner", duration).status());
+        clock.addAndGet(37);
+        var next = backend.claimOutcome(thread, "runner", duration);
+        assertEquals(ClaimStatus.ACQUIRED, next.status());
+        assertEquals(7L, next.discoveryDelayMillis());
+        var lease = next.ownership().orElseThrow();
         var frame = backend.frame(lease);
         backend.commit(
                 lease,
@@ -1710,6 +1741,8 @@ public abstract class SessionBackendContract {
                         null,
                         null));
         assertTrue(backend.ready(List.of(HarnessSelector.all("test")), 10).isEmpty());
+        assertEquals(
+                ClaimStatus.WAITING, backend.claimOutcome(thread, "runner", duration).status());
         backend.signal(
                 new ThreadKey(key, "main"),
                 lease.turnId(),

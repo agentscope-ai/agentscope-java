@@ -38,6 +38,8 @@ import io.agentscope.durable.DurableTypes.ToolExecution;
 import io.agentscope.durable.DurableTypes.TurnStatus;
 import io.agentscope.durable.DurableTypes.TurnView;
 import io.agentscope.durable.DurableTypes.WaitCondition;
+import io.agentscope.durable.SessionBackend.ClaimOutcome;
+import io.agentscope.durable.TurnSchedulingStatistics.Source;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.time.Duration;
@@ -47,7 +49,6 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
@@ -57,6 +58,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.ScheduledThreadPoolExecutor;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
@@ -73,6 +75,8 @@ import java.util.function.Predicate;
  * subscriptions. Database work, native execution and external I/O run on dedicated workers.
  */
 public final class DurableRuntime implements AutoCloseable {
+    private static final Duration DEFAULT_POLL = Duration.ofMillis(100);
+
     public record Registration(String harness, String definitionVersion, HarnessAdapter adapter) {
         public Registration {
             DurableJson.text(harness, "harness");
@@ -95,7 +99,11 @@ public final class DurableRuntime implements AutoCloseable {
     private final Semaphore capacity;
     private final AtomicBoolean accepting = new AtomicBoolean(true);
     private final Map<String, Executor> executors;
-    private final Duration pollInterval;
+    private final Duration discoveryInterval;
+    private final Duration repairInterval;
+    private final Duration releaseDelay;
+    private final Duration observationInterval;
+    private final Duration observationRetryInterval;
     private final Duration leaseDuration;
     private final int parallelism;
     private final BiConsumer<SessionKey, Throwable> errors;
@@ -105,7 +113,9 @@ public final class DurableRuntime implements AutoCloseable {
     private final String owner = UUID.randomUUID().toString();
     private final ConcurrentHashMap<ThreadKey, Active> active = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<ThreadKey, Throwable> failures = new ConcurrentHashMap<>();
-    private final AtomicBoolean wakeupScanQueued = new AtomicBoolean();
+    private final Set<SessionKey> pendingWakeups = ConcurrentHashMap.newKeySet();
+    private final TurnSchedulingStatistics.Collector scheduling =
+            new TurnSchedulingStatistics.Collector();
     private final Set<Thread> ownedThreads = ConcurrentHashMap.newKeySet();
     private final ScheduledExecutorService timer =
             Executors.newScheduledThreadPool(2, r -> daemon(r, "durable-timer"));
@@ -118,8 +128,15 @@ public final class DurableRuntime implements AutoCloseable {
 
     private static final class Active {
         final AtomicBoolean stopped = new AtomicBoolean();
+        final TurnDispatch dispatch;
         volatile Thread thread;
         volatile boolean invoking;
+        TurnDispatch nextDispatch;
+        boolean wakeAgain;
+
+        Active(TurnDispatch dispatch) {
+            this.dispatch = dispatch;
+        }
     }
 
     private DurableRuntime(Builder b) {
@@ -145,14 +162,30 @@ public final class DurableRuntime implements AutoCloseable {
         versions = Map.copyOf(b.versions);
         resolvers = Map.copyOf(b.resolvers);
         capacity = new Semaphore(b.parallelism);
-        pollInterval = b.pollInterval;
+        discoveryInterval = Objects.requireNonNullElse(b.pollInterval, DEFAULT_POLL);
+        repairInterval = b.repairInterval;
+        releaseDelay = Objects.requireNonNullElse(b.releaseDelay, discoveryInterval);
+        observationInterval =
+                b.observationInterval != null
+                        ? b.observationInterval
+                        : b.pollInterval != null
+                                ? b.pollInterval
+                                : backend != null && backend.wakeups().hasNotifications()
+                                        ? Duration.ofSeconds(2)
+                                        : DEFAULT_POLL;
+        observationRetryInterval =
+                Objects.requireNonNullElse(b.observationRetryInterval, discoveryInterval);
         leaseDuration = b.leaseDuration;
         parallelism = b.parallelism;
         errors = b.errors;
         recoveryPolicy = b.recoveryPolicy;
         retryableFailure = b.retryableFailure;
         liveEvents = b.liveEvents;
-        if (pollInterval.toMillis() < 1
+        if (discoveryInterval.toMillis() < 1
+                || repairInterval.toMillis() < 1
+                || releaseDelay.isNegative()
+                || observationInterval.toMillis() < 1
+                || observationRetryInterval.toMillis() < 1
                 || leaseDuration.toMillis() < 100
                 || parallelism < 1
                 || b.observerParallelism < 1)
@@ -363,42 +396,78 @@ public final class DurableRuntime implements AutoCloseable {
         long deadline = System.nanoTime() + timeout.toNanos();
         var result = new CompletableFuture<TurnView>();
         waits.add(result);
+        var enqueued = new AtomicBoolean();
+        Runnable check =
+                () -> {
+                    if (result.isDone()) return;
+                    try {
+                        ensureOpen();
+                        var view =
+                                DurableJson.convert(
+                                        session.call("getTurn", "turnId", turnId), TurnView.class);
+                        if (view.status().terminal()) result.complete(view);
+                        else if (System.nanoTime() - deadline >= 0)
+                            result.completeExceptionally(
+                                    new TimeoutException(
+                                            "Timed out observing Turn "
+                                                    + session.key()
+                                                    + "/"
+                                                    + turnId));
+                    } catch (RuntimeException error) {
+                        result.completeExceptionally(error);
+                    }
+                };
+        AutoCloseable notification = observeWait(session.key().session(), result, enqueued, check);
+        result.whenComplete(
+                (view, error) -> {
+                    waits.remove(result);
+                    try {
+                        notification.close();
+                    } catch (Exception failure) {
+                        reportError(session.key().session(), failure);
+                    }
+                });
         try {
             var scheduled =
                     observers.scheduleWithFixedDelay(
-                            () -> {
-                                if (result.isDone()) return;
-                                try {
-                                    ensureOpen();
-                                    var view =
-                                            DurableJson.convert(
-                                                    session.call("getTurn", "turnId", turnId),
-                                                    TurnView.class);
-                                    if (view.status().terminal()) result.complete(view);
-                                    else if (System.nanoTime() - deadline >= 0)
-                                        result.completeExceptionally(
-                                                new TimeoutException(
-                                                        "Timed out observing Turn "
-                                                                + session.key()
-                                                                + "/"
-                                                                + turnId));
-                                } catch (RuntimeException error) {
-                                    result.completeExceptionally(error);
-                                }
-                            },
-                            0,
-                            pollInterval.toMillis(),
-                            TimeUnit.MILLISECONDS);
-            result.whenComplete(
-                    (view, error) -> {
-                        scheduled.cancel(false);
-                        waits.remove(result);
-                    });
+                            check, 0, observationInterval.toMillis(), TimeUnit.MILLISECONDS);
+            result.whenComplete((view, error) -> scheduled.cancel(false));
+            var expiration =
+                    observers.schedule(
+                            check, Math.max(0, deadline - System.nanoTime()), TimeUnit.NANOSECONDS);
+            result.whenComplete((view, error) -> expiration.cancel(false));
         } catch (RejectedExecutionException error) {
-            waits.remove(result);
             result.completeExceptionally(error);
         }
         return result;
+    }
+
+    private AutoCloseable observeWait(
+            SessionKey session,
+            CompletableFuture<TurnView> result,
+            AtomicBoolean enqueued,
+            Runnable check) {
+        try {
+            return wakeups()
+                    .subscribe(
+                            key -> {
+                                if (!session.equals(key)
+                                        || result.isDone()
+                                        || !enqueued.compareAndSet(false, true)) return;
+                                try {
+                                    observers.execute(
+                                            () -> {
+                                                enqueued.set(false);
+                                                check.run();
+                                            });
+                                } catch (RejectedExecutionException stopped) {
+                                    enqueued.set(false);
+                                }
+                            });
+        } catch (RuntimeException error) {
+            reportError(session, error);
+            return () -> {};
+        }
     }
 
     SessionEventSubscription observe(
@@ -432,7 +501,8 @@ public final class DurableRuntime implements AutoCloseable {
                             liveEvents,
                             error -> reportError(session.key(), error),
                             observers,
-                            pollInterval,
+                            observationInterval,
+                            observationRetryInterval,
                             subscriptions::remove);
             subscriptions.add(subscription);
             try {
@@ -447,6 +517,11 @@ public final class DurableRuntime implements AutoCloseable {
 
     public Throwable lastFailure(ThreadKey key) {
         return failures.get(key);
+    }
+
+    /** Cumulative metrics for this Runtime instance. */
+    public TurnSchedulingStatistics schedulingStatistics() {
+        return scheduling.snapshot();
     }
 
     /**
@@ -468,48 +543,114 @@ public final class DurableRuntime implements AutoCloseable {
                 close();
                 throw error;
             }
-            try {
-                wakeupSubscription = backend.wakeups().subscribe(this::wake);
-            } catch (RuntimeException error) {
-                reportError(null, error);
+            Wakeups wakeups = backend.wakeups();
+            if (wakeups instanceof TurnScheduler scheduler) {
+                try {
+                    wakeupSubscription = scheduler.start(backend, this::offer);
+                } catch (RuntimeException error) {
+                    close();
+                    throw error;
+                }
+            } else {
+                try {
+                    wakeupSubscription = wakeups.subscribe(this::wake);
+                } catch (RuntimeException error) {
+                    reportError(null, error);
+                }
             }
+            long scanMillis =
+                    wakeups instanceof TurnScheduler
+                            ? repairInterval.toMillis()
+                            : discoveryInterval.toMillis();
+            Source source = wakeups instanceof TurnScheduler ? Source.REPAIR : Source.DATABASE;
             timer.scheduleWithFixedDelay(
-                    this::scanSafely, 0, pollInterval.toMillis(), TimeUnit.MILLISECONDS);
+                    () -> scanSafely(source),
+                    wakeups instanceof TurnScheduler ? scanMillis : 0,
+                    scanMillis,
+                    TimeUnit.MILLISECONDS);
         }
     }
 
     /** A non-blocking optional wakeup. Durable discovery repairs dropped or duplicate hints. */
     public void wake(SessionKey key) {
         Objects.requireNonNull(key);
-        if (!started.get() || closed.get() || !wakeupScanQueued.compareAndSet(false, true)) return;
+        if (!started.get() || closed.get() || !pendingWakeups.add(key)) return;
         try {
             timer.execute(
                     () -> {
-                        wakeupScanQueued.set(false);
-                        scanSafely();
+                        pendingWakeups.remove(key);
+                        if (closed.get() || !accepting.get()) return;
+                        try {
+                            for (var definition : discover(key, Source.SESSION_HINT)) {
+                                if (!offer(definition.key(), null, Source.SESSION_HINT)) return;
+                            }
+                        } catch (RuntimeException error) {
+                            reportError(key, error);
+                        }
                     });
         } catch (RejectedExecutionException stopped) {
-            wakeupScanQueued.set(false);
+            pendingWakeups.remove(key);
         }
     }
 
     /** Callback admission is bounded; true means admitted or already active, never completed. */
     public boolean offer(ThreadKey key) {
+        return offer(key, null, Source.MANUAL);
+    }
+
+    private boolean offer(TurnDispatch dispatch) {
+        ThreadSpec definition;
+        try {
+            definition = backend.thread(dispatch.thread()).definition();
+        } catch (DurableException error) {
+            if (error.code() == DurableException.Code.NOT_FOUND) return true;
+            throw error;
+        }
+        if (!resolvers.containsKey(definition.harness())) {
+            var registration =
+                    versions.get(
+                            DurableJson.hash(
+                                    List.of(definition.harness(), definition.definitionVersion())));
+            if (registration == null
+                    || !registration
+                            .adapter()
+                            .capabilities()
+                            .stateVersion()
+                            .equals(definition.stateVersion())) return false;
+        }
+        return offer(dispatch.thread(), dispatch, Source.MQ);
+    }
+
+    private boolean offer(ThreadKey key, TurnDispatch dispatch, Source source) {
         ensureExecution();
         Objects.requireNonNull(key);
         Active invocation;
         synchronized (active) {
             if (closed.get() || !accepting.get()) return false;
-            if (active.containsKey(key)) return true;
+            var running = active.get(key);
+            if (running != null) {
+                running.wakeAgain |= source == Source.SESSION_HINT;
+                if (dispatch != null
+                        && (dispatch.equals(running.dispatch)
+                                || dispatch.equals(running.nextDispatch))) {
+                    scheduling.duplicate();
+                    return true;
+                }
+                if (dispatch != null
+                        && (running.nextDispatch == null
+                                || dispatch.generation() > running.nextDispatch.generation()))
+                    running.nextDispatch = dispatch;
+                return true;
+            }
             if (!capacity.tryAcquire()) return false;
-            invocation = new Active();
+            invocation = new Active(dispatch);
             active.put(key, invocation);
         }
         try {
             workers.execute(
                     () -> {
                         try {
-                            process(key, invocation);
+                            process(key, invocation, dispatch, source);
                         } catch (RuntimeException error) {
                             failures.put(key, error);
                             reportError(key.session(), error);
@@ -525,16 +666,25 @@ public final class DurableRuntime implements AutoCloseable {
     }
 
     private void finished(ThreadKey key, Active invocation) {
+        TurnDispatch next;
+        boolean wakeAgain;
         synchronized (active) {
-            if (active.remove(key, invocation)) capacity.release();
+            if (!active.remove(key, invocation)) return;
+            capacity.release();
+            next = invocation.nextDispatch;
+            wakeAgain = invocation.wakeAgain;
             active.notifyAll();
         }
+        if (next != null) offer(key, next, Source.MQ);
+        else if (wakeAgain) offer(key, null, Source.SESSION_HINT);
     }
 
     /** Stops new admission and lets current invocations reach their next durable boundary. */
     public boolean drain(Duration timeout) throws InterruptedException {
         if (timeout.isNegative()) throw new IllegalArgumentException("Negative drain timeout");
-        accepting.set(false);
+        if (accepting.getAndSet(false)
+                && wakeupSubscription != null
+                && backend.wakeups() instanceof TurnScheduler scheduler) scheduler.quiesce();
         long deadline = System.nanoTime() + timeout.toNanos();
         synchronized (active) {
             while (!active.isEmpty()) {
@@ -546,17 +696,33 @@ public final class DurableRuntime implements AutoCloseable {
         return true;
     }
 
-    private void scanSafely() {
+    private void scanSafely(Source source) {
         try {
-            scan();
+            if (closed.get() || !accepting.get() || capacity.availablePermits() == 0) return;
+            for (var definition : discover(null, source)) {
+                if (!offer(definition.key(), null, source)) return;
+            }
         } catch (Throwable e) {
             if (e instanceof VirtualMachineError fatal) throw fatal;
             reportError(null, e);
         }
     }
 
-    private void scan() {
-        if (closed.get() || !accepting.get() || capacity.availablePermits() == 0) return;
+    private List<ThreadSpec> discover(SessionKey key, Source source) {
+        int limit = Math.min(1000, parallelism);
+        try {
+            var types = selectors();
+            var ready =
+                    key == null ? backend.ready(types, limit) : backend.ready(key, types, limit);
+            scheduling.scan(source, ready.isEmpty(), false);
+            return ready;
+        } catch (RuntimeException error) {
+            scheduling.scan(source, false, true);
+            throw error;
+        }
+    }
+
+    private List<HarnessSelector> selectors() {
         var types = new HashSet<HarnessSelector>();
         resolvers.keySet().forEach(name -> types.add(HarnessSelector.all(name)));
         versions.values().stream()
@@ -568,56 +734,74 @@ public final class DurableRuntime implements AutoCloseable {
                                                 value.harness(),
                                                 value.definitionVersion(),
                                                 value.adapter().capabilities().stateVersion())));
-        for (var definition : backend.ready(List.copyOf(types), Math.min(1000, parallelism))) {
-            if (!offer(definition.key())) return;
-        }
+        return List.copyOf(types);
     }
 
     /** Deterministic host/test entry point; does not start a background scheduler. */
     public void tick(ThreadKey key) {
         ensureOpen();
         ensureExecution();
-        Active invocation = new Active();
-        if (active.putIfAbsent(key, invocation) != null) return;
+        Active invocation = new Active(null);
+        synchronized (active) {
+            if (closed.get() || !accepting.get() || active.putIfAbsent(key, invocation) != null)
+                return;
+        }
         try {
-            process(key, invocation);
+            process(key, invocation, null, Source.MANUAL);
         } finally {
-            active.remove(key, invocation);
+            synchronized (active) {
+                active.remove(key, invocation);
+                active.notifyAll();
+            }
         }
     }
 
-    private void process(ThreadKey key, Active activeCall) {
+    private ClaimOutcome claim(ThreadKey key, TurnDispatch dispatch, String claimId) {
+        return dispatch == null
+                ? backend.claimOutcome(key, claimId, leaseDuration)
+                : backend.claimOutcome(dispatch, claimId, leaseDuration);
+    }
+
+    private void process(ThreadKey key, Active activeCall, TurnDispatch dispatch, Source source) {
         activeCall.thread = Thread.currentThread();
         String claimId = owner + ":" + UUID.randomUUID();
-        Optional<Lease> claimed;
+        ClaimOutcome claimed;
         try {
-            claimed = backend.claim(key, claimId, leaseDuration);
-        } catch (DurableException error) {
-            if (error.code() != DurableException.Code.UNAVAILABLE) throw error;
-            claimed = backend.claim(key, claimId, leaseDuration);
+            try {
+                claimed = claim(key, dispatch, claimId);
+            } catch (DurableException error) {
+                if (error.code() != DurableException.Code.UNAVAILABLE) throw error;
+                claimed = claim(key, dispatch, claimId);
+            }
+        } catch (RuntimeException error) {
+            scheduling.claimError(source);
+            throw error;
         }
-        if (claimed.isEmpty()) return;
-        Lease lease = claimed.get();
-        var heartbeat =
-                timer.scheduleWithFixedDelay(
-                        () -> {
-                            try {
-                                backend.renew(lease, leaseDuration);
-                                if (activeCall.invoking
-                                        && backend.turn(key, lease.turnId())
-                                                .cancellationRequested()) {
+        scheduling.claim(source, claimed);
+        Lease lease = claimed.lease();
+        if (lease == null) return;
+        ScheduledFuture<?> heartbeat = null;
+        try {
+            if (closed.get()) return;
+            heartbeat =
+                    timer.scheduleWithFixedDelay(
+                            () -> {
+                                try {
+                                    backend.renew(lease, leaseDuration);
+                                    if (activeCall.invoking
+                                            && backend.turn(key, lease.turnId())
+                                                    .cancellationRequested()) {
+                                        activeCall.stopped.set(true);
+                                        activeCall.thread.interrupt();
+                                    }
+                                } catch (RuntimeException e) {
                                     activeCall.stopped.set(true);
                                     activeCall.thread.interrupt();
                                 }
-                            } catch (RuntimeException e) {
-                                activeCall.stopped.set(true);
-                                activeCall.thread.interrupt();
-                            }
-                        },
-                        Math.max(25, leaseDuration.toMillis() / 3),
-                        Math.max(25, leaseDuration.toMillis() / 3),
-                        TimeUnit.MILLISECONDS);
-        try {
+                            },
+                            Math.max(25, leaseDuration.toMillis() / 3),
+                            Math.max(25, leaseDuration.toMillis() / 3),
+                            TimeUnit.MILLISECONDS);
             Frame frame = backend.frame(lease);
             if (frame.turn().status() == TurnStatus.PAUSING) return;
             for (ToolExecution tool : frame.tools()) {
@@ -657,7 +841,8 @@ public final class DurableRuntime implements AutoCloseable {
             activeCall.invoking = false;
             failures.remove(key);
         } catch (Exception error) {
-            if (!activeCall.stopped.get()
+            if (!closed.get()
+                    && !activeCall.stopped.get()
                     && !(error instanceof DurableException d
                             && d.code() == DurableException.Code.FENCED)) {
                 try {
@@ -698,9 +883,11 @@ public final class DurableRuntime implements AutoCloseable {
                 }
             }
         } finally {
-            heartbeat.cancel(false);
+            if (heartbeat != null) heartbeat.cancel(false);
+            // Shutdown and cancellation can interrupt an invocation before it reaches release.
+            Thread.interrupted();
             try {
-                backend.release(lease, pollInterval);
+                backend.release(lease, accepting.get() ? releaseDelay : Duration.ZERO);
             } catch (DurableException e) {
                 if (e.code() != DurableException.Code.FENCED) reportError(key.session(), e);
             }
@@ -780,18 +967,13 @@ public final class DurableRuntime implements AutoCloseable {
     @Override
     public void close() {
         if (!closed.compareAndSet(false, true)) return;
+        accepting.set(false);
         synchronized (subscriptions) {
             subscriptions.forEach(SessionEventSubscription::close);
         }
         waits.forEach(
                 wait -> wait.completeExceptionally(new IllegalStateException("Runtime closed")));
         observers.shutdownNow();
-        if (wakeupSubscription != null)
-            try {
-                wakeupSubscription.close();
-            } catch (Exception error) {
-                reportError(null, error);
-            }
         active.values()
                 .forEach(
                         a -> {
@@ -799,7 +981,14 @@ public final class DurableRuntime implements AutoCloseable {
                             if (a.thread != null) a.thread.interrupt();
                         });
         timer.shutdownNow();
+        pendingWakeups.clear();
         workers.shutdownNow();
+        if (wakeupSubscription != null)
+            try {
+                wakeupSubscription.close();
+            } catch (Exception error) {
+                reportError(null, error);
+            }
         // The host may now close its backend. Allow interrupted readers/writers to return their
         // borrowed connections first. A callback closing its own runtime must never join itself.
         if (!ownedThreads.contains(Thread.currentThread())) {
@@ -879,7 +1068,11 @@ public final class DurableRuntime implements AutoCloseable {
         private final Map<String, Function<ThreadSpec, HarnessAdapter>> resolvers =
                 new LinkedHashMap<>();
         private final Map<String, Executor> executors = new LinkedHashMap<>();
-        private Duration pollInterval = Duration.ofMillis(100);
+        private Duration pollInterval;
+        private Duration repairInterval = Duration.ofSeconds(30);
+        private Duration releaseDelay;
+        private Duration observationInterval;
+        private Duration observationRetryInterval;
         private Duration leaseDuration = Duration.ofSeconds(30);
         private RecoveryPolicy recoveryPolicy = RecoveryPolicy.defaults();
         private Predicate<Throwable> retryableFailure = DurableRuntime::transientFailure;
@@ -918,6 +1111,30 @@ public final class DurableRuntime implements AutoCloseable {
 
         public Builder pollInterval(Duration value) {
             pollInterval = Objects.requireNonNull(value);
+            return this;
+        }
+
+        /** Periodic recovery scan on hosts configured with a TurnScheduler. */
+        public Builder repairInterval(Duration value) {
+            repairInterval = Objects.requireNonNull(value);
+            return this;
+        }
+
+        /** Minimum delay before retrying work that releases its lease. */
+        public Builder releaseDelay(Duration value) {
+            releaseDelay = Objects.requireNonNull(value);
+            return this;
+        }
+
+        /** Fallback discovery interval for Turn observers and committed event subscriptions. */
+        public Builder observationInterval(Duration value) {
+            observationInterval = Objects.requireNonNull(value);
+            return this;
+        }
+
+        /** Delay before retrying failed committed event reads or callbacks. */
+        public Builder observationRetryInterval(Duration value) {
+            observationRetryInterval = Objects.requireNonNull(value);
             return this;
         }
 

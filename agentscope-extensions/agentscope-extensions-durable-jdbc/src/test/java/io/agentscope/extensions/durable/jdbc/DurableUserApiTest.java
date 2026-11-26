@@ -15,14 +15,21 @@
  */
 package io.agentscope.extensions.durable.jdbc;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
+
+import io.agentscope.durable.DurableTypes.CommandReceipt;
+import io.agentscope.durable.DurableTypes.Snapshot;
+import io.agentscope.durable.DurableTypes.TurnStatus;
 import io.agentscope.durable.SessionBackend;
 import io.agentscope.durable.TransactionalSessionBackend;
 import io.agentscope.durable.contract.UserApiContract;
 import java.nio.file.Path;
 import java.sql.DriverManager;
+import java.time.Duration;
 import java.util.Properties;
 import java.util.UUID;
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 public class DurableUserApiTest extends UserApiContract {
@@ -30,6 +37,32 @@ public class DurableUserApiTest extends UserApiContract {
 
     private String schema;
     private final String postgresUrl = System.getProperty("durable.test.jdbcUrl");
+
+    @Test
+    void convertedInputAndReceiptSurviveReopeningLocalBackend() {
+        Path data = directory.resolve("local");
+        String activeId;
+        String queuedId;
+        CommandReceipt receipt;
+        Snapshot snapshot;
+        try (var local = LocalBackend.open(data);
+                var localApi = connect(local)) {
+            var thread = localApi.createSession(key, "agent").mainThread();
+            activeId = thread.submit("active", "First").turnId();
+            queuedId = thread.submit("queued", "Second").turnId();
+            local.claim(thread.key(), "owner", Duration.ofSeconds(5)).orElseThrow();
+            receipt = thread.convertQueuedTurnToSteer("convert", "queued", activeId);
+            snapshot = localApi.getSession(key).snapshot();
+        }
+        try (var reopened = LocalBackend.open(data);
+                var reopenedApi = connect(reopened)) {
+            var recovered = reopenedApi.getSession(key).mainThread();
+            assertEquals(
+                    receipt, recovered.convertQueuedTurnToSteer("convert", "queued", activeId));
+            assertEquals(TurnStatus.CONVERTED, recovered.getTurn(queuedId).status().status());
+            assertEquals(snapshot, reopenedApi.getSession(key).snapshot());
+        }
+    }
 
     @Override
     protected SessionBackend openBackend() {

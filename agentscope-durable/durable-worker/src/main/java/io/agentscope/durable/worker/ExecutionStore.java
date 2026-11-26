@@ -70,7 +70,8 @@ public interface ExecutionStore {
     /** Claim an exact admitted identity without exposing a provider's physical storage keys. */
     Optional<Work> claim(ExecutionRequest request, String owner, Duration lease);
 
-    void renew(Work work, Duration lease);
+    /** Renews ownership and returns the current durable cancellation flag. */
+    boolean renew(Work work, Duration lease);
 
     Work begin(Work work);
 

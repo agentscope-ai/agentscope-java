@@ -54,6 +54,7 @@ public final class WorkerRuntime implements AutoCloseable {
     private final Function<ExecutionRequest, Executor> resolver;
     private final Duration lease;
     private final Duration poll;
+    private final Duration discovery;
     private final Duration retryMaximum;
     private final int parallelism;
     private final int recoveryParallelism;
@@ -62,6 +63,7 @@ public final class WorkerRuntime implements AutoCloseable {
     private final String owner = UUID.randomUUID().toString();
     private final Set<String> active = ConcurrentHashMap.newKeySet();
     private final Set<String> recovering = ConcurrentHashMap.newKeySet();
+    private final Map<String, ProviderCall> providerCalls = new ConcurrentHashMap<>();
     private final Object lifecycle = new Object();
     private final ExecutorService workers;
     private final ExecutorService recoveries;
@@ -137,6 +139,7 @@ public final class WorkerRuntime implements AutoCloseable {
         resolver = Objects.requireNonNull(builder.resolver, "resolver");
         lease = builder.lease;
         poll = builder.poll;
+        discovery = builder.discovery == null ? poll : builder.discovery;
         retryMaximum = builder.retryMaximum.compareTo(poll) < 0 ? poll : builder.retryMaximum;
         parallelism = builder.parallelism;
         recoveryParallelism = builder.recoveryParallelism;
@@ -234,7 +237,7 @@ public final class WorkerRuntime implements AutoCloseable {
                             }
                         },
                         0,
-                        poll.toMillis(),
+                        discovery.toMillis(),
                         TimeUnit.MILLISECONDS);
         }
     }
@@ -250,19 +253,26 @@ public final class WorkerRuntime implements AutoCloseable {
     private void dispatch(boolean recovery) {
         int capacity = recovery ? recoveryParallelism : parallelism;
         for (var key : store.ready(recovery, Math.max(100, capacity * 2))) {
-            synchronized (lifecycle) {
-                if (closed.get() || !accepting.get()) return;
-                int count = recovery ? recovering.size() : active.size() - recovering.size();
-                if (count >= capacity) return;
-                if (!active.add(key)) continue;
-                if (recovery) recovering.add(key);
-                try {
-                    (recovery ? recoveries : workers).execute(new Job(key));
-                } catch (RuntimeException error) {
-                    finished(key);
-                    throw error;
-                }
+            if (!offer(key, recovery)) return;
+        }
+    }
+
+    /** Offers an execution after durable command admission. Discovery repairs a missed offer. */
+    public boolean offer(String key, boolean recovery) {
+        synchronized (lifecycle) {
+            if (closed.get() || !accepting.get()) return false;
+            if (active.contains(key)) return true;
+            int count = recovery ? recovering.size() : active.size() - recovering.size();
+            if (count >= (recovery ? recoveryParallelism : parallelism)) return false;
+            active.add(key);
+            if (recovery) recovering.add(key);
+            try {
+                (recovery ? recoveries : workers).execute(new Job(key));
+            } catch (RejectedExecutionException stopped) {
+                finished(key);
+                return false;
             }
+            return true;
         }
     }
 
@@ -315,6 +325,8 @@ public final class WorkerRuntime implements AutoCloseable {
         if (claimed.isEmpty()) return;
         var work = claimed.get();
         Thread thread = Thread.currentThread();
+        var providerCall = new ProviderCall(thread);
+        providerCalls.put(key, providerCall);
         var stopped = new AtomicBoolean();
         ScheduledFuture<?> renewal;
         try {
@@ -322,7 +334,7 @@ public final class WorkerRuntime implements AutoCloseable {
                     scheduler.scheduleWithFixedDelay(
                             () -> {
                                 try {
-                                    store.renew(work, lease);
+                                    if (store.renew(work, lease)) providerCall.cancel();
                                 } catch (RuntimeException error) {
                                     leaseFailures.incrementAndGet();
                                     stopped.set(true);
@@ -335,6 +347,7 @@ public final class WorkerRuntime implements AutoCloseable {
                             TimeUnit.MILLISECONDS);
         } catch (RejectedExecutionException closing) {
             // Shutdown can race with a claim. No dispatch marker or external call exists yet.
+            providerCalls.remove(key, providerCall);
             store.release(work, Duration.ZERO);
             return;
         }
@@ -348,13 +361,19 @@ public final class WorkerRuntime implements AutoCloseable {
                 provider.validateStart(work.request());
             store.configureOutput(work, provider.capabilities().output());
             var before = store.begin(work);
-            ExecutionResult result =
-                    ExecutionRecovery.resolve(
-                            provider,
-                            before.request(),
-                            before.result(),
-                            before.attempted(),
-                            before.cancellationRequested());
+            ExecutionResult result;
+            providerCall.enter(before.cancellationRequested());
+            try {
+                result =
+                        ExecutionRecovery.resolve(
+                                provider,
+                                before.request(),
+                                before.result(),
+                                before.attempted(),
+                                before.cancellationRequested());
+            } finally {
+                providerCall.leave();
+            }
             retry = result.state() == ExecutionState.UNKNOWN;
             if (!stopped.get() && !closed.get()) {
                 if (before.cancellationRequested() && !before.attempted() && !before.outputSealed())
@@ -365,7 +384,14 @@ public final class WorkerRuntime implements AutoCloseable {
                         && !(before.cancellationRequested() && !before.attempted())) {
                     long offset = before.outputOffset();
                     for (int i = 0; i < 16 && !stopped.get() && !closed.get(); i++) {
-                        var page = provider.output(before.request(), offset);
+                        if (providerCall.requested() && !before.cancellationRequested()) break;
+                        OutputPage page;
+                        providerCall.enter(before.cancellationRequested());
+                        try {
+                            page = provider.output(before.request(), offset);
+                        } finally {
+                            providerCall.leave();
+                        }
                         store.appendOutput(work, page);
                         if (page.terminal() || page.nextOffset() == offset) break;
                         offset = page.nextOffset();
@@ -377,15 +403,54 @@ public final class WorkerRuntime implements AutoCloseable {
             throw error;
         } finally {
             renewal.cancel(false);
+            providerCalls.remove(key, providerCall);
             try {
                 if (!stopped.get() && !closed.get()) {
-                    if (retry) store.defer(work, poll, retryMaximum);
-                    else store.release(work, poll);
+                    if (providerCall.requested() && !work.cancellationRequested())
+                        store.release(work, Duration.ZERO);
+                    else if (retry) store.defer(work, poll, retryMaximum);
+                    else store.release(work, accepting.get() ? poll : Duration.ZERO);
                 }
             } catch (DurableException error) {
                 if (error.code() != DurableException.Code.FENCED) throw error;
             }
             Thread.interrupted();
+        }
+    }
+
+    /** Signals a locally hosted provider after cancellation is durable. */
+    public void wakeCancellation(String key) {
+        var call = providerCalls.get(key);
+        if (call != null) call.cancel();
+    }
+
+    private static final class ProviderCall {
+        private final Thread thread;
+        private boolean interruptible;
+        private boolean cancelled;
+
+        ProviderCall(Thread thread) {
+            this.thread = thread;
+        }
+
+        synchronized void enter(boolean handlingCancellation) {
+            interruptible = !handlingCancellation;
+            if (interruptible && cancelled) thread.interrupt();
+        }
+
+        synchronized void leave() {
+            interruptible = false;
+            if (cancelled) Thread.interrupted();
+        }
+
+        synchronized void cancel() {
+            if (cancelled) return;
+            cancelled = true;
+            if (interruptible) thread.interrupt();
+        }
+
+        synchronized boolean requested() {
+            return cancelled;
         }
     }
 
@@ -466,6 +531,7 @@ public final class WorkerRuntime implements AutoCloseable {
         private Function<ExecutionRequest, Executor> resolver;
         private Duration lease = Duration.ofSeconds(30);
         private Duration poll = Duration.ofMillis(100);
+        private Duration discovery;
         private Duration retryMaximum = Duration.ofSeconds(30);
         private int parallelism = 4;
         private int recoveryParallelism = 2;
@@ -517,6 +583,11 @@ public final class WorkerRuntime implements AutoCloseable {
 
         public Builder pollInterval(Duration value) {
             poll = positive(value);
+            return this;
+        }
+
+        public Builder discoveryInterval(Duration value) {
+            discovery = positive(value);
             return this;
         }
 

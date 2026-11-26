@@ -201,6 +201,14 @@ public final class HttpSessionBackend implements SessionBackend {
     }
 
     @Override
+    public List<ThreadSpec> ready(SessionKey session, List<HarnessSelector> harnesses, int limit) {
+        return List.of(
+                as(
+                        call("ready", "session", session, "harnesses", harnesses, "limit", limit),
+                        ThreadSpec[].class));
+    }
+
+    @Override
     public TurnView turn(ThreadKey session, String turnId) {
         return as(call("turn", "thread", session, "turnId", turnId), TurnView.class);
     }
@@ -284,17 +292,14 @@ public final class HttpSessionBackend implements SessionBackend {
 
     @Override
     public Optional<Lease> claim(ThreadKey session, String owner, Duration duration) {
-        return Optional.ofNullable(
-                as(
-                        call(
-                                "claim",
-                                "thread",
-                                session,
-                                "owner",
-                                owner,
-                                "duration",
-                                duration.toMillis()),
-                        Lease.class));
+        return claimOutcome(session, owner, duration).ownership();
+    }
+
+    @Override
+    public ClaimOutcome claimOutcome(ThreadKey session, String owner, Duration duration) {
+        return as(
+                call("claim", "thread", session, "owner", owner, "duration", duration.toMillis()),
+                ClaimOutcome.class);
     }
 
     @Override

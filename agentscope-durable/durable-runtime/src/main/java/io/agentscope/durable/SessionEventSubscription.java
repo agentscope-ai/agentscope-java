@@ -48,6 +48,7 @@ public final class SessionEventSubscription implements AutoCloseable {
     private final Consumer<SessionEventSubscription> removed;
     private final ScheduledExecutorService scheduler;
     private final long pollMillis;
+    private final long retryMillis;
     private final Object lifecycle = new Object();
     private volatile SessionEventClient reader;
     private volatile Throwable lastFailure;
@@ -75,6 +76,7 @@ public final class SessionEventSubscription implements AutoCloseable {
             Consumer<Throwable> errors,
             ScheduledExecutorService scheduler,
             Duration pollInterval,
+            Duration retryInterval,
             Consumer<SessionEventSubscription> removed) {
         this.session = Objects.requireNonNull(session);
         this.filter = Objects.requireNonNull(filter);
@@ -86,6 +88,7 @@ public final class SessionEventSubscription implements AutoCloseable {
         this.errors = Objects.requireNonNull(errors);
         this.scheduler = Objects.requireNonNull(scheduler);
         this.pollMillis = pollInterval.toMillis();
+        this.retryMillis = retryInterval.toMillis();
         this.removed = Objects.requireNonNull(removed);
     }
 
@@ -180,9 +183,9 @@ public final class SessionEventSubscription implements AutoCloseable {
                 if (!closed) {
                     retryAfter =
                             failed
-                                    ? System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(pollMillis)
+                                    ? System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(retryMillis)
                                     : 0;
-                    schedule(failed ? pollMillis : signalled ? 0 : delay);
+                    schedule(failed ? retryMillis : signalled ? 0 : delay);
                 }
             }
         }

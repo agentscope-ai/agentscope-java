@@ -130,10 +130,11 @@ public final class DurableTypes {
         CANCELLING,
         SUCCEEDED,
         FAILED,
-        CANCELLED;
+        CANCELLED,
+        CONVERTED;
 
         public boolean terminal() {
-            return this == SUCCEEDED || this == FAILED || this == CANCELLED;
+            return this == SUCCEEDED || this == FAILED || this == CANCELLED || this == CONVERTED;
         }
     }
 
@@ -390,6 +391,7 @@ public final class DurableTypes {
 
     public enum ControlKind {
         STEER,
+        STEER_QUEUED,
         INJECT,
         WITHDRAW,
         CANCEL,
@@ -693,7 +695,14 @@ public final class DurableTypes {
         }
 
         public boolean matches(PublicEvent event) {
-            return matches(event.threadId(), event.turnId(), event.runId());
+            return matches(event.threadId(), event.turnId(), event.runId())
+                    || (turnId != null
+                            && runId == null
+                            && "turn.converted".equals(event.type())
+                            && matches(
+                                    event.threadId(),
+                                    event.data().path("message").path("turnId").asText(null),
+                                    null));
         }
 
         public boolean matches(LiveEvent event) {
@@ -857,6 +866,7 @@ public final class DurableTypes {
             output = DurableJson.copy(output);
             if (expectedRevision < 0
                     || status == TurnStatus.QUEUED
+                    || status == TurnStatus.CONVERTED
                     || status == TurnStatus.PAUSING
                     || status == TurnStatus.CANCELLING)
                 throw new IllegalArgumentException("Invalid commit revision/status");

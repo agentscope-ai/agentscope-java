@@ -176,7 +176,7 @@ public final class JdbcRecordStore implements RecordStore {
                         if (!rs.next()) throw new SQLException("Missing transaction record");
                     }
                 }
-                T result = action.apply(new Parts(c, key, time(c)));
+                T result = action.apply(new Parts(c, key, time(c), dialect));
                 c.commit();
                 return result;
             } catch (SQLException | RuntimeException | Error e) {
@@ -208,11 +208,13 @@ public final class JdbcRecordStore implements RecordStore {
         private final Connection connection;
         private final String scope;
         private final long now;
+        private final Dialect dialect;
 
-        Parts(Connection connection, String scope, long now) {
+        Parts(Connection connection, String scope, long now, Dialect dialect) {
             this.connection = connection;
             this.scope = scope;
             this.now = now;
+            this.dialect = dialect;
         }
 
         public long now() {
@@ -267,10 +269,18 @@ public final class JdbcRecordStore implements RecordStore {
 
         public List<String> keys(String prefix, String after, int limit) {
             checkLimit(limit);
+            String keyOrder = keyOrder("part_key", dialect);
             try (var s =
                     connection.prepareStatement(
-                            "SELECT part_key FROM durable_parts WHERE record_key=? AND part_key>=?"
-                                    + " AND part_key<? AND part_key>? ORDER BY part_key LIMIT ?")) {
+                            "SELECT part_key FROM durable_parts WHERE record_key=? AND "
+                                    + keyOrder
+                                    + ">=? AND "
+                                    + keyOrder
+                                    + "<? AND "
+                                    + keyOrder
+                                    + ">? ORDER BY "
+                                    + keyOrder
+                                    + " LIMIT ?")) {
                 s.setString(1, scope);
                 s.setString(2, prefix);
                 s.setString(3, prefix + "\uffff");
@@ -316,17 +326,25 @@ public final class JdbcRecordStore implements RecordStore {
 
     @Override
     public List<Work> ready(String queue, int limit) {
+        return ready(queue, null, limit);
+    }
+
+    @Override
+    public List<Work> ready(String queue, String scope, int limit) {
         checkKey(queue, 256, "queue");
         checkLimit(limit);
+        String scopeFilter = scope == null ? "" : " AND record_key=?";
         try (var c = connect();
                 var s =
                         c.prepareStatement(
                                 "SELECT record_key,work_id,ready_at,payload FROM durable_work"
                                         + " WHERE queue=? AND ready_at<=?"
+                                        + scopeFilter
                                         + " ORDER BY ready_at,record_key,work_id LIMIT ?")) {
             s.setString(1, queue);
             s.setLong(2, time(c));
-            s.setInt(3, limit);
+            if (scope != null) s.setString(3, scope);
+            s.setInt(scope == null ? 3 : 4, limit);
             try (var rs = s.executeQuery()) {
                 var result = new ArrayList<Work>();
                 while (rs.next())
@@ -352,16 +370,28 @@ public final class JdbcRecordStore implements RecordStore {
             throw new IllegalArgumentException("Invalid " + name);
     }
 
+    private static String keyOrder(String column, Dialect dialect) {
+        // The prefix bounds and cursors depend on byte order, independent of the database locale.
+        return dialect == Dialect.POSTGRESQL ? column + " COLLATE \"C\"" : column;
+    }
+
     @Override
     public List<String> keys(String prefix, String after, int limit) {
         if (limit < 1 || limit > 1000) throw new IllegalArgumentException("Limit must be 1..1000");
-        // Lexical bounds avoid LIKE wildcard interpretation in namespaces.
+        String keyOrder = keyOrder("record_key", dialect);
         try (Connection c = connect();
                 var s =
                         c.prepareStatement(
                                 "SELECT record_key FROM durable_records WHERE payload IS NOT NULL"
-                                    + " AND record_key>=? AND record_key<? AND record_key>? ORDER"
-                                    + " BY record_key LIMIT ?")) {
+                                        + " AND "
+                                        + keyOrder
+                                        + ">=? AND "
+                                        + keyOrder
+                                        + "<? AND "
+                                        + keyOrder
+                                        + ">? ORDER BY "
+                                        + keyOrder
+                                        + " LIMIT ?")) {
             s.setString(1, prefix);
             s.setString(2, prefix + "\uffff");
             s.setString(3, after == null ? "" : after);

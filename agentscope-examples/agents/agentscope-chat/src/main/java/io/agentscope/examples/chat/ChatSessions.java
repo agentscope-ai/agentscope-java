@@ -173,6 +173,13 @@ public final class ChatSessions implements AutoCloseable {
         return turn(sessionId, turnId).steer(id(requestId), text);
     }
 
+    public CommandReceipt steerQueued(
+            String sessionId, String activeTurnId, String operationId, String queuedRequestId) {
+        return session(sessionId)
+                .mainThread()
+                .convertQueuedTurnToSteer(id(operationId), id(queuedRequestId), id(activeTurnId));
+    }
+
     public CommandReceipt inject(String sessionId, String turnId, String requestId, String text) {
         validateText(text);
         return turn(sessionId, turnId).inject(id(requestId), Input.text(text));

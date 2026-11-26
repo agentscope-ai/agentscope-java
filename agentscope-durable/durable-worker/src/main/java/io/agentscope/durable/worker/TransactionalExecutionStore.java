@@ -33,22 +33,36 @@ import io.agentscope.durable.store.RecordStore;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.function.BiFunction;
+import java.util.function.Consumer;
 
 /** Transactional Hands ledger and immutable, replayable source event outbox. */
 public final class TransactionalExecutionStore implements ExecutionStore {
     private final RecordStore records;
     private final String prefix;
+    private final Consumer<String> publications;
+
+    public record Received(String key, boolean runnable, boolean recovery) {}
+
+    private record Mutation<T>(T result, boolean pendingEvents) {}
 
     public TransactionalExecutionStore(RecordStore records) {
         this.records = records;
         prefix = "execution:";
+        publications = key -> {};
     }
 
     public TransactionalExecutionStore(RecordStore records, String pool) {
+        this(records, pool, key -> {});
+    }
+
+    public TransactionalExecutionStore(
+            RecordStore records, String pool, Consumer<String> publications) {
         this.records = records;
         prefix = "execution-pool:" + DurableJson.hash(DurableJson.text(pool, "pool")) + ":";
+        this.publications = Objects.requireNonNull(publications);
     }
 
     public static final class State {
@@ -129,16 +143,33 @@ public final class TransactionalExecutionStore implements ExecutionStore {
     }
 
     private <T> T transact(String key, BiFunction<State, Long, T> change) {
-        return records.transaction(
-                key,
-                tx -> {
-                    var state = read(tx);
-                    if (state == null)
-                        throw failure(DurableException.Code.NOT_FOUND, "Execution not found");
-                    var value = change.apply(state, tx.now());
-                    save(state);
-                    return value;
-                });
+        Mutation<T> committed =
+                records.transaction(
+                        key,
+                        tx -> {
+                            var state = read(tx);
+                            if (state == null)
+                                throw failure(
+                                        DurableException.Code.NOT_FOUND, "Execution not found");
+                            long sequence = state.sequence;
+                            var value = change.apply(state, tx.now());
+                            save(state);
+                            return new Mutation<>(value, state.sequence > sequence);
+                        });
+        if (committed.pendingEvents()) publicationHint(key);
+        return committed.result();
+    }
+
+    private void publicationHint(String key) {
+        try {
+            publications.accept(key);
+        } catch (RuntimeException error) {
+            System.getLogger(TransactionalExecutionStore.class.getName())
+                    .log(
+                            System.Logger.Level.WARNING,
+                            "Execution outbox notification failed",
+                            error);
+        }
     }
 
     private static void same(State state, ExecutionRequest request) {
@@ -206,27 +237,41 @@ public final class TransactionalExecutionStore implements ExecutionStore {
     }
 
     /** QUERY repairs missing source events; it never creates execution work. */
-    public void receive(Command command) {
+    public Received receive(Command command) {
         ExecutionMessages.validate(command);
-        records.transaction(
-                key(command.request()),
-                tx -> {
-                    var state = read(tx);
-                    if (state == null) {
-                        if (command.kind() == Kind.QUERY)
-                            throw failure(
-                                    DurableException.Code.NOT_FOUND, "Execution not admitted");
-                        state = create(tx, command.request());
-                    } else same(state, command.request());
-                    if (command.afterSequence() > state.sequence)
-                        throw failure(
-                                DurableException.Code.CONFLICT, "Replay cursor ahead of source");
-                    if (command.kind() == Kind.CANCEL) cancel(state);
-                    state.publishedSequence =
-                            Math.min(state.publishedSequence, command.afterSequence());
-                    save(state);
-                    return null;
-                });
+        String key = key(command.request());
+        var committed =
+                records.transaction(
+                        key,
+                        tx -> {
+                            var state = read(tx);
+                            if (state == null) {
+                                if (command.kind() == Kind.QUERY)
+                                    throw failure(
+                                            DurableException.Code.NOT_FOUND,
+                                            "Execution not admitted");
+                                state = create(tx, command.request());
+                            } else same(state, command.request());
+                            if (command.afterSequence() > state.sequence)
+                                throw failure(
+                                        DurableException.Code.CONFLICT,
+                                        "Replay cursor ahead of source");
+                            if (command.kind() == Kind.CANCEL) cancel(state);
+                            state.publishedSequence =
+                                    Math.min(state.publishedSequence, command.afterSequence());
+                            save(state);
+                            boolean runnable =
+                                    command.kind() != Kind.QUERY
+                                            && !(state.result.state().terminal()
+                                                    && state.outputSealed)
+                                            && Math.max(state.expiresAt, state.nextAttemptAt)
+                                                    <= tx.now();
+                            return new Mutation<>(
+                                    new Received(key, runnable, state.attempted || state.cancelled),
+                                    state.publishedSequence < state.sequence);
+                        });
+        if (committed.pendingEvents()) publicationHint(key);
+        return committed.result();
     }
 
     public Optional<Event> pendingEvent(String key) {
@@ -396,13 +441,13 @@ public final class TransactionalExecutionStore implements ExecutionStore {
             throw failure(DurableException.Code.FENCED, "Worker lease lost");
     }
 
-    public void renew(Work work, Duration lease) {
-        transact(
+    public boolean renew(Work work, Duration lease) {
+        return transact(
                 work.key(),
                 (state, now) -> {
                     fence(state, work, now);
                     state.expiresAt = now + lease.toMillis();
-                    return null;
+                    return state.cancelled;
                 });
     }
 

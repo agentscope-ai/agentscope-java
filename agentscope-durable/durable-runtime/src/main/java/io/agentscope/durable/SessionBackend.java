@@ -107,7 +107,8 @@ public interface SessionBackend extends AutoCloseable {
             boolean atomicCheckpointAndIntent,
             boolean fencedOwnership,
             boolean durableWaits,
-            boolean eventReplay) {}
+            boolean eventReplay,
+            boolean messageDrivenScheduling) {}
 
     Capabilities capabilities();
 
@@ -149,6 +150,11 @@ public interface SessionBackend extends AutoCloseable {
     /** Ready candidates are ordered by storage time, not Session enumeration order. */
     List<ThreadSpec> ready(List<HarnessSelector> harnesses, int limit);
 
+    /** Optional Session-scoped discovery for notifications. */
+    default List<ThreadSpec> ready(SessionKey session, List<HarnessSelector> harnesses, int limit) {
+        return List.of();
+    }
+
     TurnView turn(ThreadKey session, String turnId);
 
     /** Prepare exactly one invocation; retry the same request ID after an uncertain response. */
@@ -169,6 +175,56 @@ public interface SessionBackend extends AutoCloseable {
             ThreadKey thread, String turnId, String runId, String stepId, String cursor, int limit);
 
     Optional<Lease> claim(ThreadKey session, String owner, Duration duration);
+
+    enum ClaimStatus {
+        ACQUIRED,
+        REUSED,
+        NO_WORK,
+        LEASE_HELD,
+        NOT_DUE,
+        WAITING,
+        STALE_DISPATCH,
+        UNKNOWN
+    }
+
+    /** The outcome and eligibility delay observed in the same transaction as the claim. */
+    record ClaimOutcome(ClaimStatus status, Lease lease, Long discoveryDelayMillis) {
+        static ClaimOutcome from(Optional<Lease> lease) {
+            return lease.map(value -> new ClaimOutcome(ClaimStatus.ACQUIRED, value, null))
+                    .orElseGet(() -> new ClaimOutcome(ClaimStatus.UNKNOWN, null, null));
+        }
+
+        public Optional<Lease> ownership() {
+            return Optional.ofNullable(lease);
+        }
+    }
+
+    default ClaimOutcome claimOutcome(ThreadKey thread, String owner, Duration duration) {
+        return ClaimOutcome.from(claim(thread, owner, duration));
+    }
+
+    default ClaimOutcome claimOutcome(TurnDispatch dispatch, String owner, Duration duration) {
+        return ClaimOutcome.from(claim(dispatch, owner, duration));
+    }
+
+    /** Indexed publication backlog. A send receipt does not consume a dispatch. */
+    default List<TurnDispatch> pendingDispatches(int limit) {
+        throw new UnsupportedOperationException("Turn dispatch is not supported");
+    }
+
+    default Optional<TurnDispatch> pendingDispatch(ThreadKey key) {
+        throw new UnsupportedOperationException("Turn dispatch is not supported");
+    }
+
+    /** Atomically reserves a publication attempt and schedules retry even after a successful send. */
+    default boolean reserveDispatch(TurnDispatch dispatch, Duration retry) {
+        throw new UnsupportedOperationException("Turn dispatch is not supported");
+    }
+
+    /** Claims only the Turn and generation identified by this delivery. */
+    default Optional<Lease> claim(TurnDispatch dispatch, String owner, Duration duration) {
+        throw new UnsupportedOperationException("Turn dispatch is not supported");
+    }
 
     void renew(Lease lease, Duration duration);
 

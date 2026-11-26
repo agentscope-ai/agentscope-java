@@ -443,6 +443,7 @@ class QueuedExecutorTest {
                             records,
                             mock(SessionBackend.class),
                             sent::add,
+                            Duration.ofMillis(1),
                             Duration.ofMillis(1));
             executor.tick(error -> fail(error));
             assertEquals(1, failures.get());
@@ -459,6 +460,32 @@ class QueuedExecutorTest {
             executor.cancel(request, null);
             executor.tick(error -> fail(error));
             assertEquals(Kind.CANCEL, sent.get(3).kind());
+        }
+    }
+
+    @Test
+    void progressWaitsForItsResponseDeadlineButAKnownSequenceGapQueriesImmediately() {
+        var sent = new ArrayList<Command>();
+        var running = new ExecutionResult(ExecutionState.RUNNING, "external", null, null);
+        try (var records = open(directory.resolve("response.db"))) {
+            var executor =
+                    new QueuedExecutor(
+                            "hands",
+                            records,
+                            mock(SessionBackend.class),
+                            sent::add,
+                            Duration.ofMillis(1),
+                            Duration.ofMinutes(1));
+            executor.startExecution(request);
+            executor.tick(error -> fail(error));
+            assertEquals(Kind.EXECUTE, sent.get(0).kind());
+            executor.receive(ExecutionMessages.event(request, 1, running));
+            executor.tick(error -> fail(error));
+            assertEquals(1, sent.size());
+            executor.receive(ExecutionMessages.event(request, 3, completed));
+            executor.tick(error -> fail(error));
+            assertEquals(Kind.QUERY, sent.get(1).kind());
+            assertEquals(1, sent.get(1).afterSequence());
         }
     }
 

@@ -46,7 +46,7 @@ final class RocketMqExecutionTopology {
                 prefix + "-worker-controls");
     }
 
-    private static String component(String value, String description) {
+    static String component(String value, String description) {
         value = DurableJson.text(value, description);
         if (!NAME.matcher(value).matches())
             throw new IllegalArgumentException(description + " must use letters, digits, _ or -");

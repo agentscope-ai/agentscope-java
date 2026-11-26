@@ -245,6 +245,18 @@ a safe boundary; they do not interrupt a model mid-token or undo a dispatched to
 `withdraw` can remove input only before it is applied. If completion wins a race with
 a control, re-read the Turn rather than assuming the control took effect.
 
+To redirect an unstarted submission into the active Turn, pass its original submission
+request ID and the active Turn ID to `convertQueuedTurnToSteer`:
+
+```java
+conversation.mainThread().convertQueuedTurnToSteer(
+        "redirect-summary-1", "summary-1", investigation.turnId());
+```
+
+The source Turn becomes `CONVERTED`, and its input keeps the same message ID. The operation
+returns a conflict if the active Turn has finished or the queued Turn has already started.
+Use the same operation ID for retries.
+
 A control receipt confirms admission. Observe `signal.applied` or the resulting Turn
 state to confirm processing. A queued Turn can be cancelled immediately. Cancellation
 of active work requires settlement of external operations; accepted cancellation does
@@ -581,24 +593,44 @@ worker.start();
 The Brain transport ledger and ObjectStore automatically reuse the SessionBackend's local storage;
 Runtime binds, starts, and closes the remote Executor. Users do not repeat the store, backend, or
 route name. The Worker host supplies its execution ledger, tool Executor, and authorization policy.
-Polling defaults to 100ms; Brain retries unconfirmed commands or queries admitted
-work every 5s. Configure pollInterval/retryInterval as needed. Adapters internally
-manage pending publications, inbox deduplication, repair and consumer callbacks.
+Committed commands, Worker admissions, and outbox events trigger delivery by execution.
+Indexed repair defaults to two seconds. Brain retries unconfirmed commands after
+`retryInterval` (five seconds by default). It requests replay immediately for a known
+sequence gap or after `responseTimeout` without new progress (30 seconds by default).
+On `RocketMqWorker`, configure ledger discovery with `discoveryInterval`, event outbox
+repair with `publicationRepairInterval`, and provider retry delay with `providerPollInterval`.
 Runtime and Worker close MQ clients created from ClientConfiguration. Stores, SessionBackend, and
 tool providers remain host-owned.
 
-The default `durable` namespace and `hands` route derive commands, controls, and updates topics plus
-their consumer groups. Both sides require no physical topic configuration. Keeping controls separate
-prevents execute backlog from delaying cancellation and query. Updates carry execution state and
-results. Each capability pool has its own command routing and consumer group;
-pool replicas share the group and ledger. Brain result consumers use another group,
-whose replicas share Brain delivery records and SessionBackend. Separate deployments
-with independent databases use separate namespaces.
-The host provisions the derived topics/groups, ACLs, TLS, credentials and retention. Worker
-authorization runs before ledger access.
+Provision LITE parents and individual Shared wildcard consumer groups on a LiteTopic-capable
+Broker and Cluster Proxy. The default MQ namespace is `durable`.
 
-Using [RocketMQ SimpleConsumer](https://rocketmq.apache.org/docs/featureBehavior/06consumertype/),
-Hands ACKs after durable admission; Brain ACKs after inbox persistence and SessionBackend
+| Parent Topic | Consumer group | LiteTopic scope |
+| --- | --- | --- |
+| `durable-turn-dispatch` | `durable-turn-runner` | Session + Thread |
+| `durable-turn-signal` | `durable-turn-signal` | Session + Thread |
+| `durable-hands-commands` | `durable-hands-worker` | Session |
+| `durable-hands-controls` | `durable-hands-worker-controls` | Session |
+| `durable-hands-updates` | `durable-hands-brain` | Session + execution |
+
+Replace `durable` with your deployment namespace and `hands` with the execution route.
+For each parent and group, set these attributes with the deployment's NameServer and cluster.
+
+```sh
+mqadmin updateTopic -n "$NAMESRV" -c "$CLUSTER" -t "$PARENT" -a '+message.type=LITE'
+mqadmin updateSubGroup -n "$NAMESRV" -c "$CLUSTER" -g "$GROUP" -o true -m true \
+  --attributes "+lite.bind.topic=$PARENT,+lite.sub.model=Shared,+lite.sub.wildcard=true"
+```
+
+Configure ACLs, authentication, TLS, and retention for those resources. Replicas of a
+tool pool share its execution ledger. Brain replicas share its delivery and Session
+records. Deployments with independent databases use separate MQ namespaces.
+Worker authorization runs before ledger access.
+Keep `enableProxyAutoRenew` enabled on the Cluster Proxy. The Lite push consumer uses
+the Proxy's invisibility settings when receiving messages.
+
+With [RocketMQ LiteTopic](https://rocketmq.apache.org/docs/domainModel/03litetopic/),
+Hands acknowledges after durable admission. Brain acknowledges after inbox persistence and SessionBackend
 acceptance. Broker ACK is not tool completion. Cancellation before execution leaves
 a tombstone. Queries replay original state without creating tool effects.
 Republishing saved results never reruns tools. Scans repair failed publication and
@@ -616,10 +648,51 @@ Wire envelopes are limited to 1 MiB. Configure the same accessible ObjectStore v
 `objects(...)` on both MQ adapters to externalize larger envelopes. Object references
 are scoped and digest-checked; inaccessible or invalid payloads are not acknowledged.
 
-RocketMqWakeups remains a separate session/subscription hint transport. SSE reads
-public SessionBackend events. MQ execution does not require RocketMqWakeups:
-single-host Brain can use local hints, and persistent scanning also repairs
-cross-process notification gaps.
+To enable the two Turn channels, create a `RocketMqTurnScheduler` and pass it to
+`PostgresBackend.builder().notifications(scheduler)`, or use `backend.withWakeups(scheduler)`
+with a local backend. The execution Runtime starts the consumers. The host closes the
+scheduler after its runtimes. The backend reports this setup through
+`messageDrivenScheduling`. The database retains FIFO order and dispatch generations.
+The submitting host publishes the due dispatch after commit, including on an API-only host.
+The envelope records the Turn revision and the reason at dispatch creation. Consumers check
+the parent, LiteTopic, and message key. The backend validates the exact Turn and generation
+when claiming. Acknowledging a dispatch leaves the publication due for repair until a claim
+changes its generation. Turn signals notify readers of a committed change.
+
+`DurableRuntime.Builder.repairInterval` controls fallback scanning on MQ execution hosts
+(30 seconds by default). `pollInterval` controls database discovery on other hosts.
+Session hints scope discovery to the changed Session. `releaseDelay` controls how long
+unsettled work waits after its lease is released.
+Pass `RocketMqTurnScheduler.Options` to `create` to configure the Outbox repair interval,
+the wait before republishing an unclaimed dispatch, and separate dispatch and signal cache
+sizes. The defaults are 2 seconds, 5 seconds, and 32 messages per consumer. Hands can set
+`RocketMqWorker.Builder.controlCacheSize` independently of its command consumer cache.
+
+During a rolling restart, take the host out of service, then call `runtime.drain(timeout)`
+for Brain and `worker.drain(timeout)` for Hands before closing their adapters and stores.
+Drain stops admission and lets in-flight calls reach a durable boundary. A completed call
+releases unsettled work immediately during drain, subject to its persisted retry schedule.
+The Brain dispatch consumer closes while the signal consumer and Outbox can still publish.
+Hands also waits for pending result publications. Allow time for both drain and SDK close in
+the deployment termination window. A replacement can recover work left by an expired lease.
+
+Use `runtime.schedulingStatistics()` to export Turn scheduling metrics. Scan counts are
+grouped by discovery source. Take the change in `total` over an interval to calculate scan
+QPS. `emptyRatio()` divides empty scans by completed scans, excluding failures. Claim
+counts distinguish acquired or recovered leases, empty queues, held leases, work that is
+waiting or due later, and stale dispatches. Divide each outcome's change by the change
+across all outcomes over the same interval to compute its rate. Claim errors have a
+separate counter. The discovery latency histogram measures
+milliseconds from a dispatch becoming eligible to a new lease being acquired, using the
+storage clock. Its bucket counts are per bucket and the final bucket holds values above
+the largest bound. Dispatches created before eligibility timestamps were recorded may
+have no latency sample.
+
+`activeDispatchDuplicates` counts exact duplicates of active or already queued dispatches
+on that Runtime. `scheduler.statistics()` reports Turn outbox repair scans, confirmed repair
+publications, publications skipped by the reservation check, and publication failures.
+The counters are process-local and use a fixed set of labels without Session or Turn IDs.
+Treat a source or outcome that has never occurred as zero.
 
 
 ## Choose a deployment adapter
@@ -813,8 +886,11 @@ can be sparse; `EventProjection(session, filter)` accepts them while whole-Sessi
 continues to check sequence continuity.
 
 Callbacks run serially per subscription on dedicated observer workers, separate from
-Agent execution. Hints coalesce, polling repairs missed hints, and callback/backend
-failures retry after the Runtime's `pollInterval`. Only successful callback return
+Agent execution. Session-change hints wake both `await()` and event subscriptions.
+`observationInterval` controls periodic reads for missed hints. The default is two seconds
+with notifications and 100 milliseconds for polling-only transports.
+`observationRetryInterval` controls retries after a failed event read or callback.
+Only successful callback return
 advances the cursor. The Runtime `onError` handler receives failures; the subscription
 exposes `cursor()`, `lastFailure()` and `isClosed()`. Failed error reporting does not
 stop retries. `observerParallelism` controls shared callback capacity (default 2);

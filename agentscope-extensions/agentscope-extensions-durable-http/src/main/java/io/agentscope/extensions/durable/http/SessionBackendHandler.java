@@ -161,14 +161,17 @@ public final class SessionBackendHandler implements HttpHandler {
                             result = backend.submit(thread, text(p, "requestId"), p.get("input"));
                     case "sessions" ->
                             result = backend.sessions(text(p, "after"), p.path("limit").asInt());
-                    case "ready" ->
-                            result =
-                                    backend.ready(
-                                            List.of(
-                                                    DurableJson.convert(
-                                                            p.get("harnesses"),
-                                                            HarnessSelector[].class)),
-                                            p.path("limit").asInt());
+                    case "ready" -> {
+                        var harnesses =
+                                List.of(
+                                        DurableJson.convert(
+                                                p.get("harnesses"), HarnessSelector[].class));
+                        int limit = p.path("limit").asInt();
+                        result =
+                                key == null
+                                        ? backend.ready(harnesses, limit)
+                                        : backend.ready(key, harnesses, limit);
+                    }
                     case "turn" -> result = backend.turn(thread, text(p, "turnId"));
                     case "prepareRun" -> result = backend.prepareRun(lease, text(p, "requestId"));
                     case "run" -> result = backend.run(thread, text(p, "turnId"), text(p, "runId"));
@@ -212,11 +215,10 @@ public final class SessionBackendHandler implements HttpHandler {
                                             p.path("limit").asInt());
                     case "claim" ->
                             result =
-                                    backend.claim(
-                                                    thread,
-                                                    text(p, "owner"),
-                                                    Duration.ofMillis(p.path("duration").asLong()))
-                                            .orElse(null);
+                                    backend.claimOutcome(
+                                            thread,
+                                            text(p, "owner"),
+                                            Duration.ofMillis(p.path("duration").asLong()));
                     case "renew" -> {
                         backend.renew(lease, Duration.ofMillis(p.path("duration").asLong()));
                         result = null;

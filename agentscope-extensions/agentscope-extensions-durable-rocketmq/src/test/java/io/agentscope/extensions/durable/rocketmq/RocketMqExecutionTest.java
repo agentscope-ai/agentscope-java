@@ -21,8 +21,6 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyInt;
-import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -85,7 +83,7 @@ import java.util.function.BooleanSupplier;
 import java.util.function.Function;
 import java.util.function.Supplier;
 import org.apache.rocketmq.client.apis.ClientServiceProvider;
-import org.apache.rocketmq.client.apis.consumer.SimpleConsumer;
+import org.apache.rocketmq.client.apis.consumer.ConsumeResult;
 import org.apache.rocketmq.client.apis.message.Message;
 import org.apache.rocketmq.client.apis.message.MessageView;
 import org.apache.rocketmq.client.apis.producer.Producer;
@@ -245,6 +243,8 @@ class RocketMqExecutionTest {
                                     throw new IllegalStateException("Event publication failed");
                                 var view = mock(MessageView.class);
                                 when(view.getTopic()).thenReturn(message.getTopic());
+                                when(view.getLiteTopic()).thenReturn(message.getLiteTopic());
+                                when(view.getKeys()).thenReturn(message.getKeys());
                                 when(view.getBody())
                                         .thenAnswer(
                                                 ignored -> message.getBody().asReadOnlyBuffer());
@@ -260,40 +260,43 @@ class RocketMqExecutionTest {
                             });
         }
 
-        SimpleConsumer consumer(boolean command) throws Exception {
+        RocketMqLoop.Subscription consumer(boolean command) {
             return consumer(command ? TOPOLOGY.commands() : TOPOLOGY.updates());
         }
 
-        SimpleConsumer consumer(String topic) throws Exception {
+        RocketMqLoop.Subscription consumer(String topic) {
             boolean command = !topic.equals(TOPOLOGY.updates());
-            var consumer = mock(SimpleConsumer.class);
             var queue = topic.equals(TOPOLOGY.controls()) ? controls : command ? commands : events;
-            when(consumer.receive(anyInt(), any(Duration.class)))
-                    .thenAnswer(
-                            call -> {
-                                var message = queue.poll(20, TimeUnit.MILLISECONDS);
-                                if (message == null) return List.of();
-                                redelivery.schedule(
-                                        () -> {
-                                            if (!acked.contains(message)) queue.add(message);
-                                        },
-                                        ACK_TIMEOUT_MILLIS,
-                                        TimeUnit.MILLISECONDS);
-                                return List.of(message);
-                            });
-            doAnswer(
-                            call -> {
-                                MessageView message = call.getArgument(0);
-                                if (!command
-                                        && failedEventAck.getAndUpdate(n -> Math.max(0, n - 1)) > 0)
-                                    throw new IllegalStateException("Consumer ACK lost");
-                                acked.add(message);
-                                (command ? commandAcks : eventAcks).incrementAndGet();
-                                return null;
-                            })
-                    .when(consumer)
-                    .ack(any());
-            return consumer;
+            return listener -> {
+                var receiver = Executors.newSingleThreadExecutor();
+                receiver.execute(
+                        () -> {
+                            try {
+                                while (!Thread.currentThread().isInterrupted()) {
+                                    var message = queue.take();
+                                    var result = listener.consume(message);
+                                    boolean lost =
+                                            !command
+                                                    && result == ConsumeResult.SUCCESS
+                                                    && failedEventAck.getAndUpdate(
+                                                                    n -> Math.max(0, n - 1))
+                                                            > 0;
+                                    if (result == ConsumeResult.SUCCESS && !lost) {
+                                        acked.add(message);
+                                        (command ? commandAcks : eventAcks).incrementAndGet();
+                                    } else {
+                                        redelivery.schedule(
+                                                () -> queue.add(message),
+                                                ACK_TIMEOUT_MILLIS,
+                                                TimeUnit.MILLISECONDS);
+                                    }
+                                }
+                            } catch (InterruptedException stopped) {
+                                Thread.currentThread().interrupt();
+                            }
+                        });
+                return receiver::shutdownNow;
+            };
         }
 
         void send(Object command) throws Exception {
@@ -304,6 +307,14 @@ class RocketMqExecutionTest {
                                                     && c.kind() != Kind.EXECUTE
                                             ? TOPOLOGY.controls()
                                             : TOPOLOGY.commands())
+                            .setLiteTopic(
+                                    command instanceof ExecutionMessages.Command c
+                                            ? RocketMqLiteRouting.session(c.request().session())
+                                            : "malformed")
+                            .setKeys(
+                                    command instanceof ExecutionMessages.Command c
+                                            ? c.commandId()
+                                            : "malformed")
                             .setBody(
                                     DurableJson.value(command)
                                             .toString()
@@ -485,8 +496,6 @@ class RocketMqExecutionTest {
                 executor.close();
                 assertThrows(IllegalStateException.class, () -> executor.startExecution(request));
             }
-            verify(commands, never()).close();
-            verify(events, never()).close();
             verify(broker.producer, never()).close();
             assertFalse(hands.keys("execution-pool:", null, 10).isEmpty());
         }
@@ -598,6 +607,62 @@ class RocketMqExecutionTest {
                     ExecutionState.CANCELLED,
                     new TransactionalExecutionStore(records, "hands").query(request).state());
             verify(provider, never()).startExecution(any());
+        }
+    }
+
+    @Test
+    void durableControlInterruptsLocallyRunningProviderAndUsesItsConfirmedOutcome()
+            throws Exception {
+        var started = new CountDownLatch(1);
+        var interrupted = new CountDownLatch(1);
+        Executor provider =
+                new Executor() {
+                    public Capabilities capabilities() {
+                        return new Capabilities(false, true, true);
+                    }
+
+                    public ExecutionResult startExecution(ExecutionRequest request) {
+                        started.countDown();
+                        try {
+                            Thread.sleep(10_000);
+                            throw new AssertionError("Running provider was not interrupted");
+                        } catch (InterruptedException error) {
+                            interrupted.countDown();
+                            return new ExecutionResult(
+                                    ExecutionState.UNKNOWN, "external", null, "interrupted");
+                        }
+                    }
+
+                    public ExecutionResult query(ExecutionRequest request, String handle) {
+                        return new ExecutionResult(ExecutionState.RUNNING, "external", null, null);
+                    }
+
+                    public ExecutionResult cancel(ExecutionRequest request, String handle) {
+                        return new ExecutionResult(
+                                ExecutionState.CANCELLED, "external", null, null);
+                    }
+                };
+        try (var broker = new Broker();
+                var records = open(directory.resolve("cancel-running.db"));
+                var worker =
+                        RocketMqWorker.builder()
+                                .executor("hands", provider)
+                                .recordStore(records)
+                                .clients(
+                                        FACTORY,
+                                        broker.producer,
+                                        broker.consumer(true),
+                                        broker.consumer(TOPOLOGY.controls()))
+                                .authorize(command -> {})
+                                .pollInterval(Duration.ofSeconds(1))
+                                .build()) {
+            worker.start();
+            broker.send(ExecutionMessages.command(Kind.EXECUTE, request));
+            assertTrue(started.await(5, TimeUnit.SECONDS));
+            broker.send(ExecutionMessages.command(Kind.CANCEL, request));
+            assertTrue(interrupted.await(4, TimeUnit.SECONDS));
+            var ledger = new TransactionalExecutionStore(records, "hands");
+            await(() -> ledger.query(request).state() == ExecutionState.CANCELLED);
         }
     }
 

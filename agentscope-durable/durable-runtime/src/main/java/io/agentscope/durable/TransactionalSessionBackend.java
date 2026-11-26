@@ -97,6 +97,7 @@ import java.util.stream.LongStream;
  * A session lock covers independently stored turns, receipts, tools, events and checkpoint heads.
  */
 public final class TransactionalSessionBackend implements SessionBackend {
+    private static final String DISPATCH_QUEUE = "turn-dispatch";
     private final RecordStore store;
     private final ObjectStore objects;
     private final CommitPolicy policy;
@@ -197,7 +198,8 @@ public final class TransactionalSessionBackend implements SessionBackend {
                 true,
                 true,
                 true,
-                true);
+                true,
+                false);
     }
 
     public static final class State {
@@ -210,6 +212,7 @@ public final class TransactionalSessionBackend implements SessionBackend {
         @JsonIgnore public RecordStore.Transaction tx;
         @JsonIgnore public RecordStore.Transaction threadTx;
         @JsonIgnore public ThreadData thread;
+        @JsonIgnore public TurnDispatch.Reason dispatchReason = TurnDispatch.Reason.RECOVERY;
         @JsonIgnore public Map<String, ThreadData> threads;
         @JsonIgnore public List<TransactionMap<?>> details = new ArrayList<>();
         @JsonIgnore public Map<String, TurnData> turns;
@@ -235,6 +238,11 @@ public final class TransactionalSessionBackend implements SessionBackend {
         public long resourcePosition;
         public String journalBranch = "initial";
         public long epoch;
+        public long dispatchGeneration;
+        public long dispatchReadyAt = -1;
+        public Long dispatchEligibleAt;
+        public long dispatchPublicationAt;
+        public TurnDispatch dispatch;
 
         public ThreadView view() {
             return new ThreadView(definition, status);
@@ -410,6 +418,7 @@ public final class TransactionalSessionBackend implements SessionBackend {
                     definition.key().threadId(),
                     next,
                     DurableJson.value(definition));
+            updateDispatch(state, definition.key(), next);
         }
         for (var map :
                 List.of(
@@ -628,6 +637,7 @@ public final class TransactionalSessionBackend implements SessionBackend {
         requireOpen(state.session.status(), "Session");
         requireOpen(state.thread.status, "Thread");
         TurnData turn = new TurnData();
+        state.dispatchReason = TurnDispatch.Reason.SUBMIT;
         turn.id = id;
         turn.threadId = key.threadId();
         turn.input = frozen;
@@ -824,11 +834,15 @@ public final class TransactionalSessionBackend implements SessionBackend {
                                     DurableException.Code.CONFLICT,
                                     "Turn is terminal or cancelling");
                         switch (command.kind()) {
-                            case STEER, INJECT -> {
+                            case STEER, STEER_QUEUED, INJECT -> {
                                 if (turn.epoch == 0 || current(s) != turn)
                                     throw error(
                                             DurableException.Code.CONFLICT,
                                             "Input adjustment requires the active Turn");
+                                if (command.kind() == ControlKind.STEER_QUEUED) {
+                                    convertQueuedTurn(s, turn, command);
+                                    break;
+                                }
                                 String kind =
                                         command.kind() == ControlKind.STEER ? "steer" : "inject";
                                 acceptSignal(
@@ -922,10 +936,54 @@ public final class TransactionalSessionBackend implements SessionBackend {
                                     command.kind().name(),
                                     "accepted",
                                     cursor(s, s.sequence));
+                    s.dispatchReason =
+                            switch (command.kind()) {
+                                case STEER, STEER_QUEUED -> TurnDispatch.Reason.STEER;
+                                case RESUME -> TurnDispatch.Reason.RESUME;
+                                case RESPOND -> TurnDispatch.Reason.RESPONSE;
+                                case SIGNAL -> TurnDispatch.Reason.SIGNAL;
+                                default -> TurnDispatch.Reason.CONTROL;
+                            };
                     s.commands.put(identity, digest);
                     s.tx.put(receiptKey, DurableJson.value(receipt));
                     return receipt;
                 });
+    }
+
+    private static void convertQueuedTurn(State s, TurnData active, ControlCommand command) {
+        String queuedRequestId = command.target();
+        Admission admission = s.admissions.get(queuedRequestId);
+        if (admission == null)
+            throw error(DurableException.Code.NOT_FOUND, "Queued submission not found");
+        TurnData queued = requireTurn(s, admission.receipt().turnId());
+        if (queued.status != TurnStatus.QUEUED || queued.epoch != 0 || queued.parent != null)
+            throw error(DurableException.Code.CONFLICT, "Source must be an unstarted user Turn");
+        String messageId = inputMessageId(queued.id, queuedRequestId, "submit");
+        var original = s.messages.get(messageId);
+        if (!(original instanceof ObjectNode message))
+            throw error(DurableException.Code.CONFLICT, "Queued submission has no user input");
+        ObjectNode reassigned = message.deepCopy();
+        reassigned.put("turnId", active.id);
+        reassigned.put("inputKind", "steer");
+        queued.status = TurnStatus.CONVERTED;
+        queued.revision++;
+        acceptSignal(s, active, new Signal(command.requestId(), "input:steer", queued.input));
+        append(
+                s,
+                queued,
+                new EventInput(
+                        "converted:" + queued.id,
+                        "turn.converted",
+                        DurableJson.value(
+                                Map.of(
+                                        "operationId",
+                                        command.requestId(),
+                                        "message",
+                                        reassigned))));
+    }
+
+    private static String inputMessageId(String turnId, String requestId, String kind) {
+        return "input:" + DurableJson.hash(List.of(turnId, requestId, kind));
     }
 
     private static void inputMessage(
@@ -940,7 +998,7 @@ public final class TransactionalSessionBackend implements SessionBackend {
             String kind,
             JsonNode input,
             String interactionId) {
-        String id = "input:" + DurableJson.hash(List.of(turn.id, requestId, kind));
+        String id = inputMessageId(turn.id, requestId, kind);
         var content = DurableJson.convert(input, DurableMessages.Input.class);
         var message = new DurableMessages.Message("1", id, "user", content.content());
         String text =
@@ -1079,20 +1137,112 @@ public final class TransactionalSessionBackend implements SessionBackend {
                 });
     }
 
+    private static void updateDispatch(State state, ThreadKey key, long readyAt) {
+        ThreadData thread = state.thread;
+        var turn = readyAt < 0 ? null : current(state);
+        if (turn != null
+                && thread.dispatch != null
+                && thread.dispatch.turnId().equals(turn.id)
+                && thread.dispatchReadyAt == readyAt) return;
+        if (turn == null && thread.dispatch == null) return;
+        thread.dispatch =
+                turn == null
+                        ? null
+                        : new TurnDispatch(
+                                TurnDispatch.VERSION,
+                                key,
+                                turn.id,
+                                ++thread.dispatchGeneration,
+                                turn.revision,
+                                state.dispatchReason);
+        thread.dispatchReadyAt = readyAt;
+        thread.dispatchEligibleAt = turn == null ? null : Math.max(state.tx.now(), readyAt);
+        thread.dispatchPublicationAt = readyAt;
+        state.tx.schedule(
+                DISPATCH_QUEUE, key.threadId(), readyAt, DurableJson.value(thread.dispatch));
+    }
+
+    @Override
+    public List<TurnDispatch> pendingDispatches(int limit) {
+        limit(limit);
+        return store.ready(DISPATCH_QUEUE, limit).stream()
+                .map(work -> DurableJson.convert(work.value(), TurnDispatch.class))
+                .toList();
+    }
+
+    @Override
+    public Optional<TurnDispatch> pendingDispatch(ThreadKey key) {
+        return change(
+                key,
+                (s, now) ->
+                        s.thread.dispatchPublicationAt > now
+                                ? Optional.empty()
+                                : Optional.ofNullable(s.thread.dispatch));
+    }
+
+    @Override
+    public boolean reserveDispatch(TurnDispatch dispatch, Duration retry) {
+        long retryMillis = positive(retry);
+        return change(
+                dispatch.thread(),
+                (s, now) -> {
+                    if (!dispatch.equals(s.thread.dispatch) || s.thread.dispatchPublicationAt > now)
+                        return false;
+                    long next = Math.addExact(now, retryMillis);
+                    s.thread.dispatchPublicationAt = next;
+                    s.tx.schedule(
+                            DISPATCH_QUEUE,
+                            dispatch.thread().threadId(),
+                            next,
+                            DurableJson.value(dispatch));
+                    return true;
+                });
+    }
+
     @Override
     public Optional<Lease> claim(ThreadKey key, String owner, Duration duration) {
+        return claimOutcome(key, owner, duration).ownership();
+    }
+
+    @Override
+    public Optional<Lease> claim(TurnDispatch dispatch, String owner, Duration duration) {
+        return claimOutcome(dispatch, owner, duration).ownership();
+    }
+
+    @Override
+    public ClaimOutcome claimOutcome(ThreadKey thread, String owner, Duration duration) {
+        return claimOutcome(thread, null, owner, duration);
+    }
+
+    @Override
+    public ClaimOutcome claimOutcome(TurnDispatch dispatch, String owner, Duration duration) {
+        return claimOutcome(dispatch.thread(), dispatch, owner, duration);
+    }
+
+    private ClaimOutcome claimOutcome(
+            ThreadKey key, TurnDispatch dispatch, String owner, Duration duration) {
         DurableJson.text(owner, "owner");
         long ttl = positive(duration);
         return change(
                 key,
                 (s, now) -> {
                     TurnData turn = current(s);
-                    if (turn == null) return Optional.empty();
-                    if (Objects.equals(turn.owner, owner) && turn.expiresAt > now)
-                        return Optional.of(
-                                new Lease(key, turn.id, owner, turn.epoch, turn.expiresAt));
+                    if (turn == null) return new ClaimOutcome(ClaimStatus.NO_WORK, null, null);
+                    if (Objects.equals(turn.owner, owner)
+                            && turn.expiresAt > now
+                            && (dispatch == null || dispatch.turnId().equals(turn.id)))
+                        return new ClaimOutcome(
+                                ClaimStatus.REUSED,
+                                new Lease(key, turn.id, owner, turn.epoch, turn.expiresAt),
+                                null);
+                    if (dispatch != null && !dispatch.equals(s.thread.dispatch))
+                        return new ClaimOutcome(ClaimStatus.STALE_DISPATCH, null, null);
+                    if (turn.owner != null && turn.expiresAt > now)
+                        return new ClaimOutcome(ClaimStatus.LEASE_HELD, null, null);
                     long ready = readyAt(s, now);
-                    if (ready < 0 || ready > now) return Optional.empty();
+                    if (ready < 0) return new ClaimOutcome(ClaimStatus.WAITING, null, null);
+                    if (ready > now) return new ClaimOutcome(ClaimStatus.NOT_DUE, null, null);
+                    Long eligibleAt = s.thread.dispatchEligibleAt;
                     invocations(s, turn).abandon(now, true);
                     turn.owner = owner;
                     turn.epoch = ++s.thread.epoch;
@@ -1107,7 +1257,10 @@ public final class TransactionalSessionBackend implements SessionBackend {
                                         "turn.started",
                                         DurableJson.value(Map.of())));
                     }
-                    return Optional.of(new Lease(key, turn.id, owner, turn.epoch, turn.expiresAt));
+                    return new ClaimOutcome(
+                            ClaimStatus.ACQUIRED,
+                            new Lease(key, turn.id, owner, turn.epoch, turn.expiresAt),
+                            eligibleAt == null ? null : Math.max(0, now - eligibleAt));
                 });
     }
 
@@ -1402,6 +1555,7 @@ public final class TransactionalSessionBackend implements SessionBackend {
                         }
                     }
                     TurnStatus next = command.status();
+                    if (next.terminal()) s.dispatchReason = TurnDispatch.Reason.NEXT_HEAD;
                     if (r.failedEpoch == lease.epoch()
                             && (!command.tools().isEmpty() || next == TurnStatus.SUCCEEDED))
                         throw error(
@@ -1853,6 +2007,7 @@ public final class TransactionalSessionBackend implements SessionBackend {
         }
         if (DurableJson.hash(t.result).equals(DurableJson.hash(result))) return;
         t.result = result;
+        s.dispatchReason = TurnDispatch.Reason.TOOL_RESULT;
         r.nextAttemptAt = 0; // Accepted result and durable recovery work are the same
         // transaction.
         append(
@@ -2672,7 +2827,12 @@ public final class TransactionalSessionBackend implements SessionBackend {
         String category;
         String id;
         TransactionMap<JsonNode> records;
-        if (event.type().equals("message.delta") || event.type().equals("message.completed")) {
+        if ("turn.converted".equals(event.type())) {
+            category = "messages";
+            id = data.path("message").path("messageId").asText();
+            records = s.messages;
+        } else if (event.type().equals("message.delta")
+                || event.type().equals("message.completed")) {
             String messageId = event.data().path("messageId").asText();
             if (!s.messages.containsKey(messageId))
                 s.tx.put(
@@ -2717,10 +2877,20 @@ public final class TransactionalSessionBackend implements SessionBackend {
 
     @Override
     public List<ThreadSpec> ready(List<HarnessSelector> harnesses, int limit) {
+        return ready(null, harnesses, limit);
+    }
+
+    @Override
+    public List<ThreadSpec> ready(SessionKey session, List<HarnessSelector> harnesses, int limit) {
         limit(limit);
         var candidates = new ArrayList<RecordStore.Work>();
-        for (var selector : harnesses.stream().distinct().toList())
-            candidates.addAll(store.ready(readyQueue(selector), limit));
+        for (var selector : harnesses.stream().distinct().toList()) {
+            String queue = readyQueue(selector);
+            candidates.addAll(
+                    session == null
+                            ? store.ready(queue, limit)
+                            : store.ready(queue, session.storageKey(), limit));
+        }
         return candidates.stream()
                 .sorted(Comparator.comparingLong(RecordStore.Work::readyAt))
                 .map(work -> DurableJson.convert(work.value(), ThreadSpec.class))

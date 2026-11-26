@@ -4,7 +4,7 @@ const $ = id => document.getElementById(id);
 const labels = {
     RUNNING: '执行中', WAITING: '等待结果或补充', PAUSING: '正在暂停', PAUSED: '已暂停',
     CANCELLING: '正在取消', SUCCEEDED: '已完成', FAILED: '执行失败', CANCELLED: '已取消',
-    QUEUED: '已排队', GENERATING_ARGUMENTS: '生成参数中', REQUESTED: '等待执行',
+    QUEUED: '已排队', CONVERTED: '已转为插话', GENERATING_ARGUMENTS: '生成参数中', REQUESTED: '等待执行',
     SUCCESS: '已完成', ERROR: '执行失败', DENIED: '已拒绝', UNKNOWN: '结果待核实',
     SUSPENDED: '等待补充', INTERRUPTED: '已停止', completed: '已完成', generating: '生成中'
 };
@@ -77,8 +77,26 @@ function render() {
     $('resume').hidden = active?.status !== 'PAUSED';
     $('cancel').hidden = !active || active.status === 'CANCELLING';
     $('send').disabled = !snapshot || ($('input-mode').value !== 'submit' && !active);
-    $('queue').textContent = (snapshot?.turns || []).filter(turn => turn.status === 'QUEUED')
-        .map(turn => `排队任务 ${short(turn.turnId)}`).join(' · ');
+    const queued = (snapshot?.turns || []).filter(turn => turn.status === 'QUEUED');
+    const submissions = new Map(Object.values(snapshot?.projection?.messages || {})
+        .filter(message => message.inputKind === 'submit')
+        .map(message => [message.turnId, message]));
+    $('queue').replaceChildren(...queued.map(turn => {
+        const row = document.createElement('div');
+        const submission = submissions.get(turn.turnId);
+        row.append(submission?.text || `排队任务 ${short(turn.turnId)}`);
+        if (submission && active && ['RUNNING', 'WAITING', 'PAUSED', 'PAUSING'].includes(active.status)) {
+            const button = document.createElement('button');
+            button.textContent = '改为插话';
+            button.onclick = () => {
+                button.disabled = true;
+                action(() => mutate(`${turnPath(active.turnId)}/steer-queued`,
+                    { queuedRequestId: submission.requestId })).finally(() => button.disabled = false);
+            };
+            row.append(' ', button);
+        }
+        return row;
+    }));
     const nodes = items(snapshot).map(renderItem);
     const messages = $('messages');
     const atBottom = messages.scrollHeight - messages.scrollTop - messages.clientHeight < 80;

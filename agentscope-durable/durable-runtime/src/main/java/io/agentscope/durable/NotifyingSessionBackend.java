@@ -55,6 +55,7 @@ import io.agentscope.durable.DurableTypes.ThreadView;
 import io.agentscope.durable.DurableTypes.ToolExecution;
 import io.agentscope.durable.DurableTypes.TurnPage;
 import io.agentscope.durable.DurableTypes.TurnReceipt;
+import io.agentscope.durable.DurableTypes.TurnStatus;
 import io.agentscope.durable.DurableTypes.TurnView;
 import io.agentscope.durable.store.ObjectStore.Reference;
 import java.time.Duration;
@@ -85,18 +86,27 @@ final class NotifyingSessionBackend implements SessionBackend {
     }
 
     private void changed(ThreadKey thread) {
-        changed(thread.session());
+        try {
+            if (wakeups instanceof TurnScheduler scheduler) scheduler.changed(delegate, thread);
+            else wakeups.publish(thread);
+        } catch (RuntimeException error) {
+            report(thread.session(), error);
+        }
     }
 
     private void changed(SessionKey session) {
         try {
             wakeups.publish(session);
         } catch (RuntimeException error) {
-            try {
-                errors.accept(session, error);
-            } catch (RuntimeException reportingError) {
-                logFailure(session, reportingError);
-            }
+            report(session, error);
+        }
+    }
+
+    private void report(SessionKey session, RuntimeException error) {
+        try {
+            errors.accept(session, error);
+        } catch (RuntimeException reportingError) {
+            logFailure(session, reportingError);
         }
     }
 
@@ -107,7 +117,18 @@ final class NotifyingSessionBackend implements SessionBackend {
 
     @Override
     public Capabilities capabilities() {
-        return delegate.capabilities();
+        var capabilities = delegate.capabilities();
+        if (!(wakeups instanceof TurnScheduler)) return capabilities;
+        return new Capabilities(
+                capabilities.protocolVersion(),
+                capabilities.storage(),
+                capabilities.durable(),
+                capabilities.sharedAcrossHosts(),
+                capabilities.atomicCheckpointAndIntent(),
+                capabilities.fencedOwnership(),
+                capabilities.durableWaits(),
+                capabilities.eventReplay(),
+                true);
     }
 
     @Override
@@ -213,6 +234,11 @@ final class NotifyingSessionBackend implements SessionBackend {
     }
 
     @Override
+    public List<ThreadSpec> ready(SessionKey session, List<HarnessSelector> harnesses, int limit) {
+        return delegate.ready(session, harnesses, limit);
+    }
+
+    @Override
     public TurnView turn(ThreadKey session, String turnId) {
         return delegate.turn(session, turnId);
     }
@@ -264,9 +290,41 @@ final class NotifyingSessionBackend implements SessionBackend {
 
     @Override
     public Optional<Lease> claim(ThreadKey session, String owner, Duration duration) {
-        var result = delegate.claim(session, owner, duration);
-        if (result.isPresent()) changed(session);
+        return claimOutcome(session, owner, duration).ownership();
+    }
+
+    @Override
+    public Optional<Lease> claim(TurnDispatch dispatch, String owner, Duration duration) {
+        return claimOutcome(dispatch, owner, duration).ownership();
+    }
+
+    @Override
+    public ClaimOutcome claimOutcome(ThreadKey session, String owner, Duration duration) {
+        var result = delegate.claimOutcome(session, owner, duration);
+        if (result.lease() != null) changed(session.session());
         return result;
+    }
+
+    @Override
+    public ClaimOutcome claimOutcome(TurnDispatch dispatch, String owner, Duration duration) {
+        var result = delegate.claimOutcome(dispatch, owner, duration);
+        if (result.lease() != null) changed(dispatch.thread().session());
+        return result;
+    }
+
+    @Override
+    public List<TurnDispatch> pendingDispatches(int limit) {
+        return delegate.pendingDispatches(limit);
+    }
+
+    @Override
+    public Optional<TurnDispatch> pendingDispatch(ThreadKey key) {
+        return delegate.pendingDispatch(key);
+    }
+
+    @Override
+    public boolean reserveDispatch(TurnDispatch dispatch, Duration retry) {
+        return delegate.reserveDispatch(dispatch, retry);
     }
 
     @Override
@@ -277,7 +335,7 @@ final class NotifyingSessionBackend implements SessionBackend {
     @Override
     public void release(Lease lease, Duration delay) {
         delegate.release(lease, delay);
-        changed(lease.session());
+        changed(lease.thread());
     }
 
     @Override
@@ -288,7 +346,7 @@ final class NotifyingSessionBackend implements SessionBackend {
     @Override
     public RecoveryView recordFailure(Lease lease, Failure failure) {
         var result = delegate.recordFailure(lease, failure);
-        changed(lease.session());
+        changed(lease.thread());
         return result;
     }
 
@@ -300,7 +358,10 @@ final class NotifyingSessionBackend implements SessionBackend {
     @Override
     public CommitReceipt commit(Lease lease, Commit commit) {
         var result = delegate.commit(lease, commit);
-        changed(lease.session());
+        if (commit.status().terminal()
+                || commit.status() == TurnStatus.WAITING
+                || commit.status() == TurnStatus.PAUSED) changed(lease.thread());
+        else changed(lease.session());
         return result;
     }
 
@@ -358,7 +419,7 @@ final class NotifyingSessionBackend implements SessionBackend {
     @Override
     public void acceptExecutionEvent(ExecutionMessages.Event event) {
         delegate.acceptExecutionEvent(event);
-        changed(event.request().session());
+        changed(event.request().thread());
     }
 
     @Override
