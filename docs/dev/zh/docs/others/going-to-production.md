@@ -179,7 +179,7 @@ DistributedStore jdbcStore = JdbcDistributedStore.create(dataSource);
 |---------|------|-------|
 | 高频小 KV（记忆、会话快照、任务记录） | Redis / MySQL（`BaseStore`） | `RemoteFilesystemSpec` |
 | 大对象（沙箱整个 workspace tar archive，几十 MB） | OSS / S3 | `OssSnapshotSpec` / 自定义 `RemoteSnapshotSpec` |
-| 跨节点共享卷（多个沙箱实例挂同一份目录） | NAS / EFS | `AgentRunFilesystemSpec.nasConfig(...)`（仅 AgentRun 原生支持） |
+| 跨节点共享卷（多个沙箱实例挂同一份目录） | NAS / EFS | `AgentRunFilesystemSpec.nasMountConfigs(...)` / `addNasMount(...)`（仅 AgentRun 原生支持） |
 
 ### `RemoteFilesystemSpec` 的路由表
 
@@ -380,11 +380,28 @@ HarnessAgent.builder()
         .accountId(System.getenv("ALI_ACCOUNT_ID"))
         .region("cn-hangzhou")
         .templateName("python-3.12")
-        .nasConfig(new AgentRunNasMountConfig().fileSystemId("...").mountTargetDomain("...").mountDir("/workspace"))
-        .addOssMount(new AgentRunOssMountConfig().bucketName("data").mountDir("/mnt/oss")))
+        .mcpServerUrl("https://your-template-host/mcp")
+        .nasMountConfigs(List.of(
+                new AgentRunNasMountConfig()
+                        .setServerAddr("user-nas.cn-hangzhou.nas.aliyuncs.com")
+                        .setRemotePath("/users/alice")
+                        .setMountDir("/mnt/workspace"),
+                new AgentRunNasMountConfig()
+                        .setServerAddr("shared-nas.cn-hangzhou.nas.aliyuncs.com")
+                        .setRemotePath("/skills")
+                        .setMountDir("/mnt/skills")))
+        .workspaceRoot("/mnt/workspace")
+        .addOssMount(new AgentRunOssMountConfig()
+                .setBucketName("data")
+                .setEndpoint("oss-cn-hangzhou.aliyuncs.com")
+                .setMountDir("/mnt/oss")))
 ```
 
-完整字段见 `AgentRunNasMountConfig` / `AgentRunOssMountConfig` 源码。
+为每个用户的工作区使用独立 NAS 路径，再用另一个挂载点提供共享 skills。NAS 挂载 API 没有 `readOnly` 选项，因此共享 skills 的只读权限需要在 NAS 侧配置。每个挂载目录必须位于 `/home/`、`/mnt/` 或 `/data/` 下。工作区位于任意一个已配置的 NAS 挂载点下时，都会被视为持久化工作区。
+
+`nasMountConfigs(List<AgentRunNasMountConfig>)` 替换挂载列表，`addNasMount(...)` 追加挂载点。直接配置客户端时，使用 `AgentRunSandboxClientOptions.setNasMountConfigs(...)` 和 `addNasMount(...)`。原有的 `nasConfig(...)` / `setNasConfig(...)` 方法保持兼容：它们将列表替换为单个挂载点，传入 `null` 时清空列表。`getNasConfig()` 返回第一个挂载点；读取完整列表请使用 `getNasMountConfigs()`。单次调用传入非空 NAS 挂载列表时，会替换客户端默认挂载列表；否则保留默认配置。
+
+完整字段见 `AgentRunNasMountConfig` / `AgentRunOssMountConfig` 源码。阿里云 [NASConfig 参考文档](https://help.aliyun.com/zh/agentrun/api-agentrun-2025-09-10-struct-nasconfig)说明了 `mountPoints` 列表。
 
 ## 6. 多副本部署 checklist（综合）
 

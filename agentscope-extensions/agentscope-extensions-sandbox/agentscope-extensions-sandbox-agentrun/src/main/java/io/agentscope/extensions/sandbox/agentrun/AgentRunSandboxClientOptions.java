@@ -40,7 +40,7 @@ public class AgentRunSandboxClientOptions extends SandboxClientOptions {
     private String mcpServerUrl;
     private String mcpEndpoint = "/mcp";
     private int sandboxIdleTimeoutSeconds = 1800;
-    private AgentRunNasMountConfig nasConfig;
+    private List<AgentRunNasMountConfig> nasMountConfigs = new ArrayList<>();
     private List<AgentRunOssMountConfig> ossMountConfigs = new ArrayList<>();
     private String workspaceRoot = AgentRunSandboxState.DEFAULT_WORKSPACE_ROOT;
     private int connectTimeoutSeconds = 30;
@@ -75,8 +75,11 @@ public class AgentRunSandboxClientOptions extends SandboxClientOptions {
             throw new SandboxException.SandboxConfigurationException(
                     "AgentRun MCP server URL is required (set #setMcpServerUrl)");
         }
-        if (nasConfig != null && nasConfig.getMountDir() != null) {
-            requireAllowedMountDir("nasConfig.mountDir", nasConfig.getMountDir());
+        for (int i = 0; i < nasMountConfigs.size(); i++) {
+            AgentRunNasMountConfig nas = nasMountConfigs.get(i);
+            if (nas != null && nas.getMountDir() != null) {
+                requireAllowedMountDir("nasMountConfigs[" + i + "].mountDir", nas.getMountDir());
+            }
         }
         if (ossMountConfigs != null) {
             if (ossMountConfigs.size() > MAX_OSS_MOUNTS) {
@@ -212,12 +215,32 @@ public class AgentRunSandboxClientOptions extends SandboxClientOptions {
         return this;
     }
 
+    /** Returns the first NAS mount, or {@code null} when no NAS mounts are configured. */
     public AgentRunNasMountConfig getNasConfig() {
-        return nasConfig;
+        return nasMountConfigs.isEmpty() ? null : nasMountConfigs.get(0);
     }
 
+    /** Replaces all NAS mounts with a single mount; {@code null} clears the mounts. */
     public AgentRunSandboxClientOptions setNasConfig(AgentRunNasMountConfig nasConfig) {
-        this.nasConfig = nasConfig;
+        return setNasMountConfigs(nasConfig != null ? List.of(nasConfig) : null);
+    }
+
+    public List<AgentRunNasMountConfig> getNasMountConfigs() {
+        return nasMountConfigs;
+    }
+
+    /** Replaces all NAS mounts; {@code null} clears the mounts. */
+    public AgentRunSandboxClientOptions setNasMountConfigs(
+            List<AgentRunNasMountConfig> nasMountConfigs) {
+        this.nasMountConfigs =
+                nasMountConfigs != null ? new ArrayList<>(nasMountConfigs) : new ArrayList<>();
+        return this;
+    }
+
+    public AgentRunSandboxClientOptions addNasMount(AgentRunNasMountConfig mount) {
+        if (mount != null) {
+            this.nasMountConfigs.add(mount);
+        }
         return this;
     }
 

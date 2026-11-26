@@ -61,15 +61,19 @@ final class AgentRunDataPlaneHttp {
         body.put("templateName", opt.getTemplateName());
         body.put("sandboxIdleTimeoutSeconds", opt.getSandboxIdleTimeoutSeconds());
 
-        AgentRunNasMountConfig nas = opt.getNasConfig();
-        if (nas != null
-                && nas.getServerAddr() != null
-                && !nas.getServerAddr().isBlank()
-                && nas.getMountDir() != null
-                && !nas.getMountDir().isBlank()) {
-            ObjectNode nasNode = body.putObject("nasMountConfig");
-            ArrayNode mounts = nasNode.putArray("mountPoints");
-            ObjectNode mp = mounts.addObject();
+        ArrayNode nasMountPoints = null;
+        for (AgentRunNasMountConfig nas : opt.getNasMountConfigs()) {
+            if (nas == null
+                    || nas.getServerAddr() == null
+                    || nas.getServerAddr().isBlank()
+                    || nas.getMountDir() == null
+                    || nas.getMountDir().isBlank()) {
+                continue;
+            }
+            if (nasMountPoints == null) {
+                nasMountPoints = body.putObject("nasMountConfig").putArray("mountPoints");
+            }
+            ObjectNode mp = nasMountPoints.addObject();
             mp.put("serverAddr", nas.getServerAddr());
             mp.put("mountDir", nas.getMountDir());
             mp.put("remotePath", nas.getRemotePath());
