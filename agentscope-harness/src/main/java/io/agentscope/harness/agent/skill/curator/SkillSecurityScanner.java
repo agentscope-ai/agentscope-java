@@ -105,7 +105,9 @@ public final class SkillSecurityScanner {
                         "exfil-curl-post",
                         Severity.HIGH,
                         Category.EXFILTRATION,
-                        Pattern.compile("curl\\s+[^\\n]*\\s(-d|--data|-F|--data-binary)\\s"),
+                        Pattern.compile(
+                                "curl\\s+(?:[^\\n"
+                                    + "]*\\s)?(?:-d|--data-binary|--data|-F)(?:=|\\b|[A-Za-z0-9_])"),
                         "curl POST upload — possible data exfiltration"));
         rules.add(
                 new Rule(
@@ -152,14 +154,16 @@ public final class SkillSecurityScanner {
                         "dest-rm-rf-root",
                         Severity.CRITICAL,
                         Category.DESTRUCTIVE,
-                        Pattern.compile("rm\\s+-rf?\\s+(--no-preserve-root\\s+)?/(\\s|$)"),
+                        Pattern.compile(
+                                "\\brm\\s+-(?=[A-Za-z]*r)(?=[A-Za-z]*f)[A-Za-z]*\\s+(--no-preserve-root\\s+)?/(\\s|$)"),
                         "rm -rf / — destroys filesystem"));
         rules.add(
                 new Rule(
                         "dest-mkfs",
                         Severity.CRITICAL,
                         Category.DESTRUCTIVE,
-                        Pattern.compile("\\bmkfs(\\.[a-z0-9]+)?\\s+/dev/"),
+                        Pattern.compile(
+                                "\\bmkfs(?:\\.[a-z0-9]+)?\\s+(?:-t\\s+[A-Za-z0-9]+\\s+)?(?:-[A-Za-z0-9]+\\s+)*/dev/"),
                         "mkfs on a block device — destroys data"));
         rules.add(
                 new Rule(
@@ -230,7 +234,9 @@ public final class SkillSecurityScanner {
                         "obf-base64-pipe-shell",
                         Severity.HIGH,
                         Category.OBFUSCATION,
-                        Pattern.compile("base64\\s+(-d|--decode)\\b[^\\n]*\\|\\s*(bash|sh|zsh)"),
+                        Pattern.compile(
+                                "base64\\s+(-d|--decode)\\b[^\\n"
+                                    + "]*\\|\\s*(?:sudo\\s+)?(?:[A-Za-z0-9_./-]+/)?(bash|sh|zsh)\\b"),
                         "base64 -d | shell — obfuscated execution"));
         rules.add(
                 new Rule(
@@ -244,7 +250,9 @@ public final class SkillSecurityScanner {
                         "obf-curl-pipe-shell",
                         Severity.HIGH,
                         Category.OBFUSCATION,
-                        Pattern.compile("(curl|wget)\\s+[^\\n]*\\|\\s*(bash|sh|zsh)"),
+                        Pattern.compile(
+                                "(curl|wget)\\s+[^\\n"
+                                    + "]*\\|\\s*(?:sudo\\s+)?(?:[A-Za-z0-9_./-]+/)?(bash|sh|zsh)\\b"),
                         "curl/wget piped to shell — remote-code execution"));
 
         return List.copyOf(rules);
