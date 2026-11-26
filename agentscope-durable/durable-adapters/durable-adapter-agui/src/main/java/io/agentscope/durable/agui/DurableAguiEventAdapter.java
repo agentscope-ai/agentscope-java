@@ -16,6 +16,7 @@
 package io.agentscope.durable.agui;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import io.agentscope.core.agui.AguiInterruptConstants;
 import io.agentscope.core.agui.event.AguiEvent;
 import io.agentscope.durable.DurableJson;
 import io.agentscope.durable.DurableTypes.LiveEvent;
@@ -23,8 +24,10 @@ import io.agentscope.durable.DurableTypes.PublicEvent;
 import io.agentscope.durable.EventStreamOptions.EventDeltaType;
 import io.agentscope.durable.SessionStreamEvent;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -33,11 +36,32 @@ import java.util.Set;
 /**
  * Stateful Durable-to-AG-UI 1.0 mapping. One adapter belongs to one stream and reconciles live
  * message previews with their authoritative committed message.
+ *
+ * <p>A Run that parks for human input reports {@code run.ended} with {@code STOPPED} before the
+ * committed {@code turn.waiting} event, so that end is not terminal. Only {@code turn.waiting}
+ * closes the stream and carries the pending interactions: it maps to one {@link
+ * AguiEvent.RunFinished} with a {@link AguiEvent.RunFinishedInterruptOutcome}, after closing the
+ * steps, messages and tool calls the Run opened. Individual {@code interaction.requested} events
+ * are not terminal and are not mapped on their own. Each interrupt id is the Durable interaction
+ * id, and its {@code toolCallId} is the interaction request id (the tool call id), which the client
+ * echoes as {@code interruptId} to resume.
+ *
+ * <p>A waiting Turn without pending interactions (for example waiting on a signal) has no AG-UI
+ * interrupt to deliver; its stream follows the Run's own terminal event, if any.
  */
 public final class DurableAguiEventAdapter {
+    /** Run reasons that park the Run for human input instead of ending it. */
+    private static final Set<String> PARKED_RUN_REASONS =
+            Set.of("suspended", "PERMISSION_ASKING", "TOOL_SUSPENDED");
+
+    private static final Map<String, Object> CONFIRM_RESPONSE_SCHEMA = Map.of("type", "boolean");
+
     private final Set<String> messages = new HashSet<>();
     private final Map<String, StringBuilder> messageText = new HashMap<>();
     private final Set<String> tools = new HashSet<>();
+    private final Set<String> openToolCalls = new HashSet<>();
+    private final Set<String> steps = new HashSet<>();
+    private final Set<String> finishedRuns = new HashSet<>();
 
     public List<AguiEvent> map(SessionStreamEvent event) {
         Objects.requireNonNull(event);
@@ -60,26 +84,14 @@ public final class DurableAguiEventAdapter {
 
     List<AguiEvent> committed(PublicEvent event) {
         Objects.requireNonNull(event);
-        String threadId = event.threadId();
-        String runId = event.runId();
         return switch (event.type()) {
-            case "run.started" ->
-                    List.of(new AguiEvent.RunStarted(threadId, require(runId, "runId")));
+            case "run.started" -> runStarted(event);
             case "run.ended" -> runEnded(event);
-            case "step.started" ->
-                    List.of(
-                            new AguiEvent.StepStarted(
-                                    threadId,
-                                    require(runId, "runId"),
-                                    require(event.stepId(), "stepId")));
-            case "step.ended" ->
-                    List.of(
-                            new AguiEvent.StepFinished(
-                                    threadId,
-                                    require(runId, "runId"),
-                                    require(event.stepId(), "stepId")));
+            case "step.started" -> stepStarted(event);
+            case "step.ended" -> stepEnded(event);
             case "message.completed" -> message(event);
             case "tool.call.updated" -> tool(event);
+            case "turn.waiting" -> waiting(event);
             default -> List.of();
         };
     }
@@ -97,17 +109,132 @@ public final class DurableAguiEventAdapter {
         };
     }
 
+    private List<AguiEvent> runStarted(PublicEvent event) {
+        clear();
+        return List.of(new AguiEvent.RunStarted(event.threadId(), require(event.runId(), "runId")));
+    }
+
     private List<AguiEvent> runEnded(PublicEvent event) {
         String status = event.data().path("status").asText();
-        if ("FAILED".equals(status) || "LOST".equals(status))
-            return List.of(
+        if ("STOPPED".equals(status)
+                && PARKED_RUN_REASONS.contains(event.data().path("reason").asText()))
+            return List.of();
+        String runId = require(event.runId(), "runId");
+        if ("FAILED".equals(status) || "LOST".equals(status)) {
+            finishedRuns.add(runId);
+            var result = new ArrayList<>(closeOpen(event.threadId(), runId));
+            result.add(
                     new AguiEvent.RunError(
                             event.threadId(),
-                            require(event.runId(), "runId"),
+                            runId,
                             event.data().path("reason").asText("Durable Run failed"),
                             status));
+            return List.copyOf(result);
+        }
+        if (!finishedRuns.add(runId)) return List.of();
+        var result = new ArrayList<>(closeOpen(event.threadId(), runId));
+        result.add(
+                new AguiEvent.RunFinished(
+                        event.threadId(),
+                        runId,
+                        null,
+                        "STOPPED".equals(status)
+                                ? new AguiEvent.RunFinishedCancelledOutcome()
+                                : new AguiEvent.RunFinishedSuccessOutcome()));
+        return List.copyOf(result);
+    }
+
+    private List<AguiEvent> stepStarted(PublicEvent event) {
+        String stepId = require(event.stepId(), "stepId");
+        steps.add(stepId);
         return List.of(
-                new AguiEvent.RunFinished(event.threadId(), require(event.runId(), "runId")));
+                new AguiEvent.StepStarted(
+                        event.threadId(), require(event.runId(), "runId"), stepId));
+    }
+
+    private List<AguiEvent> stepEnded(PublicEvent event) {
+        String stepId = require(event.stepId(), "stepId");
+        steps.remove(stepId);
+        return List.of(
+                new AguiEvent.StepFinished(
+                        event.threadId(), require(event.runId(), "runId"), stepId));
+    }
+
+    /**
+     * A Turn entered WAITING: the Run ends with every pending interaction, because a later {@code
+     * run.ended} never arrives while the Turn is parked. Everything the Run opened is closed first.
+     */
+    private List<AguiEvent> waiting(PublicEvent event) {
+        var interactions = event.data().path("interactions");
+        String runId = event.runId();
+        if (runId == null || !interactions.isArray() || interactions.isEmpty()) return List.of();
+        if (!finishedRuns.add(runId)) return List.of();
+        var result = new ArrayList<>(closeOpen(event.threadId(), runId));
+        var interrupts = new ArrayList<AguiEvent.Interrupt>();
+        for (var interaction : interactions) interrupts.add(interrupt(interaction));
+        result.add(
+                new AguiEvent.RunFinished(
+                        event.threadId(),
+                        runId,
+                        null,
+                        new AguiEvent.RunFinishedInterruptOutcome(List.copyOf(interrupts))));
+        return List.copyOf(result);
+    }
+
+    /** AG-UI requires every step, message and tool call a Run opened to be closed first. */
+    private List<AguiEvent> closeOpen(String threadId, String runId) {
+        var result = new ArrayList<AguiEvent>();
+        for (String stepId : List.copyOf(steps))
+            result.add(new AguiEvent.StepFinished(threadId, runId, stepId));
+        for (String messageId : List.copyOf(messages))
+            result.add(new AguiEvent.TextMessageEnd(threadId, runId, messageId));
+        for (String callId : List.copyOf(openToolCalls))
+            result.add(new AguiEvent.ToolCallEnd(threadId, runId, callId));
+        messages.clear();
+        messageText.clear();
+        tools.clear();
+        openToolCalls.clear();
+        steps.clear();
+        return List.copyOf(result);
+    }
+
+    private void clear() {
+        messages.clear();
+        messageText.clear();
+        tools.clear();
+        openToolCalls.clear();
+        steps.clear();
+        finishedRuns.clear();
+    }
+
+    private static AguiEvent.Interrupt interrupt(JsonNode interaction) {
+        String interruptId = interaction.required("id").asText();
+        String requestId = interaction.path("requestId").asText(null);
+        String kind = interaction.path("kind").asText();
+        var call = interaction.path("call");
+        String toolName = call.path("name").asText("tool");
+        boolean confirmation = "confirmation".equals(kind);
+        Map<String, Object> metadata = new LinkedHashMap<>();
+        metadata.put(
+                AguiInterruptConstants.METADATA_AGENTSCOPE_INTERRUPT_KIND,
+                confirmation ? AguiInterruptConstants.INTERRUPT_KIND_PERMISSION_CONFIRM : kind);
+        metadata.put(AguiInterruptConstants.METADATA_TOOL_NAME, toolName);
+        metadata.put("automatic", interaction.path("automatic").asBoolean());
+        if (requestId != null) metadata.put("requestId", requestId);
+        if (call.hasNonNull("arguments"))
+            metadata.put(
+                    AguiInterruptConstants.METADATA_TOOL_INPUT,
+                    DurableJson.convert(call.get("arguments"), Object.class));
+        return new AguiEvent.Interrupt(
+                interruptId,
+                AguiInterruptConstants.TOOL_CALL_INTERRUPT_REASON,
+                confirmation
+                        ? "Tool '" + toolName + "' requires user confirmation before execution"
+                        : "Tool '" + toolName + "' requires external execution",
+                requestId,
+                confirmation ? CONFIRM_RESPONSE_SCHEMA : null,
+                null,
+                Collections.unmodifiableMap(metadata));
     }
 
     private List<AguiEvent> startMessage(String threadId, String runId, JsonNode data) {
@@ -164,6 +291,7 @@ public final class DurableAguiEventAdapter {
             result.add(
                     new AguiEvent.ToolCallStart(
                             threadId, runId, callId, data.path("name").asText("tool")));
+        openToolCalls.add(callId);
         result.add(new AguiEvent.ToolCallArgs(threadId, runId, callId, data.path("text").asText()));
         return List.copyOf(result);
     }
@@ -190,13 +318,20 @@ public final class DurableAguiEventAdapter {
                                 callId,
                                 data.get("arguments").toString()));
             result.add(new AguiEvent.ToolCallEnd(event.threadId(), event.runId(), callId));
+            openToolCalls.remove(callId);
         } else if (Set.of("SUCCEEDED", "FAILED", "CANCELLED", "DENIED", "UNKNOWN")
                 .contains(status)) {
             String content = data.has("content") ? data.get("content").toString() : status;
             result.add(
                     new AguiEvent.ToolCallResult(
-                            event.threadId(), event.runId(), callId, content, "tool", null));
+                            event.threadId(),
+                            event.runId(),
+                            callId,
+                            content,
+                            "tool",
+                            callId + ":result"));
             tools.remove(callId);
+            openToolCalls.remove(callId);
         }
         return List.copyOf(result);
     }

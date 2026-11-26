@@ -509,6 +509,15 @@ same typed stream to the existing AG-UI 1.0 `AguiEvent` types through
 `DurableAguiEventStreamSink`. These artifacts are event adapters, not complete hosted HTTP APIs;
 authentication, resource routes and transport framing remain application concerns.
 
+A parked Run may still report `run.ended` first; that event is not terminal for AG-UI. The
+`turn.waiting` event closes the AG-UI Run: it maps to one `RUN_FINISHED` whose interrupt outcome
+carries every pending interaction of the Turn, after closing the steps, messages and tool calls
+the Run opened. Each interrupt id is the Durable interaction id and its `toolCallId` is the
+interaction request id, so the application resumes with the id it received. A Run stopped before
+completion finishes with the AG-UI cancelled outcome instead of reporting success. A waiting Turn
+without pending interactions, such as one waiting on a signal, has no AG-UI interrupt to deliver;
+its stream follows the Run's own terminal event, if any.
+
 The default `LiveEvents.local()` bus connects producers and observers only inside one Runtime
 assembly. A split Brain/API deployment must provide the same shared `LiveEvents` transport to both
 sides when live previews are required. Durable execution, history and final results remain correct
