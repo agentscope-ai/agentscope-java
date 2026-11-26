@@ -379,6 +379,7 @@
                   {
                     "group": "Publications",
                     "pages": [
+                      "v2/zh/blogs/agentscope-durable",
                       "v2/zh/blogs/jev-structured-decision-for-agents",
                       "v2/zh/blogs/how-to-build-agent-harness/01-patterns",
                       "v2/zh/blogs/how-to-build-agent-harness/02-task-orchestration",
@@ -711,6 +712,7 @@
                   {
                     "group": "Publications",
                     "pages": [
+                      "v2/zh/blogs/agentscope-durable",
                       "v2/zh/blogs/jev-structured-decision-for-agents",
                       "v2/zh/blogs/how-to-build-agent-harness/01-patterns",
                       "v2/zh/blogs/how-to-build-agent-harness/02-task-orchestration",
@@ -1220,6 +1222,7 @@
                   {
                     "group": "内容发布",
                     "pages": [
+                      "v2/zh/blogs/agentscope-durable",
                       "v2/zh/blogs/jev-structured-decision-for-agents",
                       "v2/zh/blogs/how-to-build-agent-harness/01-patterns",
                       "v2/zh/blogs/how-to-build-agent-harness/02-task-orchestration",
@@ -1552,6 +1555,7 @@
                   {
                     "group": "内容发布",
                     "pages": [
+                      "v2/zh/blogs/agentscope-durable",
                       "v2/zh/blogs/jev-structured-decision-for-agents",
                       "v2/zh/blogs/how-to-build-agent-harness/01-patterns",
                       "v2/zh/blogs/how-to-build-agent-harness/02-task-orchestration",

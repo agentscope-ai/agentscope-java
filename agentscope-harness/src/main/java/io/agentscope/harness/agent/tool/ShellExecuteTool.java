@@ -16,6 +16,8 @@
 package io.agentscope.harness.agent.tool;
 
 import io.agentscope.core.agent.RuntimeContext;
+import io.agentscope.core.message.ToolErrorKind;
+import io.agentscope.core.message.ToolErrorMetadata;
 import io.agentscope.core.message.ToolExecutionDetails;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolResultState;
@@ -27,6 +29,9 @@ import io.agentscope.harness.agent.filesystem.RoutedSandboxFilesystem;
 import io.agentscope.harness.agent.filesystem.local.LocalFilesystemWithShell;
 import io.agentscope.harness.agent.filesystem.model.ExecuteResponse;
 import io.agentscope.harness.agent.filesystem.sandbox.AbstractSandboxFilesystem;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
 
 /**
  * Shell execution tool backed by a {@link AbstractSandboxFilesystem}.
@@ -78,8 +83,9 @@ public class ShellExecuteTool {
             String wd = workingDirectory.strip();
             if (wd.startsWith("/") || wd.startsWith("~") || wd.contains("..")) {
                 return ToolResultBlock.error(
-                        "working_directory must be a relative path within the workspace"
-                                + " (absolute paths, '~', and '..' are not allowed).");
+                                "working_directory must be a relative path within the workspace"
+                                        + " (absolute paths, '~', and '..' are not allowed).")
+                        .withMetadata(ToolErrorMetadata.of(ToolErrorKind.INVALID_ARGUMENT));
             }
             effectiveCommand =
                     commandWithWorkingDirectory(
@@ -91,7 +97,8 @@ public class ShellExecuteTool {
         }
 
         if (timeout != null && timeout <= 0) {
-            return ToolResultBlock.error("timeout must be a positive number of seconds.");
+            return ToolResultBlock.error("timeout must be a positive number of seconds.")
+                    .withMetadata(ToolErrorMetadata.of(ToolErrorKind.INVALID_ARGUMENT));
         }
         int timeoutSeconds = timeout != null ? timeout : 30;
         ExecuteResponse result = sandbox.execute(runtimeContext, effectiveCommand, timeoutSeconds);
@@ -105,7 +112,10 @@ public class ShellExecuteTool {
             sb.append("\n").append(result.output());
         }
         if (result.truncated()) {
-            sb.append("\n(output was truncated)");
+            sb.append(
+                    "\n"
+                            + "(Output was truncated. Without a saved-output path above, omitted"
+                            + " content is unavailable.)");
         }
         ToolExecutionDetails.Outcome outcome =
                 result.exitCode() == null
@@ -113,11 +123,232 @@ public class ShellExecuteTool {
                         : result.isSuccess()
                                 ? ToolExecutionDetails.Outcome.SUCCEEDED
                                 : ToolExecutionDetails.Outcome.FAILED;
-        return ToolResultBlock.text(sb.toString())
-                .withExecutionDetails(
-                        new ToolExecutionDetails(
-                                "shell", outcome, result.exitCode(), result.truncated()))
-                .withState(result.isSuccess() ? ToolResultState.SUCCESS : ToolResultState.ERROR);
+        ToolResultBlock block =
+                ToolResultBlock.text(sb.toString())
+                        .withExecutionDetails(
+                                new ToolExecutionDetails(
+                                        "shell", outcome, result.exitCode(), result.truncated()))
+                        .withState(
+                                result.isSuccess()
+                                        ? ToolResultState.SUCCESS
+                                        : ToolResultState.ERROR);
+        if (result.outputDigest() != null && result.outputDigest().matches("[0-9a-fA-F]{64}")) {
+            block =
+                    block.withMetadata(
+                            Map.of(
+                                    "agentscope_output_sha256",
+                                    result.outputDigest().toLowerCase(java.util.Locale.ROOT)));
+        }
+        if (result.isSuccess()) {
+            return block;
+        }
+        ToolErrorKind kind =
+                result.timedOut()
+                        ? ToolErrorKind.TIMEOUT
+                        : result.exitCode() == null
+                                ? ToolErrorKind.INTERNAL_ERROR
+                                : ToolErrorKind.COMMAND_FAILED;
+        return block.withMetadata(
+                ToolErrorMetadata.of(
+                        kind, executableScope(command), kind == ToolErrorKind.TIMEOUT));
+    }
+
+    /**
+     * Best-effort failure classification, not a shell parser or a security boundary. Recognizes
+     * simple cd/assignment/launcher prefixes; ambiguous shell syntax has no scope.
+     */
+    static String executableScope(String command) {
+        List<ShellToken> tokens = shellTokens(command);
+        if (tokens == null || tokens.isEmpty()) {
+            return null;
+        }
+        int index = 0;
+        while (index < tokens.size()) {
+            while (index < tokens.size() && tokens.get(index).assignment()) {
+                index++;
+            }
+            if (index == tokens.size() || tokens.get(index).separator()) {
+                return null;
+            }
+            if (!tokens.get(index).text().equals("cd")) {
+                break;
+            }
+            int separator = index + 1;
+            while (separator < tokens.size() && !tokens.get(separator).separator()) {
+                separator++;
+            }
+            if (separator == tokens.size()) {
+                return "cd";
+            }
+            int directory = index + 1;
+            if (directory < separator
+                    && List.of("/d", "--", "-P", "-L").contains(tokens.get(directory).text())) {
+                directory++;
+            }
+            if (directory + 1 != separator
+                    || tokens.get(directory).text().isBlank()
+                    || (tokens.get(directory).text().startsWith("-")
+                            && !tokens.get(directory).text().equals("-"))) {
+                return null;
+            }
+            index = separator + 1;
+        }
+        // Other command chains/pipelines cannot be attributed to a single executable.
+        for (int i = index; i < tokens.size(); i++) {
+            if (tokens.get(i).separator()) {
+                return null;
+            }
+        }
+        while (index < tokens.size()) {
+            String executable = executableBasename(tokens.get(index).text());
+            if (executable == null) {
+                return null;
+            }
+            if (!List.of("env", "command", "exec").contains(executable)) {
+                return executable;
+            }
+            index = skipLauncher(tokens, index + 1, executable);
+            if (index < 0) {
+                return null;
+            }
+        }
+        return null;
+    }
+
+    private static int skipLauncher(List<ShellToken> tokens, int index, String launcher) {
+        boolean options = true;
+        while (index < tokens.size()) {
+            String text = tokens.get(index).text();
+            if (launcher.equals("env") && isAssignment(text)) {
+                // env options precede assignments; after an assignment, a leading '-' is
+                // the executable, not an option whose argument may be exposed as scope.
+                options = false;
+                index++;
+            } else if (options && text.equals("--")) {
+                options = false;
+                index++;
+            } else if (options
+                    && ((launcher.equals("env")
+                                    && List.of("-i", "--ignore-environment").contains(text))
+                            || (launcher.equals("command") && text.equals("-p"))
+                            || (launcher.equals("exec") && List.of("-c", "-l").contains(text)))) {
+                index++;
+            } else if (options
+                    && ((launcher.equals("env") && List.of("-u", "--unset").contains(text))
+                            || (launcher.equals("exec") && text.equals("-a")))) {
+                if (index + 1 >= tokens.size() || tokens.get(index + 1).text().isEmpty()) {
+                    return -1;
+                }
+                index += 2;
+            } else if (options
+                    && launcher.equals("env")
+                    && ((text.startsWith("-u") && text.length() > 2)
+                            || (text.startsWith("--unset=") && text.length() > 8))) {
+                index++;
+            } else {
+                return text.startsWith("-") ? -1 : index;
+            }
+        }
+        return index;
+    }
+
+    private static String executableBasename(String token) {
+        if (token.isBlank()
+                || token.startsWith("-")
+                || token.chars().anyMatch(c -> "=$`*?[]{}%!".indexOf(c) >= 0)
+                || List.of(
+                                "if",
+                                "then",
+                                "else",
+                                "elif",
+                                "fi",
+                                "for",
+                                "while",
+                                "until",
+                                "do",
+                                "done",
+                                "case",
+                                "esac",
+                                "function",
+                                "select",
+                                "time",
+                                "!")
+                        .contains(token)) {
+            return null;
+        }
+        int slash = Math.max(token.lastIndexOf('/'), token.lastIndexOf('\\'));
+        String base = token.substring(slash + 1);
+        return base.isBlank() ? null : base;
+    }
+
+    private static boolean isAssignment(String token) {
+        int equals = token.indexOf('=');
+        return equals > 0 && token.substring(0, equals).matches("[A-Za-z_][A-Za-z0-9_]*");
+    }
+
+    private record ShellToken(String text, boolean separator, boolean assignment) {}
+
+    private static List<ShellToken> shellTokens(String command) {
+        if (command == null) {
+            return null;
+        }
+        List<ShellToken> tokens = new ArrayList<>();
+        int index = 0;
+        while (index < command.length()) {
+            char c = command.charAt(index);
+            if (c == '\n' || c == '\r') {
+                return null;
+            }
+            if (Character.isWhitespace(c)) {
+                index++;
+                continue;
+            }
+            if (c == ';' || (c == '&' && command.startsWith("&&", index))) {
+                String separator = c == ';' ? ";" : "&&";
+                tokens.add(new ShellToken(separator, true, false));
+                index += separator.length();
+                continue;
+            }
+            int start = index;
+            char quote = 0;
+            StringBuilder text = new StringBuilder();
+            while (index < command.length()) {
+                c = command.charAt(index);
+                if (quote == 0 && (Character.isWhitespace(c) || c == ';' || c == '&')) {
+                    break;
+                }
+                if ((c == '\'' || c == '"') && (quote == 0 || quote == c)) {
+                    quote = quote == 0 ? c : 0;
+                    index++;
+                    continue;
+                }
+                if (c == '\\' && quote != '\'' && index + 1 < command.length()) {
+                    char next = command.charAt(index + 1);
+                    if ((quote == 0
+                                    && (next == '\''
+                                            || next == '"'
+                                            || Character.isWhitespace(next)))
+                            || (quote == '"' && next == '"')) {
+                        text.append(next);
+                        index += 2;
+                        continue;
+                    }
+                }
+                if ((quote == 0 && "|&<>(){}#".indexOf(c) >= 0)
+                        || (quote != '\'' && (c == '$' || c == '`'))) {
+                    return null;
+                }
+                text.append(c);
+                index++;
+            }
+            if (quote != 0 || index == start) {
+                return null;
+            }
+            tokens.add(
+                    new ShellToken(
+                            text.toString(), false, isAssignment(command.substring(start, index))));
+        }
+        return tokens;
     }
 
     static boolean usesWindowsShell(AbstractFilesystem filesystem, boolean windowsHost) {

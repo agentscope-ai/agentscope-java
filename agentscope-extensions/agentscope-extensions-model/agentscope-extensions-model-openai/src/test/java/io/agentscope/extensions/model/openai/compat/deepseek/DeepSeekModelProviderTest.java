@@ -112,7 +112,8 @@ class DeepSeekModelProviderTest {
 
         Model model = new DeepSeekModelProvider().create("deepseek:deepseek-v4-pro", context);
 
-        assertEquals(1_048_576, model.getContextWindowSize());
+        // DeepSeek publishes 1M tokens; recorded as the vendor figure, not 1_048_576.
+        assertEquals(1_000_000, model.getContextWindowSize());
         assertFalse(model.supportsNativeStructuredOutput());
         assertFalse(model.supportsNativeStructuredOutputWithTools());
         assertTrue(model.supportsToolChoiceSpecific());
@@ -140,11 +141,27 @@ class DeepSeekModelProviderTest {
         DeepSeekModelProvider provider = new DeepSeekModelProvider();
 
         assertEquals(
-                1_048_576,
+                1_000_000,
                 provider.create("deepseek:deepseek-flash", context).getContextWindowSize());
         assertEquals(
-                1_048_576,
+                1_000_000,
                 provider.create("deepseek:deepseek-v4-flash", context).getContextWindowSize());
+    }
+
+    @Test
+    @DisplayName("Resolves newer model ids through prefix matching")
+    void createResolvesNewerModelIdsByPrefix() {
+        ModelCreationContext context =
+                ModelCreationContext.builder().apiKey("test-deepseek-key").build();
+        DeepSeekModelProvider provider = new DeepSeekModelProvider();
+
+        assertEquals(
+                1_000_000,
+                provider.create("deepseek:deepseek-v4.1-flash", context).getContextWindowSize());
+        assertEquals(
+                1_000_000,
+                provider.create("deepseek:deepseek-v4.1-flash-2026-08", context)
+                        .getContextWindowSize());
     }
 
     @Test

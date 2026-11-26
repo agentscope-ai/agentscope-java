@@ -106,6 +106,7 @@ PROVIDER_ATTEMPTS 表示共用请求边界的可观测重试；MODEL_CALL 表示
 Control.requestId 同时是 signalId，Interaction.id 是响应目标，Interaction.requestId 标识原生请求。
 
 控制回执 status=`accepted` 只表示已受理，cursor 是该事务后的 Session 位置。
+保留的 `x.model:` 命名空间模型回包控制，在 generation 被替换、调用已封存、Turn 已终态或取消时返回 status=`ignored`，消费者可确认这些投递。模型 generation begin 在事务内取得 epoch，collector 在派发工具前原子封存当前 epoch。
 后续 `signal.applied/withdrawn`、`interaction.resolved`、Turn 终态说明执行事实。
 SUCCEEDED 提交必须确认已受理的 steer/inject 均已应用或撤回。输入受理与成功提交在同一事务边界竞争；先受理的输入不能随调用正常结束而丢失，先完成的 Turn 拒绝新控制。AgentScope 在需要继续时保持 turnId，使用新 Run 消费输入。
 FIFO 由 Backend 在每个 Thread 内的受理顺序定义，WAITING/PAUSING/PAUSED 不允许同 Thread 的后续任务越过；取消排队任务不需要等待队首完成。

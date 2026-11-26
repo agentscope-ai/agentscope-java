@@ -24,6 +24,7 @@ import io.modelcontextprotocol.spec.McpSchema;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -51,6 +52,18 @@ import reactor.core.publisher.Mono;
 public class McpTool extends ToolBase {
 
     private static final Logger logger = LoggerFactory.getLogger(McpTool.class);
+
+    /**
+     * Result-block metadata key carrying the map produced by configured
+     * {@link McpToolResultCustomizer}s, as an unmodifiable {@code Map<String, Object>}.
+     *
+     * <p>The framework does not expose a server's raw {@code _meta} map automatically. When at least
+     * one customizer is registered for the connection, the mutable map passed to those customizers
+     * is attached under this key, and the agent runtime copies the block metadata onto the emitted
+     * {@code ToolResultEndEvent}. A customizer can expose selected server entries by reading {@link
+     * McpToolResultContext#resultMeta()} and writing them into the supplied map.
+     */
+    public static final String METADATA_MCP_RESULT_META = "io.agentscope/mcpResultMeta";
 
     /**
      * Upper bound for a server-supplied display title, matching the one-line label width already used
@@ -264,6 +277,10 @@ public class McpTool extends ToolBase {
      * connection-level {@link McpClientWrapper#isPropagateMeta()} are {@code true} (logical AND);
      * otherwise the {@code meta} field is omitted from the request entirely.
      *
+     * <p>Response metadata is opt-in: the server's raw {@code _meta} map is available to a
+     * connection's {@link McpToolResultCustomizer}, but is not exposed on the {@link ToolResultBlock}
+     * unless a customizer writes selected values into the supplied result metadata map.
+     *
      * @param param The tool call parameters containing toolUseBlock, input, and agent
      * @return a Mono that emits the tool result when the MCP call completes
      */
@@ -283,7 +300,7 @@ public class McpTool extends ToolBase {
 
         return clientWrapper
                 .callTool(remoteToolName, mergedArgs, metaMap)
-                .map(McpContentConverter::convertCallToolResult)
+                .map(result -> toToolResult(result, param, mergedArgs))
                 .doOnSuccess(
                         result -> logger.debug("MCP tool '{}' completed successfully", getName()))
                 .onErrorResume(
@@ -412,6 +429,76 @@ public class McpTool extends ToolBase {
             return Collections.emptyMap();
         }
         return mcpMeta.entries();
+    }
+
+    /**
+     * Converts an MCP result into a {@link ToolResultBlock} and attaches customizer-produced result
+     * metadata when configured.
+     *
+     * @param result the MCP result, never {@code null}
+     * @param param the tool call parameters
+     * @param arguments the arguments actually sent, preset arguments included
+     * @return the converted block, carrying result metadata when there is any
+     */
+    private ToolResultBlock toToolResult(
+            McpSchema.CallToolResult result, ToolCallParam param, Map<String, Object> arguments) {
+        ToolResultBlock converted = McpContentConverter.convertCallToolResult(result);
+        Map<String, Object> metadata = buildResultMetadata(result, param, arguments);
+        if (metadata.isEmpty()) {
+            return converted;
+        }
+        return new ToolResultBlock(
+                converted.getId(),
+                converted.getName(),
+                converted.getOutput(),
+                metadata,
+                converted.getState(),
+                converted.getExecutionDetails());
+    }
+
+    /**
+     * Builds the metadata for one result from the connection's ordered customizers.
+     *
+     * <p>The map supplied to customizers starts empty and becomes the value stored under {@link
+     * #METADATA_MCP_RESULT_META}. When no customizer is configured, no result metadata is exposed,
+     * even if the server returned a non-empty raw {@code _meta} map.
+     *
+     * @return metadata to attach, empty when the connection has no customizers
+     */
+    private Map<String, Object> buildResultMetadata(
+            McpSchema.CallToolResult result, ToolCallParam param, Map<String, Object> arguments) {
+        Map<String, Object> resultMeta = result.meta() != null ? result.meta() : Map.of();
+        List<McpToolResultCustomizer> customizers = clientWrapper.getResultCustomizers();
+        if (customizers.isEmpty()) {
+            return Map.of();
+        }
+
+        Map<String, Object> customizedResultMeta = new LinkedHashMap<>();
+        McpToolResultContext context =
+                new McpToolResultContext(
+                        getName(),
+                        remoteToolName,
+                        param.getToolUseBlock() != null ? param.getToolUseBlock().getId() : null,
+                        arguments,
+                        resultMeta,
+                        result);
+        for (McpToolResultCustomizer customizer : customizers) {
+            try {
+                customizer.customize(context, customizedResultMeta);
+            } catch (Exception e) {
+                logger.warn(
+                        "MCP result customizer failed for tool '{}': {}", getName(), e.toString());
+            }
+        }
+        customizedResultMeta
+                .entrySet()
+                .removeIf(entry -> entry.getKey() == null || entry.getValue() == null);
+
+        Map<String, Object> metadata = new LinkedHashMap<>();
+        metadata.put(
+                METADATA_MCP_RESULT_META,
+                Collections.unmodifiableMap(new LinkedHashMap<>(customizedResultMeta)));
+        return metadata;
     }
 
     /**

@@ -67,6 +67,12 @@ AgentScope Java 2.0 是面向企业级、分布式、生产环境的智能体框
 
 ## 新闻
 <!-- BEGIN NEWS -->
+- **[2026-11] `v2.0.5`：** 2.0.x 维护版本，回迁状态持久化、工具调用参数处理、上下文压缩、记忆持久化、技能与沙箱等修复；更新 Anthropic 和 Gemini 默认模型。 [Release Notes](https://github.com/agentscope-ai/agentscope-java/releases/tag/v2.0.5)
+- **[2026-11] `2.1` Durable（开发中）：** 面向长程任务引入持久执行设计，支持持久 Turn、有序排队、执行中补充输入（steer / inject）、暂停与恢复、故障恢复，以及沙箱异步执行。 [文档](https://java.agentscope.io/dev/zh/docs/harness/durable)
+- **[2026-10] `v2.0.4`：** 新增 OpenAI Responses API 支持；重设计 AgentScope Service；扩展 Channel 和存储集成；增强并发 Agent 执行、工具与技能的隔离。 [Release Notes](https://github.com/agentscope-ai/agentscope-java/releases/tag/v2.0.4)
+- **[2026-09] `v2.0.3`：** 支持 Anthropic Prompt Caching；新增 `deliver_artifact` 工具、`FinalAnswerFilterMiddleware`、状态版本与乐观并发控制、`AgentProtocolEventBus`；升级控制台会话展示。 [Release Notes](https://github.com/agentscope-ai/agentscope-java/releases/tag/v2.0.3)
+- **[2026-09] `v2.0.2`：** 支持通过 `AgentFactory` 路由任务；完善 RuntimeContext 传递；支持完整的远程子 Agent 事件流转发；解耦 `TaskStore` 与执行工作区管理。 [Release Notes](https://github.com/agentscope-ai/agentscope-java/releases/tag/v2.0.2)
+- **[2026-08] `v2.0.1`：** 2.0 GA 后的首个维护版本；扩展 DeepSeek、GLM、Kimi、MiniMax 和 OpenAI 兼容模型生态；支持 Middleware 执行顺序、远程子 Agent 事件流与 HITL 恢复，并修复多项生产问题。 [Release Notes](https://github.com/agentscope-ai/agentscope-java/releases/tag/v2.0.1)
 - **[2026-07] `v2.0.0 GA`：** 首个正式版本发布！双层 Agent 架构、事件流、权限系统、Middleware、Workspace 沙箱、多智能体编排、分布式部署全面就绪。 [文档](https://java.agentscope.io/) | [Release Notes](https://github.com/agentscope-ai/agentscope-java/releases/tag/v2.0.0)
 - **[2026-07] `v2.0.0-RC5`：** 模型提供商模块化拆分；统一 DataBlock 多模态支持；原生结构化输出；Channel IM 平台接入；腾讯云 COS 状态持久化。 [Release Notes](https://github.com/agentscope-ai/agentscope-java/releases/tag/v2.0.0-RC5)
 - **[2026-06] `v2.0.0-RC4`：** 异步工具执行与定时唤醒调度；子 agent 跨副本路由与 session 恢复。 [Release Notes](https://github.com/agentscope-ai/agentscope-java/releases/tag/v2.0.0-RC4)
