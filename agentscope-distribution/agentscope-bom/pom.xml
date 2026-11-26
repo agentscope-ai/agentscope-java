@@ -92,6 +92,12 @@
                 <version>${project.version}</version>
             </dependency>
 
+            <dependency>
+                <groupId>io.agentscope</groupId>
+                <artifactId>agentscope-extensions-langchain4j</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+
             <!-- Durable: neutral runtime, native adapter and optional providers -->
             <dependency>
                 <groupId>io.agentscope</groupId>

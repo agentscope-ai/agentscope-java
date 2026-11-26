@@ -673,6 +673,53 @@ External execution tools and approval workflows
 </CardGroup>
 
 
+## Reuse LangChain4j tools
+
+The optional `agentscope-extensions-langchain4j` module lets a Toolkit reuse objects annotated with LangChain4j's `@Tool`. It registers the original bound executors, so published tool names, inherited annotations and LangChain4j's argument conversion remain in use. Add the extension at the same version as your AgentScope dependencies:
+
+```xml
+<dependency>
+    <groupId>io.agentscope</groupId>
+    <artifactId>agentscope-extensions-langchain4j</artifactId>
+    <version>${agentscope.version}</version>
+</dependency>
+```
+
+Choose a bounded scheduler for synchronous tool work and map the current invocation explicitly. This example maps the AgentScope session ID to LangChain4j's chat memory ID, which annotated tools receive through `@ToolMemoryId`:
+
+```java
+import dev.langchain4j.agent.tool.Tool;
+import dev.langchain4j.agent.tool.ToolMemoryId;
+import dev.langchain4j.invocation.InvocationContext;
+import io.agentscope.core.tool.Toolkit;
+import io.agentscope.extensions.langchain4j.LangChain4jTools;
+import reactor.core.scheduler.Scheduler;
+import reactor.core.scheduler.Schedulers;
+
+class SessionTools {
+    @Tool("Return the current session ID")
+    public String currentSession(@ToolMemoryId String sessionId) {
+        return sessionId;
+    }
+}
+
+Scheduler toolWorkers = Schedulers.newBoundedElastic(4, 64, "langchain4j-tools");
+Toolkit toolkit = new Toolkit();
+LangChain4jTools.registerAnnotated(
+        toolkit, new SessionTools(), toolWorkers,
+        param -> InvocationContext.builder()
+                .chatMemoryId(param.getRuntimeContext().getSessionId())
+                .build());
+```
+
+Pass this Toolkit to your AgentScope agent and supply a session ID in each call's `RuntimeContext`. The mapper runs for each execution; it must not capture a previous caller's session. Additional LangChain4j invocation parameters can be mapped from that same context. The application owns `toolWorkers`: keep it alive while calls are running and dispose it during application shutdown. Cancelling a subscription can interrupt synchronous execution, but it cannot undo tool side effects.
+
+Adapted tools extend `ToolBase` and participate in the agent's permission engine. A foreign annotation grants no read-only permission, and tools are conservatively marked as unsafe for parallel batch execution. Normal Toolkit validation, middleware and error handling apply. These flags do not make a shared foreign object thread-safe across independent agents or concurrent invocations; the application must protect its state. Register tools before sharing the Toolkit. Duplicate names, including existing Toolkit entries, are rejected before registration changes the registry; concurrent registry mutation is unsupported.
+
+This module is tested with LangChain4j 1.22.0. Annotation discovery uses `ToolService.findTools`, which LangChain4j marks `Internal`; upgrading that dependency requires compatibility testing. Applications that already own bound `AiServiceTool` entries can use `LangChain4jTools.register(toolkit, tools, toolWorkers, contextMapper)` without invoking discovery. `adapt` returns a single unregistered tool.
+
+The adapter preserves JSON Schema constraints and references, tool-call IDs, ordered text result blocks and structured success/error states. It supports only `ReturnBehavior.TO_LLM`: both immediate return modes are rejected because their mixed-batch semantics differ from AgentScope's `returnDirect`. Non-text results fail explicitly instead of being flattened. This module reuses tools; it does not bridge agent loops, memory stores or credentials between frameworks.
+
 ## Request-scoped tools and session isolation
 
 Agent construction copies tool registries and registration metadata. Existing tool instances remain shared by reference, so custom tools must support concurrent use. Hook and knowledge tools registered while building one agent do not overwrite another agent's registrations.
