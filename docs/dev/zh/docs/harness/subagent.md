@@ -35,13 +35,15 @@ agent_spawn agent_id="reviewer" task="review 这次 PR 的所有改动" reusable
 
 ## 几种声明方式
 
-支持下面三类来源，构建时合并：
+子 Agent 声明支持下面三类来源：
 
 | 方式 | 适用 | 怎么配 |
 |------|------|--------|
 | 内置 `general-purpose` | 通用兜底（镜像主 agent 能力） | 总是有，不需要配 |
 | 工作区 spec 文件 | 项目特有的、能版本控制的 | `workspace/subagents/<id>.md` |
 | 编程式声明 | 跑时才能确定（远程、动态参数） | `builder.subagent(SubagentDeclaration.builder()...)` |
+
+`DynamicSubagentsMiddleware` 将工作区中的子 Agent 目录及对应 manager 作为调用级快照放入 `RuntimeContext`。不同用户的调用交错执行时，各自保留自己的子 Agent 目录；加载一个用户的声明不会替换另一会话的目录。每次调用应传入已授权的 `userId` 和父 `sessionId`。声明在推理前重新加载，该次模型请求与随后的工具执行共用同一快照。
 
 ### 工作区 spec 文件
 
@@ -102,6 +104,8 @@ HarnessAgent.builder()
 也适用于从失败会话中重新加载的工具调用。等待人工审批的工具仍须提供审批结果；空输入恢复执行、
 调用方补交工具结果的行为保持原有语义。远端 agent 和自定义工厂需自行配置恢复策略。
 
+框架自动构建的本地子 Agent 也继承父级 `disableWebTools()` 配置。默认工厂和按声明构建的工厂都会应用该设置，`general-purpose` 也不例外，因此委派任务不会重新启用父级关闭的 Web 工具。若任务需要联网，应在已授权的父级配置中解决限制，而不是通过子 Agent 绕过。
+
 ### 内置 `general-purpose`
 
 不需要写声明文件，总是可用。它的角色是"通用兜底"——能力和主 agent 一致（同样的模型、工具、技能），共享主工作区。适合"主 agent 想隔离上下文跑一个子任务但又懒得专门写 spec"。
@@ -119,6 +123,8 @@ HarnessAgent.builder()
 
 - `timeout_seconds > 0`（默认 30，最大 600）—— **同步**调用，主 agent 在这一步 block 等待结果，结果作为工具结果返回。默认超时后会 **promote** 成后台任务（`status: timeout_promoted` + `task_id`），子 agent 继续跑。
 - `timeout_seconds = 0` —— **后台**调用，立即返回一个 `task_id`，子 agent 在后台跑。
+
+本地子代理返回 `GenerateReason.MAX_ITERATIONS` 时，结果标注 `status: max_iterations`，明确说明已有内容只是部分结果，保留全部文本和文档引用。这同时适用于同步回复、后台结果以及超时转后台的结果。工具结果仍为成功，后台任务生命周期仍为 `COMPLETED`，表示执行已返回，不代表请求的工作全部完成。其他回复和继承的轮数预算不变。远程任务若协议未提供生成原因，不从回复文本猜测终止原因。
 
 **通过 `RuntimeContext` 强制同步。** 应用侧可在当前调用的 `RuntimeContext` 里放入 `AgentSpawnTool.CTX_FORCE_SYNC = true`，覆盖 LLM 的异步选择；可选再放 `CTX_FORCE_SYNC_TIMEOUT_SECONDS` 指定硬超时（秒）：
 
@@ -144,17 +150,23 @@ RuntimeContext ctx = RuntimeContext.builder()
 
 ### 后台任务自动反向通知
 
-后台任务跑完了，**主 agent 不需要轮询**——下一次推理开始前，框架会把已完成的任务结果作为系统提醒注入对话末尾：
+使用默认的工作区任务仓库时，静态和动态子 agent 的终态结果都会在父 agent 的下一次推理请求中以聚合提醒交付：
 
 ```
 <system-reminder>
-后台任务已交付：
-- task_id=xxx，agent=research-analyst，status=COMPLETED
-  结果摘要：...
+1 background subagent task has completed since your last turn. These results are now part of your conversation history.
+
+<task id="xxx" state="completed" agent="research-analyst">
+<task_result>
+...
+</task_result>
+</task>
 </system-reminder>
 ```
 
-主 agent 看到这条 reminder 自然地回应或继续行动。这意味着你**不需要**在 prompt 里写"记得调 task_output 轮询"——那是旧版本的做法。
+消息总线发出结果就绪信号，用于唤醒空闲会话和无参数的 `wait_async_results()`。配置了消息总线时，收件箱提醒携带一份结果正文，供旧节点读取，也可在任务仓库缺少终态结果时兜底。Harness 优先使用仓库结果，同一次请求中每个任务只注入一份结果。历史压缩和超窗重试会保留待交付的提醒。模型成功处理包含提醒的请求后，Harness 将提醒保存到会话历史，并确认从仓库交付的任务。支持完成回调的自定义任务仓库可以通过收件箱交付结果。
+
+自动交付和等待屏障会附上此次返回的完整结果。任务状态摘要用于查看执行状态。需要实际输出时，可以用 `task_output` 获取完整结果。
 
 ### 后台任务工具
 
@@ -173,11 +185,15 @@ RuntimeContext ctx = RuntimeContext.builder()
 
 `agent_spawn` / `agent_send` 管理子 agent **实例**（创建、复用、通信）；`task_output` / `wait_async_results` / `task_cancel` / `task_list` 管理后台**任务结果**（查状态、取结果、等待、取消）。两者的桥梁是 `task_id`——在 `agent_spawn` 或 `agent_send` 使用 `timeout_seconds=0` 时返回。
 
-> 大多数情况下自动反向通知机制会把结果推回来，不需要显式调用任务工具。它们主要用作逃生口：在反向通知触发前主动检查进度、等待一组必须同时拿齐的结果、取消不再需要的任务、或者在对话压缩后恢复任务状态。
+> 自动交付已提供所需结果时，无需额外读取。它们主要用作逃生口：在反向通知触发前主动检查进度、等待一组必须同时拿齐的结果、取消不再需要的任务、或者在对话压缩后恢复任务状态。
+
+自动交付和等待工具会返回各结果的完整正文。任务状态摘要用于说明执行状态，需要实际结果时可通过 `task_output` 读取。
+
+`task_output` 返回已完成任务的完整结果。
 
 异步结果有三种常用收集方式：
 
-- **主动通知**：不阻塞等待时的默认路径。子任务完成后，下一轮 reasoning 前通过 `<system-reminder>` 注入。
+- **主动通知**：接入自动交付时，子任务完成后的结果可在后续 reasoning 前通过 `<system-reminder>` 注入。
 - **指定任务检查**：用 `task_output(task_id, block=false)` 主动查看某个任务的当前状态或终态结果。
 - **等待 barrier（必须等齐时优先）**：用 `wait_async_results(task_ids="id1,id2")` 或 `wait_async_results(wait_all=true)`。barrier 模式会等到集合终态，并**把各任务结果直接写进本次工具返回**，主 agent 可立刻继续推理。`wait_all=true` 以调用开始时的未完成任务快照为准，等待期间新创建的任务不会加入 wait set。
 
@@ -199,6 +215,8 @@ agent_send label="pr-reviewer" message="顺便也看下 schema 变更"
 ```
 
 要列当前活跃的子 agent：`agent_list`。
+
+`agent_key`、按 label 追加消息和 `agent_list` 都受调用方用户与父会话的范围限制。其他用户或父会话的句柄不能用于查看或联系该实例；未知 key 与越权 key 返回不可区分的错误。追加消息时若无法定位目标，应在原来已授权的父会话中使用 `agent_list` 查找句柄，而不是切换身份或猜测 key。
 
 ## 复用与一次性子 Agent
 

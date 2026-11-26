@@ -16,6 +16,8 @@
 
 package io.agentscope.core.model;
 
+import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
+import com.fasterxml.jackson.databind.annotation.JsonPOJOBuilder;
 import io.agentscope.core.formatter.ResponseFormat;
 import java.util.Collections;
 import java.util.HashMap;
@@ -29,6 +31,7 @@ import java.util.function.BiConsumer;
  * <p>This class holds both per-request generation parameters (temperature, maxTokens, etc.)
  * and connection-level configuration (apiKey, baseUrl, modelName, stream).
  */
+@JsonDeserialize(builder = GenerateOptions.Builder.class)
 public class GenerateOptions {
     // Connection-level configuration
     private final String apiKey;
@@ -534,6 +537,7 @@ public class GenerateOptions {
         }
     }
 
+    @JsonPOJOBuilder(withPrefix = "")
     public static class Builder {
         // Connection-level configuration
         private String apiKey;

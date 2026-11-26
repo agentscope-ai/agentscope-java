@@ -689,7 +689,7 @@ public class GeminiChatModel extends ChatModelBase {
             model.setContextWindowSize(
                     contextWindowSize >= 0
                             ? contextWindowSize
-                            : ModelContextWindows.lookup(modelName, ModelContextWindows.GEMINI));
+                            : ModelContextWindows.resolve(modelName, ModelContextWindows.GEMINI));
             return model;
         }
 

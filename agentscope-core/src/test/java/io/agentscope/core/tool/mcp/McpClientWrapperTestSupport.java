@@ -18,6 +18,8 @@ package io.agentscope.core.tool.mcp;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
+import java.util.List;
+
 /**
  * Shared factory for mocked {@link McpClientWrapper} instances.
  *
@@ -41,6 +43,7 @@ public final class McpClientWrapperTestSupport {
         McpClientWrapper wrapper = mock(McpClientWrapper.class);
         when(wrapper.getName()).thenReturn(name);
         when(wrapper.isPropagateMeta()).thenReturn(propagateMeta);
+        when(wrapper.getResultCustomizers()).thenReturn(List.of());
         return wrapper;
     }
 }
