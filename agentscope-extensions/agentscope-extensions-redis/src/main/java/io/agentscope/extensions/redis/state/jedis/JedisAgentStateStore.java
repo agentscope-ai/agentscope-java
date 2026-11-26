@@ -31,6 +31,8 @@ import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
 import redis.clients.jedis.Jedis;
 import redis.clients.jedis.JedisPool;
+import redis.clients.jedis.params.ScanParams;
+import redis.clients.jedis.resps.ScanResult;
 
 /**
  * Redis-based session implementation using Jedis.
@@ -304,7 +306,16 @@ public class JedisAgentStateStore implements AgentStateStore {
         String userSegment = normalizeUser(userId);
         try (Jedis jedis = jedisPool.getResource()) {
             String pattern = keyPrefix + userSegment + "/*" + KEYS_SUFFIX;
-            Set<String> keysKeys = jedis.keys(pattern);
+            // SCAN instead of KEYS: incremental and non-blocking, safe on large/shared servers
+            // (mirrors the iteration size used by JedisClientAdapter.findKeysByPattern).
+            ScanParams scanParams = new ScanParams().match(pattern).count(1000);
+            Set<String> keysKeys = new HashSet<>();
+            String cursor = ScanParams.SCAN_POINTER_START;
+            do {
+                ScanResult<String> scanResult = jedis.scan(cursor, scanParams);
+                keysKeys.addAll(scanResult.getResult());
+                cursor = scanResult.getCursor();
+            } while (!ScanParams.SCAN_POINTER_START.equals(cursor));
             Set<String> sessionIds = new HashSet<>();
             String userPrefix = keyPrefix + userSegment + "/";
             for (String keysKey : keysKeys) {
