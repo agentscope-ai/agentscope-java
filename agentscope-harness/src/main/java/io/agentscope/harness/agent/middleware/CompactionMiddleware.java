@@ -29,6 +29,7 @@ import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.middleware.ModelCallInput;
 import io.agentscope.core.middleware.ReasoningInput;
 import io.agentscope.core.model.Model;
+import io.agentscope.core.model.ModelSchedulers;
 import io.agentscope.core.state.AgentState;
 import io.agentscope.core.tool.AgentTool;
 import io.agentscope.core.tool.Toolkit;
@@ -242,32 +243,49 @@ public class CompactionMiddleware implements HarnessRuntimeMiddleware {
                                                                                             before)))
                                             .forEach(retryMessages::add);
                                     retryMessages.addAll(before);
-                                    var forced =
-                                            new CompactionMiddleware(
-                                                    workspaceManager,
-                                                    model,
-                                                    CompactionConfig.builder()
-                                                            .triggerMessages(1)
-                                                            .keepMessages(recoveryTailSize(before))
-                                                            .keepTokens(0)
-                                                            .flushBeforeCompact(
-                                                                    config.isFlushBeforeCompact())
-                                                            .build(),
-                                                    learnedWindows,
-                                                    memoryEnabled);
-                                    return forced.prepareCandidate(
-                                                    agent,
-                                                    ctx,
-                                                    new ModelCallInput(
-                                                            retryMessages,
-                                                            input.tools(),
-                                                            input.options(),
-                                                            // Per-call resolution (ctx-aware) so a
-                                                            // string-reference agent works here
-                                                            // too.
-                                                            overflowed),
-                                                    CompactionConfig.FALLBACK_TRIGGER_TOKENS,
-                                                    before)
+                                    Mono<Model> recoveryModel;
+                                    if (model != null) {
+                                        recoveryModel = Mono.just(model);
+                                    } else if (react.journalEnabled()) {
+                                        recoveryModel = Mono.just(overflowed);
+                                    } else {
+                                        // Snapshot recovery retains the configured default when a
+                                        // call overrides its model. Registry resolution can block.
+                                        recoveryModel =
+                                                Mono.fromCallable(() -> react.getModel(null))
+                                                        .subscribeOn(ModelSchedulers.requests());
+                                    }
+                                    return recoveryModel
+                                            .map(
+                                                    summaryModel ->
+                                                            new CompactionMiddleware(
+                                                                    workspaceManager,
+                                                                    summaryModel,
+                                                                    CompactionConfig.builder()
+                                                                            .triggerMessages(1)
+                                                                            .keepMessages(
+                                                                                    recoveryTailSize(
+                                                                                            before))
+                                                                            .keepTokens(0)
+                                                                            .flushBeforeCompact(
+                                                                                    config
+                                                                                            .isFlushBeforeCompact())
+                                                                            .build(),
+                                                                    learnedWindows,
+                                                                    memoryEnabled))
+                                            .flatMap(
+                                                    forced ->
+                                                            forced.prepareCandidate(
+                                                                    agent,
+                                                                    ctx,
+                                                                    new ModelCallInput(
+                                                                            retryMessages,
+                                                                            input.tools(),
+                                                                            input.options(),
+                                                                            overflowed),
+                                                                    CompactionConfig
+                                                                            .FALLBACK_TRIGGER_TOKENS,
+                                                                    before))
                                             .flatMapMany(
                                                     candidate -> {
                                                         if (candidate.history().equals(before)
