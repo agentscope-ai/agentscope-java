@@ -178,6 +178,8 @@ No spec file needed; always available. Its role is "generic fallback" — it mir
 - **ISOLATED** (default): the subagent has its own workspace (if `workspace.path` is omitted, the framework auto-creates a subdirectory). Subagent runtime state is bucketed per "parent sessionId × user" — so spawning the same subagent across different conversations of the same user doesn't cross-contaminate.
 - **SHARED**: the subagent uses the parent's workspace directly. Good for cases where the subagent's output is read by the parent immediately (e.g. `general-purpose`).
 
+**Sandbox mode**: when the parent runs in a sandbox, declared subagents acquire their own sandbox (`general-purpose` is the exception — it shares the parent's). With `USER` isolation the execution guard is keyed by `{agentId}/{userId}`, so parent and child no longer block each other. `GLOBAL` isolation has a single slot shared by parent and child, so they still serialise — do not combine `GLOBAL` with subagents.
+
 ## Sync or background?
 
 The parent creates a subagent with `agent_spawn`; the key knob is `timeout_seconds`:

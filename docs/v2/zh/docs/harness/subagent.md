@@ -171,6 +171,8 @@ HarnessAgent.builder()
 - **ISOLATED**（默认）：子 agent 有自己独立的工作区（如果声明里 `workspace.path` 没写，框架会自动开一个子目录）。子 agent 的运行时状态按"父 sessionId × 用户"分桶——同一用户在不同对话里 spawn 同名子 agent 也互不污染。
 - **SHARED**：子 agent 直接用主工作区。适合子 agent 的输出会被父立即读到的情况（例如 `general-purpose`）。
 
+**沙箱模式**：父 agent 使用沙箱时，声明式子 agent 会各自 acquire 一个沙箱（`general-purpose` 例外——它共享父沙箱）。`USER` 作用域下执行锁按 `{agentId}/{userId}` 加锁，父子不会互相阻塞；`GLOBAL` 作用域只有一个 slot，父子共用，仍会串行，不要与子 agent 同用。
+
 ## 同步还是后台？
 
 主 agent 通过 `agent_spawn` 创建子 agent，关键是 `timeout_seconds`：

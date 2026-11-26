@@ -93,8 +93,16 @@ public class SandboxManager {
 
         SandboxLease lease = SandboxLease.noop();
         if (scopeKey.isPresent()) {
-            log.debug("[sandbox] Acquiring execution guard for scope {}", scopeKey.get());
-            lease = executionGuard.tryEnter(scopeKey.get());
+            // The persisted slot key and the guard key differ for USER scope: the slot is
+            // sandbox/user/{agentId}/{userId}, so the guard must discriminate by agent too.
+            // Otherwise a subagent spawned inside its parent's call window would request the
+            // key its parent holds for the whole call and deadlock.
+            SandboxIsolationKey guardKey = scopeKey.get().forExecutionGuard(agentId);
+            log.debug(
+                    "[sandbox] Acquiring execution guard for scope {} (guard key {})",
+                    scopeKey.get(),
+                    guardKey);
+            lease = executionGuard.tryEnter(guardKey);
         }
 
         try {

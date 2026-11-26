@@ -117,6 +117,8 @@ If you're using a local `AgentStateStore` (the default `JsonFileAgentStateStore`
 
 In `USER` / `AGENT` / `GLOBAL` modes across replicas, two replicas serving the same user concurrently both write to the same slot — last writer wins. If that's not OK, you need a distributed lock.
 
+The guard key mirrors the persisted slot's granularity: for `USER` scope it is `{agentId}/{userId}`. A subagent spawned inside a sandboxed call therefore takes its own lock instead of colliding with the one its parent holds for the whole call. `GLOBAL` scope has a single slot shared by parent and child, so they still serialise — do not combine `GLOBAL` with subagents.
+
 **Recommended**: use `distributedStore(...)` — snapshot and execution guard are auto-injected:
 
 ```java

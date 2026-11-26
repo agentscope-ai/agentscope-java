@@ -17,6 +17,8 @@ package io.agentscope.harness.agent.sandbox;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.agent.RuntimeContext;
@@ -154,5 +156,58 @@ class SandboxIsolationKeyTest {
         assertTrue(k1.isPresent() && k2.isPresent());
         assertEquals(k1.get(), k2.get());
         assertEquals(k1.get().hashCode(), k2.get().hashCode());
+    }
+
+    // ---- Execution-guard key derivation ----
+
+    @Test
+    void userScope_guardKeyAddsAgentDimension() {
+        RuntimeContext ctx = RuntimeContext.builder().userId("u1").sessionId("s1").build();
+        SandboxIsolationKey parent =
+                SandboxIsolationKey.resolve(IsolationScope.USER, ctx, "parent").orElseThrow();
+        SandboxIsolationKey child =
+                SandboxIsolationKey.resolve(IsolationScope.USER, ctx, "worker").orElseThrow();
+
+        // The persisted slot key is unchanged: same user, same key, regardless of the agent.
+        assertEquals(parent, child);
+
+        // The guard key must distinguish the two agents, matching the slot's granularity.
+        assertEquals("parent/u1", parent.forExecutionGuard("parent").getValue());
+        assertEquals("worker/u1", child.forExecutionGuard("worker").getValue());
+        assertNotEquals(parent.forExecutionGuard("parent"), child.forExecutionGuard("worker"));
+    }
+
+    @Test
+    void userScope_guardKeyIsStableForSameAgent() {
+        RuntimeContext ctx = RuntimeContext.builder().userId("u1").build();
+        SandboxIsolationKey key =
+                SandboxIsolationKey.resolve(IsolationScope.USER, ctx, "parent").orElseThrow();
+        assertEquals(key.forExecutionGuard("parent"), key.forExecutionGuard("parent"));
+    }
+
+    @Test
+    void nonUserScopes_guardKeyIsUnchanged() {
+        RuntimeContext session = RuntimeContext.builder().sessionId("s1").build();
+
+        SandboxIsolationKey sessionKey =
+                SandboxIsolationKey.resolve(IsolationScope.SESSION, session, "agent").orElseThrow();
+        assertSame(sessionKey, sessionKey.forExecutionGuard("agent"));
+
+        SandboxIsolationKey agentKey =
+                SandboxIsolationKey.resolve(IsolationScope.AGENT, null, "agent").orElseThrow();
+        assertSame(agentKey, agentKey.forExecutionGuard("agent"));
+
+        SandboxIsolationKey globalKey =
+                SandboxIsolationKey.resolve(IsolationScope.GLOBAL, null, "agent").orElseThrow();
+        assertSame(globalKey, globalKey.forExecutionGuard("agent"));
+    }
+
+    @Test
+    void userScope_guardKeyWithBlankAgent_fallsBackToSlotKey() {
+        RuntimeContext ctx = RuntimeContext.builder().userId("u1").build();
+        SandboxIsolationKey key =
+                SandboxIsolationKey.resolve(IsolationScope.USER, ctx, "agent").orElseThrow();
+        assertSame(key, key.forExecutionGuard(null));
+        assertSame(key, key.forExecutionGuard("  "));
     }
 }

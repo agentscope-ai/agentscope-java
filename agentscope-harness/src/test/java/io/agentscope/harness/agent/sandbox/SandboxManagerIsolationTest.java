@@ -16,11 +16,13 @@
 package io.agentscope.harness.agent.sandbox;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -28,11 +30,14 @@ import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.harness.agent.IsolationScope;
 import io.agentscope.harness.agent.sandbox.snapshot.SandboxSnapshot;
 import io.agentscope.harness.agent.sandbox.snapshot.SandboxSnapshotSpec;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
@@ -226,7 +231,7 @@ class SandboxManagerIsolationTest {
     }
 
     @Test
-    void userScope_withUserId_acquiresExecutionGuardWithUserKey() throws Exception {
+    void userScope_withUserId_acquiresExecutionGuardWithAgentScopedKey() throws Exception {
         AtomicReference<SandboxIsolationKey> capturedKey = new AtomicReference<>();
         SandboxExecutionGuard guard =
                 key -> {
@@ -244,7 +249,9 @@ class SandboxManagerIsolationTest {
 
         assertSame(freshSandbox, result.getSandbox());
         assertEquals(IsolationScope.USER, capturedKey.get().getScope());
-        assertEquals("user-42", capturedKey.get().getValue());
+        // The guard key carries the agent dimension, matching the persisted slot
+        // (sandbox/user/{agentId}/{userId}); without it a nested subagent would deadlock.
+        assertEquals("test-agent/user-42", capturedKey.get().getValue());
     }
 
     @Test
@@ -336,5 +343,36 @@ class SandboxManagerIsolationTest {
         manager.clearState(sCtx, rtx);
 
         verify(stateStore).delete(any());
+    }
+
+    // ---- Nested subagent (parent call -> declared subagent, same user) ----
+
+    @Test
+    void nestedSubagent_usesDistinctGuardKeys_whileKeepingTheSlotKeyStable() throws Exception {
+        when(stateStore.load(any())).thenReturn(Optional.empty());
+        when(client.create(any(), any(), any())).thenReturn(freshSandbox);
+
+        List<SandboxIsolationKey> guardKeys = new ArrayList<>();
+        SandboxExecutionGuard guard =
+                key -> {
+                    guardKeys.add(key);
+                    return SandboxLease.noop();
+                };
+
+        RuntimeContext rtx = RuntimeContext.builder().userId("user-42").sessionId("sess-1").build();
+        SandboxContext sCtx = SandboxContext.builder().isolationScope(IsolationScope.USER).build();
+
+        new SandboxManager(client, stateStore, "parent-agent", guard).acquire(sCtx, rtx);
+        new SandboxManager(client, stateStore, "worker-agent", guard).acquire(sCtx, rtx);
+
+        assertEquals(2, guardKeys.size());
+        assertNotEquals(guardKeys.get(0), guardKeys.get(1));
+
+        // The persisted slot key must stay agent-independent: SessionSandboxStateStore adds the
+        // agent dimension itself (sandbox/user/{agentId}/{userId}), so existing state survives.
+        ArgumentCaptor<SandboxIsolationKey> slotKey =
+                ArgumentCaptor.forClass(SandboxIsolationKey.class);
+        verify(stateStore, times(2)).load(slotKey.capture());
+        assertEquals(slotKey.getAllValues().get(0), slotKey.getAllValues().get(1));
     }
 }
