@@ -23,6 +23,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.event.AgentEvent;
+import io.agentscope.core.event.ToolResultEndEvent;
 import io.agentscope.core.event.ToolResultTextDeltaEvent;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
@@ -41,6 +42,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.stream.Collectors;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -319,8 +321,12 @@ class ReActAgentToolkitConcurrencyTest {
         RuntimeContext rcA = RuntimeContext.builder().userId("uA").sessionId("sA").build();
         RuntimeContext rcB = RuntimeContext.builder().userId("uB").sessionId("sB").build();
 
-        Flux<AgentEvent> streamA = agent.streamEvents(List.of(userMsg("prompt-A")), rcA);
-        Flux<AgentEvent> streamB = agent.streamEvents(List.of(userMsg("prompt-B")), rcB);
+        List<AgentEvent> eventsA = new CopyOnWriteArrayList<>();
+        List<AgentEvent> eventsB = new CopyOnWriteArrayList<>();
+        Flux<AgentEvent> streamA =
+                agent.streamEvents(List.of(userMsg("prompt-A")), rcA).doOnNext(eventsA::add);
+        Flux<AgentEvent> streamB =
+                agent.streamEvents(List.of(userMsg("prompt-B")), rcB).doOnNext(eventsB::add);
 
         Mono<List<String>> deltasA =
                 streamA.ofType(ToolResultTextDeltaEvent.class)
@@ -344,6 +350,25 @@ class ReActAgentToolkitConcurrencyTest {
         assertTrue(
                 b.stream().allMatch(s -> s.contains("B")),
                 "session B chunks must all belong to B, got: " + b);
+        for (var entry : Map.of("A", eventsA, "B", eventsB).entrySet()) {
+            var deltas =
+                    entry.getValue().stream()
+                            .filter(ToolResultTextDeltaEvent.class::isInstance)
+                            .map(ToolResultTextDeltaEvent.class::cast)
+                            .toList();
+            var ends =
+                    entry.getValue().stream()
+                            .filter(ToolResultEndEvent.class::isInstance)
+                            .map(ToolResultEndEvent.class::cast)
+                            .toList();
+            assertEquals(2, deltas.size());
+            assertEquals(
+                    List.of("chunk-" + entry.getKey(), "chunk2-" + entry.getKey()),
+                    deltas.stream().map(ToolResultTextDeltaEvent::getDelta).toList());
+            assertEquals(1, ends.size());
+            assertEquals("stream-" + entry.getKey(), ends.get(0).getToolCallId());
+            assertEquals(deltas.get(0).getReplyId(), ends.get(0).getReplyId());
+        }
     }
 
     // ==================== Helpers ====================

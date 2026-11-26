@@ -620,6 +620,47 @@ public class Toolkit {
             RuntimeContext agentRuntimeContext,
             ToolRequestConfig requestConfig,
             BiConsumer<ToolUseBlock, ToolResultBlock> internalChunkCallback) {
+        ToolExecutionCallback callback =
+                internalChunkCallback == null
+                        ? null
+                        : new ToolExecutionCallback() {
+                            @Override
+                            public void onProgress(ToolUseBlock call, ToolResultBlock chunk) {
+                                internalChunkCallback.accept(call, chunk);
+                            }
+                        };
+        return callToolsWithCallback(
+                toolCalls,
+                agentExecutionConfig,
+                agent,
+                agentRuntimeContext,
+                requestConfig,
+                callback);
+    }
+
+    /**
+     * Execute a batch with start, progress, and final-result notifications before ordered
+     * aggregation. The returned list retains declaration order. {@link
+     * ToolExecutionCallback#onStart} fires when the executor begins each invocation (in
+     * sequential batches, when the call's turn arrives) and results may arrive in completion
+     * order.
+     *
+     * @param toolCalls List of tool calls to execute
+     * @param agentExecutionConfig Execution config from agent level (may be {@code null})
+     * @param agent The agent making the calls (may be {@code null})
+     * @param agentRuntimeContext The agent-level runtime context (may be {@code null})
+     * @param requestConfig Per-call tool request configuration (may be {@code null})
+     * @param executionCallback Lifecycle callback for start, progress, and result notifications
+     *     (may be {@code null})
+     * @return Mono containing list of tool responses in declaration order
+     */
+    public Mono<List<ToolResultBlock>> callToolsWithCallback(
+            List<ToolUseBlock> toolCalls,
+            ExecutionConfig agentExecutionConfig,
+            Agent agent,
+            RuntimeContext agentRuntimeContext,
+            ToolRequestConfig requestConfig,
+            ToolExecutionCallback executionCallback) {
         // Merge execution configs: agent-level > toolkit-level > system default
         ExecutionConfig effectiveConfig =
                 ExecutionConfig.mergeConfigs(
@@ -638,7 +679,7 @@ public class Toolkit {
                         : agentRuntimeContext == null
                                 ? ToolRequestConfig.NONE
                                 : agentRuntimeContext.getToolRequestConfig(),
-                internalChunkCallback);
+                executionCallback);
     }
 
     // ==================== MCP Client Registration (Delegated) ====================
