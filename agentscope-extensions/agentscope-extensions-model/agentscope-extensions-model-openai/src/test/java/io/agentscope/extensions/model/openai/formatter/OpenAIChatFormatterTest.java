@@ -229,6 +229,40 @@ class OpenAIChatFormatterTest {
     }
 
     @Test
+    @DisplayName("Should pass tool names through unchanged; the model owns encoding")
+    void testApplyToolsPassesNamesThrough() {
+        OpenAIRequest request = OpenAIRequest.builder().model("gpt-4").messages(List.of()).build();
+
+        ToolSchema dotted = ToolSchema.builder().name("task.get").description("Get task").build();
+        ToolSchema valid =
+                ToolSchema.builder().name("get_weather").description("Get weather").build();
+
+        formatter.applyTools(request, List.of(dotted, valid));
+
+        assertNotNull(request.getTools());
+        assertEquals(2, request.getTools().size());
+        // Encoding happens once in OpenAIChatModel before the formatter is called. Encoding here
+        // as well would make the definitions diverge from the per-request decode map.
+        assertEquals("task.get", request.getTools().get(0).getFunction().getName());
+        assertEquals("get_weather", request.getTools().get(1).getFunction().getName());
+    }
+
+    @Test
+    @DisplayName("Should pass specific tool choice names through unchanged")
+    void testApplyToolChoicePassesNamesThrough() {
+        OpenAIRequest request = OpenAIRequest.builder().model("gpt-4").messages(List.of()).build();
+        request.setTools(createDummyTools());
+
+        ToolChoice toolChoice = new ToolChoice.Specific("task.get");
+
+        formatter.applyToolChoice(request, toolChoice);
+
+        assertEquals(
+                Map.of("type", "function", "function", Map.of("name", "task.get")),
+                request.getToolChoice());
+    }
+
+    @Test
     @DisplayName("Should apply tool choice to request")
     void testApplyToolChoice() {
         OpenAIRequest request = OpenAIRequest.builder().model("gpt-4").messages(List.of()).build();
