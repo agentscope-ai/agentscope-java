@@ -17,7 +17,9 @@ package io.agentscope.harness.agent.skill.runtime;
 
 import io.agentscope.core.skill.AgentSkill;
 import io.agentscope.core.skill.SkillFilter;
+import io.agentscope.core.util.JsonUtils;
 import java.util.Collection;
+import java.util.List;
 import java.util.Map;
 import java.util.regex.Pattern;
 
@@ -45,6 +47,8 @@ import java.util.regex.Pattern;
  */
 @SuppressWarnings("deprecation")
 public final class SkillPromptBuilder {
+
+    public static final int INDEX_CHARS = 12_000;
 
     private static final String INDENT = "  ";
     private static final Pattern XML_TAG_NAME = Pattern.compile("[A-Za-z_][A-Za-z0-9_.-]*");
@@ -106,6 +110,11 @@ public final class SkillPromptBuilder {
      * @return prompt text, or empty string when nothing is visible
      */
     public String render(SkillCatalog catalog, SkillFilter filter) {
+        return render(catalog, filter, true);
+    }
+
+    /** Keeps the complete slim catalog when this call cannot use the discovery tool. */
+    public String render(SkillCatalog catalog, SkillFilter filter, boolean allowIndex) {
         if (catalog == null || catalog.isEmpty()) {
             return "";
         }
@@ -142,6 +151,63 @@ public final class SkillPromptBuilder {
             sb.append(codeExecutionInstruction);
         }
 
+        if (allowIndex && !exposeAllMetadata && sb.length() > INDEX_CHARS) {
+            return renderIndex(
+                    catalog.all().stream()
+                            .filter(e -> effective.isAllowed(e.skill().getName()))
+                            .toList(),
+                    0,
+                    "");
+        }
+        return sb.toString();
+    }
+
+    /** Compact, deterministic catalog page; omitted entries remain discoverable via the loader. */
+    public String renderIndex(List<HarnessSkillEntry> entries, int offset, String query) {
+        StringBuilder sb = new StringBuilder(header);
+        String execution =
+                entries.stream().anyMatch(e -> e.filesRoot() != null && !e.filesRoot().isBlank())
+                        ? codeExecutionInstruction
+                        : "";
+        int shown = 0;
+        int start = Math.min(offset, entries.size());
+        for (int i = start; i < entries.size(); i++) {
+            AgentSkill skill = entries.get(i).skill();
+            String description = skill.getDescription() == null ? "" : skill.getDescription();
+            if (description.length() > 160) {
+                int end = Character.isHighSurrogate(description.charAt(159)) ? 159 : 160;
+                description = description.substring(0, end) + "…";
+            }
+            StringBuilder item = new StringBuilder("<skill>\n");
+            appendXmlNode(item, "name", skill.getName(), 1);
+            appendXmlNode(item, "skill-id", skill.getSkillId(), 1);
+            appendXmlNode(item, "description", description, 1);
+            item.append("</skill>\n");
+            if (sb.length() + item.length() + execution.length() + 512 > INDEX_CHARS && shown > 0)
+                break;
+            sb.append(item);
+            shown++;
+        }
+        sb.append("</available_skills>\n");
+        sb.append("Catalog entries ")
+                .append(start)
+                .append("..")
+                .append(start + shown)
+                .append(" of ")
+                .append(entries.size())
+                .append(
+                        " (end exclusive). Descriptions may be shortened; load SKILL.md for full"
+                                + " instructions and files root.\n");
+        if (start + shown < entries.size())
+            sb.append("Next: load_skill_through_path(query=")
+                    .append(JsonUtils.getJsonCodec().toJson(query))
+                    .append(", offset=")
+                    .append(start + shown)
+                    .append(").\n");
+        sb.append(
+                "Search all visible entries by name, ID or description:"
+                        + " load_skill_through_path(query=\"keywords\").\n");
+        sb.append(execution);
         return sb.toString();
     }
 

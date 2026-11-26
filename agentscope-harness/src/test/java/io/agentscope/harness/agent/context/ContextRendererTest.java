@@ -25,6 +25,26 @@ import org.junit.jupiter.api.Test;
 class ContextRendererTest {
 
     @Test
+    void opaqueContentRevisionStaysInItemWhileSemanticRevisionIsRendered() {
+        var item = new ContextItem("knowledge", "workspace:knowledge", "facts");
+        String revision = item.revision();
+        assertTrue(revision.matches("[0-9a-f]{64}"));
+        assertFalse(ContextRenderer.render(List.of(item)).contains(revision));
+        assertFalse(ContextRenderer.render(List.of(item)).contains("revision="));
+        var versioned =
+                new ContextItem(
+                        "task_state",
+                        "todo",
+                        "17",
+                        ContextItem.Placement.RUNTIME,
+                        true,
+                        50,
+                        "active");
+        assertTrue(ContextRenderer.render(List.of(versioned)).contains("revision=\"17\""));
+        assertTrue(item.revision().equals(revision));
+    }
+
+    @Test
     void systemBodyStaysVerbatimExceptOwnClosingTag() {
         String text =
                 ContextRenderer.render(

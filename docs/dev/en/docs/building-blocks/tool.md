@@ -404,6 +404,27 @@ toolkit.registerMcpClient(search).block();
 
 Runnable examples: `agentscope-examples/documentation/.../mcp/McpStdioExample.java`, `mcp/McpSseExample.java`, `mcp/McpStreamableHttpExample.java`.
 
+### MCP tool result metadata
+
+An MCP server may attach a `_meta` map to a tool result. AgentScope does not expose that raw map by default. To expose selected values, register an ordered `resultCustomizers` list on the connection. The mutable map passed to the customizers starts empty and becomes the value stored under `McpTool.METADATA_MCP_RESULT_META` (`io.agentscope/mcpResultMeta`) on the tool result block. The runtime then copies the block metadata onto the `ToolResultEndEvent` it emits. The model never sees this metadata: the result's `output` is unchanged.
+
+To expose the entire server map explicitly, a customizer can copy it:
+
+```java
+McpClientWrapper customized =
+        McpClientBuilder.create("customized-mcp")
+                .streamableHttpTransport("https://mcp.example.com/http")
+                .resultCustomizers(
+                        List.of(
+                                (ctx, resultMetadata) ->
+                                        resultMetadata.putAll(ctx.resultMeta())))
+                .buildSync();
+```
+
+Customizers are also the place to filter fields or derive stable keys. They run in list order for every completion on the connection, including results the server flags as errors. Each receives the call (`toolName`, `remoteToolName`, `toolCallId`), the arguments actually sent (preset arguments merged in), the server's `_meta` map, the raw `CallToolResult`, and the mutable result metadata map initially empty. A later customizer can override or remove an entry written by an earlier one. The list is fixed when the wrapper is built; rebuild the connection to change it. A thrown customizer exception is logged and skipped without changing the original tool result, and null keys or values are removed from the customizer map before it is attached. Without a customizer, `io.agentscope/mcpResultMeta` is not added, even when the server returned `_meta`.
+
+If you implement a custom `McpClientWrapper` decorator, pass `delegate.getResultCustomizers()` to the superclass constructor or override `getResultCustomizers()` to return the delegate's list. The same wrapper should keep `propagateMeta` in sync with its delegate.
+
 ## Skill
 
 Skills are markdown-based instruction sets that extend an agent's capabilities without writing new tool code. Each skill is a directory containing a `SKILL.md` file with frontmatter metadata and detailed instructions.

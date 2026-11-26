@@ -17,6 +17,7 @@ package io.agentscope.core.message;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
@@ -83,5 +84,53 @@ class ToolResultBlockTest {
         assertEquals(ToolResultState.ERROR, result.getState());
         TextBlock output = assertInstanceOf(TextBlock.class, result.getOutput().get(0));
         assertEquals("[ERROR] probe failed", output.getText());
+    }
+
+    @Test
+    void withMetadataMergesWithoutChangingTheOriginalBlock() {
+        ToolResultBlock original =
+                ToolResultBlock.error("bad argument")
+                        .withMetadata(Map.of(ToolResultBlock.METADATA_SERVER_TOOL, true));
+
+        ToolResultBlock classified =
+                original.withMetadata(
+                        ToolErrorMetadata.of(ToolErrorKind.INVALID_ARGUMENT, "MEMORY.md"));
+
+        assertEquals(ToolResultState.ERROR, classified.getState());
+        assertEquals(ToolResultState.ERROR, original.getState());
+        assertEquals(
+                false, original.getMetadata().containsKey(ToolResultBlock.METADATA_ERROR_KIND));
+        assertEquals(true, classified.isServerTool());
+        assertEquals(
+                "invalid_argument",
+                classified.getMetadata().get(ToolResultBlock.METADATA_ERROR_KIND));
+        assertEquals(
+                "MEMORY.md", classified.getMetadata().get(ToolResultBlock.METADATA_ERROR_SCOPE));
+        assertThrows(
+                UnsupportedOperationException.class, () -> classified.getMetadata().put("x", "y"));
+    }
+
+    @Test
+    void errorMetadataSurvivesCopyMethodsAndJsonRoundTrip() throws JsonProcessingException {
+        ToolResultBlock result =
+                ToolResultBlock.error("tool-1", "startLine must be >= 1")
+                        .withMetadata(
+                                ToolErrorMetadata.of(
+                                        ToolErrorKind.INVALID_ARGUMENT, "MEMORY.md", false));
+
+        ToolResultBlock inMessage = result.withIdAndName("tool-1", "memory_get");
+
+        String json = objectMapper.writeValueAsString(inMessage);
+        assertTrue(json.contains("\"agentscope_error_kind\":\"invalid_argument\""), json);
+        assertTrue(json.contains("\"agentscope_error_scope\":\"MEMORY.md\""), json);
+        assertTrue(json.contains("\"agentscope_retriable\":false"), json);
+
+        ToolResultBlock deserialized = objectMapper.readValue(json, ToolResultBlock.class);
+        assertEquals(
+                "invalid_argument",
+                deserialized.getMetadata().get(ToolResultBlock.METADATA_ERROR_KIND));
+        assertEquals(
+                "MEMORY.md", deserialized.getMetadata().get(ToolResultBlock.METADATA_ERROR_SCOPE));
+        assertEquals(false, deserialized.getMetadata().get(ToolResultBlock.METADATA_RETRIABLE));
     }
 }

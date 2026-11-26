@@ -22,7 +22,6 @@ import static io.agentscope.extensions.model.openai.OpenAIModelProviderSupport.a
 import io.agentscope.core.formatter.Formatter;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.Model;
-import io.agentscope.core.model.ModelContextWindows;
 import io.agentscope.core.model.ModelCreationContext;
 import io.agentscope.core.model.spi.ModelProvider;
 import io.agentscope.extensions.model.openai.OpenAIChatModel;
@@ -119,9 +118,7 @@ public final class KimiModelProvider implements ModelProvider {
                         .formatter(new KimiFormatter())
                         .nativeStructuredOutput(true)
                         .nativeStructuredOutputWithTools(false)
-                        .supportsToolChoiceSpecific(specificUsable)
-                        .contextWindowSize(
-                                ModelContextWindows.lookup(modelName, ModelContextWindows.KIMI));
+                        .supportsToolChoiceSpecific(specificUsable);
 
         GenerateOptions userOptions = context.component(GenerateOptions.class);
         applyAdvancedOptions(builder, context, userOptions);

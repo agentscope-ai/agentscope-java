@@ -8,7 +8,7 @@ zh_link: /dev/zh/docs/building-blocks/middleware
 
 Agent middleware lets you inject custom logic (logging, tracing, input rewriting, access control, …) at key points in an agent's execution flow without modifying the agent or model code.
 
-In AgentScope Java, you can hook into 6 places — covering everything from the outer reply flow down to the raw model API call:
+In AgentScope Java, you can hook into the following lifecycle points — covering everything from the outer reply flow down to the raw model API call:
 
 | Position | Type | Description |
 |----------|------|-------------|
@@ -18,15 +18,16 @@ In AgentScope Java, you can hook into 6 places — covering everything from the 
 | `onModelCall` | Onion | Wraps a raw `ChatModel` API call — closest to the model |
 | `onSystemPrompt` | Transformer | Triggers when the system prompt is assembled; multiple middlewares run in sequence, each transforming the previous output |
 | `onAgentStateReady` | Notification | Fires once per call as soon as this call's `AgentState` is ready — before the input enters the pipeline (pre-call hooks, memory, reasoning) |
+| `onAgentEvent` | Notification | Synchronously observes `recordEvent` events, excluding the outer lifecycle envelope and external injections; read-only and independent of consumer demand |
 | `onAgentFinish` | Awaited notification | Returns `Mono<Void>` after the call result and before the native checkpoint and writer release; retains the active call context. |
 
 The three types differ:
 
 - **Onion** — middleware wraps the next handler; you can insert logic before/after `next.apply(input)` and observe the intermediate event stream.
 - **Transformer** — middlewares form a pipeline; the previous output is the next input. There's no "inner layer" concept.
-- **Notification** — one-way synchronous notification without `next` delegation; middlewares run in sequence at a fixed lifecycle point.
+- **Notification** — one-way synchronous notification without `next` delegation; middlewares run in sequence at a fixed lifecycle point. `onAgentStateReady` runs once per call; `onAgentEvent` runs for each event passing through `recordEvent` and must not block or mutate the event.
 
-The diagram below shows how the hooks nest in the agent lifecycle. `onSystemPrompt` is nested inside `onReasoning` because it fires when the reasoning step assembles the system prompt; `onAgentStateReady` fires right after the call's `AgentState` is bound to the `RuntimeContext`, before the input enters the pipeline:
+The diagram below shows how the hooks nest in the agent lifecycle. `onSystemPrompt` is nested inside `onReasoning` because it fires when the reasoning step assembles the system prompt; `onAgentStateReady` fires right after the call's `AgentState` is bound to the `RuntimeContext`, before the input enters the pipeline. `onAgentEvent` follows event production, rather than wrapping a lifecycle step:
 
 ```text
 onAgent/
@@ -36,6 +37,9 @@ onAgent/
     │   ├── onSystemPrompt (assemble system prompt)
     │   └── onModelCall (model API call)
     └── onActing (per tool call)
+
+Each event passing through recordEvent:
+recordEvent: assign executionIdentity → onAgentEvent → outer BUFFER / forwarding
 ```
 
 
@@ -48,7 +52,7 @@ onAgent/
 
 ## Equipping middleware
 
-AgentScope packs a set of hooks into a single `MiddlewareBase` implementation — one middleware class can implement any subset of the 7 hooks (onion/transformer hooks not implemented default to `next.apply(input)`; notification hooks default to a no-op). Pass the instances to the builder's `middlewares(...)`:
+AgentScope packs a set of hooks into a single `MiddlewareBase` implementation — one middleware class can implement any subset of these hooks (onion/transformer hooks not implemented default to `next.apply(input)`; notification hooks default to a no-op). Pass the instances to the builder's `middlewares(...)`:
 
 ```java
 import io.agentscope.core.ReActAgent;
@@ -314,6 +318,7 @@ Input record types per hook (under `io.agentscope.core.middleware`):
 | `onModelCall` | `ModelCallInput` | `messages`, `tools`, `options`, `model: Model` |
 | `onSystemPrompt` | `String` | The current prompt |
 | `onAgentStateReady` | — (direct parameters) | `state: AgentState`, `inputMessages: List<Msg>` |
+| `onAgentEvent` | — (direct parameters) | `event: AgentEvent` (`io.agentscope.core.event`, read-only) |
 
 To replace fields flowing into the next layer, construct a new input record, then call `next.apply(...)`.
 
@@ -351,7 +356,38 @@ public class SessionBootstrapMiddleware implements MiddlewareBase {
 }
 ```
 
-Keep implementations non-blocking: the notification runs on the call's subscription thread (possibly a Reactor event-loop thread in streaming scenarios). Firing is per lifecycle execution (subscription) — re-subscribing a cold stream triggers it again. A thrown exception fails the call unchanged and the remaining middlewares are not invoked. Middlewares that don't override this hook simply run their no-op default; the only fixed cost is one shallow copy of the input list per call, which keeps the caller's list isolated unconditionally. Participation follows `activePoints()` like every extension point: a middleware that omits `ExtensionPoint.ON_AGENT_STATE_READY` is never notified, even if it overrides the hook. Lifecycle window: the notification runs after the call has been admitted and registered for interruption, but before the tracing envelope and the error-event chain are in place — an interrupt issued during the notification is honored, while a thrown exception reaches the caller directly, without ErrorEvent hooks or tracing spans.
+Keep implementations non-blocking: the notification runs on the call's subscription thread (possibly a Reactor event-loop thread in streaming scenarios). Firing is per lifecycle execution (subscription) — re-subscribing a cold stream triggers it again. A thrown exception fails the call unchanged and the remaining middlewares are not invoked. Middlewares that don't override this hook simply run their no-op default; the only fixed cost is one shallow copy of the input list per call, which keeps the caller's list isolated unconditionally. Participation follows `activePoints()` like every extension point: when an explicit set omits `ExtensionPoint.ON_AGENT_STATE_READY`, the middleware is never notified, even if it overrides the hook. Lifecycle window: the notification runs after the call has been admitted and registered for interruption, but before the tracing envelope and the error-event chain are in place — an interrupt issued during the notification is honored, while a thrown exception reaches the caller directly, without ErrorEvent hooks or tracing spans.
+
+### Producer-side event notification
+
+Use `onAgentEvent(Agent agent, RuntimeContext ctx, AgentEvent event)` to observe events synchronously where the runtime produces them. In Core's `recordEvent`, the notification runs after `executionIdentity` is assigned and before the event enters the outer `BUFFER` or is forwarded. It returns `void`, has no `next`, and defaults to a no-op. Participants run in middleware order. Only events passing through `recordEvent` are observed: the outer stream's lifecycle envelope and events injected by external emitters are excluded. Observer `Exception`s are logged and ignored; the remaining observers and event delivery continue, so this notification is not a blocking permission hook.
+
+Declare `ExtensionPoint.ON_AGENT_EVENT` in an explicit `activePoints()` set. If the set omits this point, overriding `onAgentEvent` does not activate it. Without an explicit set (`activePoints()` returns `null`), participation is inferred from overridden hooks, including this one.
+
+```java
+import io.agentscope.core.agent.Agent;
+import io.agentscope.core.agent.RuntimeContext;
+import io.agentscope.core.event.AgentEvent;
+import io.agentscope.core.middleware.MiddlewareBase;
+import java.util.EnumSet;
+import java.util.Set;
+
+public class EventObservationMiddleware implements MiddlewareBase {
+    @Override
+    public Set<ExtensionPoint> activePoints() {
+        return EnumSet.of(ExtensionPoint.ON_AGENT_EVENT);
+    }
+
+    @Override
+    public void onAgentEvent(Agent agent, RuntimeContext ctx, AgentEvent event) {
+        ctx.put("last_agent_event_type", event.getType());
+    }
+}
+```
+
+The example records only the latest event type in per-call context. Keep notification handling non-blocking and read-only with respect to the event: do not perform blocking I/O, mutate the event or its metadata, or try to replace or suppress it. Register the middleware through the existing builder methods; no new configuration or terminal-result API is needed.
+
+By contrast, `next.apply(input).doOnNext(...)` inside `onAgent` observes **stream consumption**. Buffering and external consumer demand can delay that observation, so it cannot guarantee a control decision is ready before the next reasoning step. Collect observations in `onAgentEvent` and apply the policy in `onReasoning` when you need that ordering; the producer notification does not depend on external consumer demand. A child's own middleware can observe its local event before forwarding attaches a child `source` tag. Parent observers that count only the parent's work should still filter forwarded child sources.
 
 ### Reading RuntimeContext
 
@@ -410,7 +446,7 @@ MiddlewareBase lowerPriority = new MiddlewareBase() {
 };
 ```
 
-For streaming / event-emitting hooks, the inner middleware sees each emitted event first:
+For streaming onion hooks, the inner middleware sees each emitted event first:
 
 ```
 mw1_pre → mw2_pre → mw2_event → mw1_event → ... → mw2_post → mw1_post
@@ -423,11 +459,12 @@ middlewares = [mw1, mw2]
 // originalPrompt → mw1.onSystemPrompt() → mw2.onSystemPrompt() → final
 ```
 
-Notification hooks (`onAgentStateReady`) run once per call in `order()` sequence — higher values first, matching the onion entry order:
+Synchronous notification hooks run in `order()` sequence — higher values first, matching the onion entry order. `onAgentStateReady` runs once per call; `onAgentEvent` runs for each event passing through `recordEvent`:
 
 ```
 middlewares = [mw1(order=2), mw2(order=1)]
-// onAgentStateReady: mw1 → mw2
+// onAgentStateReady: mw1 → mw2 (once per call)
+// onAgentEvent: mw1 → mw2 (per event, before outer BUFFER / forwarding)
 ```
 
 Overall hook execution order across one reply:
@@ -440,23 +477,26 @@ onAgent
         │     ├── prepare model input → onSystemPrompt
         │     └── onModelCall
         └── onActing (per tool call)
+
+Each event passing through recordEvent:
+recordEvent: assign executionIdentity → onAgentEvent → outer BUFFER / forwarding
 ```
 
 ### Extension point participation (`activePoints()`)
 
-`MiddlewareBase.activePoints()` declares at which extension points the middleware is active. It is a **participation switch**, not a statement about which methods are overridden:
+`MiddlewareBase.activePoints()` declares at which extension points the middleware is active. The default returns `null`, so the framework infers participation from the hooks actually overridden, including inherited implementations. An explicit set is an authoritative **participation switch**, not a statement about which methods are overridden:
 
 | Declaration | Method overridden | Behavior |
 |-------------|-------------------|----------|
 | Point included | Yes | Participates normally |
-| Point included | No | Runs the default (pass-through) — legal redundancy |
+| Point included | No | Runs the default (pass-through / no-op) — legal redundancy |
 | Point omitted | Yes | The method is never invoked — an intentional opt-out |
 | Point omitted | No | The middleware does not exist at this point |
 
 Key semantics:
 
-- **Default is active everywhere.** Middlewares that do not override `activePoints()` keep today's behavior unchanged, including at extension points added in future releases.
-- **Overriding means taking over.** Once overridden, the active set is exactly the returned set. A point you forgot to declare is silently inactive even though its method is overridden.
+- **Default infers overridden hooks.** When `activePoints()` returns `null`, participation is inferred from the methods actually overridden, not enabled everywhere. This also applies to `onAgentEvent`.
+- **An explicit set takes over.** A non-null returned set is authoritative. A point you forgot to include is silently inactive even though its method is overridden.
 - **Empty set is legal.** `EnumSet.noneOf(ExtensionPoint.class)` disables the middleware at every point while keeping its registration — useful as a runtime switch.
 - **Frozen at construction.** The agent reads declarations once when it is built; later changes to the returned set have no effect on an already-built agent.
 - **Orthogonal to `order()`.** The declaration only answers *whether* a middleware participates at a point, never *in what order* — participants keep the usual `order()` semantics.
@@ -476,7 +516,7 @@ MiddlewareBase timingOnly =
         };
 ```
 
-**Recommended practice:** define `activePoints()` accurately for every middleware you write. Precise declarations let the framework skip non-participants entirely — an extension point with no participants builds no wrapper at all (zero wrapper layers, no pipeline assembly), which keeps chains short and the effective execution plan visible at build time. Not declaring keeps the fully compatible default (active everywhere), so adding the declaration later never breaks behavior — it only narrows participation.
+**Recommended practice:** define `activePoints()` accurately for every middleware you write. Precise declarations let the framework skip non-participants entirely — an extension point with no participants builds no wrapper at all (zero wrapper layers, no pipeline assembly), which keeps chains short and the effective execution plan visible at build time. Without an explicit declaration, the framework infers overridden hooks as a compatibility fallback. When adding a declaration later, include every hook you intend to keep active, including `ON_AGENT_EVENT` if you override `onAgentEvent`.
 
 The same applies when subclassing a built-in middleware: shipped classes declare exactly the points they hook, so a subclass that overrides an additional hook (e.g. adding `onModelCall` to `TaskReminderMiddleware`) must extend the inherited `activePoints()` — otherwise the new hook is silently skipped.
 

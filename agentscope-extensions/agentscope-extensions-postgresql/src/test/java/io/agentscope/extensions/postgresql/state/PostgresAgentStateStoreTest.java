@@ -359,6 +359,42 @@ class PostgresAgentStateStoreTest {
     }
 
     @Test
+    void listSessionIdsEscapesLikeWildcardsInUserSegment() throws SQLException {
+        PostgresAgentStateStore store =
+                PostgresAgentStateStore.builder(dataSource).createIfNotExist(false).build();
+        when(resultSet.next()).thenReturn(false);
+
+        store.listSessionIds("50%off");
+
+        // '%' and '_' are LIKE wildcards in the user segment and must stay literal
+        verify(preparedStatement).setString(1, "50\\%off:%");
+    }
+
+    @Test
+    void listSessionIdsEscapesAnonymousUserUnderscores() throws SQLException {
+        PostgresAgentStateStore store =
+                PostgresAgentStateStore.builder(dataSource).createIfNotExist(false).build();
+        when(resultSet.next()).thenReturn(false);
+
+        store.listSessionIds(null);
+
+        // "__anon__" must become a literal prefix, not a run of single-character wildcards
+        verify(preparedStatement).setString(1, "\\_\\_anon\\_\\_:%");
+    }
+
+    @Test
+    void listSessionIdsEscapesBackslashInUserSegment() throws SQLException {
+        PostgresAgentStateStore store =
+                PostgresAgentStateStore.builder(dataSource).createIfNotExist(false).build();
+        when(resultSet.next()).thenReturn(false);
+
+        store.listSessionIds("a\\b");
+
+        // the LIKE escape character itself must be escaped first
+        verify(preparedStatement).setString(1, "a\\\\b:%");
+    }
+
+    @Test
     void rejectsNullSessionId() {
         PostgresAgentStateStore store =
                 PostgresAgentStateStore.builder(dataSource).createIfNotExist(false).build();

@@ -16,6 +16,7 @@
 package io.agentscope.harness.agent.gateway;
 
 import io.agentscope.core.agent.Agent;
+import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.harness.agent.DistributedStore;
 import io.agentscope.harness.agent.HarnessAgent;
 import io.agentscope.harness.agent.gateway.channel.Channel;
@@ -137,7 +138,23 @@ public final class GatewayBootstrap {
             @Override
             public ExposeResult expose(
                     String agentId, String sessionId, Agent agent, OutboundAddress replyTo) {
-                String subagentId = gateway.exposeSubagent(agentId, sessionId, agent, replyTo);
+                return expose(agentId, sessionId, agent, replyTo, null);
+            }
+
+            @Override
+            public ExposeResult expose(
+                    String agentId,
+                    String sessionId,
+                    Agent agent,
+                    OutboundAddress replyTo,
+                    RuntimeContext context) {
+                String subagentId =
+                        gateway.exposeSubagent(
+                                agentId,
+                                sessionId,
+                                agent,
+                                replyTo,
+                                context != null ? context.getUserId() : null);
                 return new ExposeResult(subagentId);
             }
 
@@ -310,16 +327,16 @@ public final class GatewayBootstrap {
             // agent's manager in turn; a durable registry (when a distributed store is present)
             // makes the subagentId resolvable beyond this process. Without these, exposure stays
             // in-process (legacy behaviour).
-            List<DefaultAgentManager> managers =
+            List<HarnessAgent> managerOwners =
                     agents.values().stream()
-                            .map(HarnessAgent::getSubagentAgentManager)
-                            .filter(Objects::nonNull)
+                            .filter(ha -> ha.getSubagentAgentManager() != null)
                             .toList();
-            if (!managers.isEmpty()) {
+            if (!managerOwners.isEmpty()) {
                 gw.setSubagentMaterializer(
                         (agentId, rc) -> {
-                            for (DefaultAgentManager m : managers) {
-                                Optional<Agent> agent = m.createAgentIfPresent(agentId, rc);
+                            for (HarnessAgent ha : managerOwners) {
+                                DefaultAgentManager scoped = ha.getSubagentAgentManager(rc);
+                                Optional<Agent> agent = scoped.createAgentIfPresent(agentId, rc);
                                 if (agent.isPresent()) {
                                     return agent;
                                 }

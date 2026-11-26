@@ -65,6 +65,8 @@ Conversation context, compaction summaries, permission rules, Plan Mode state, a
 
 Storage provider for `RemoteFilesystemSpec`, routing `MEMORY.md`, `memory/`, `skills/`, `sessions/` to shared KV storage. Auto-injected into `RemoteFilesystemSpec` when using the no-arg constructor.
 
+For the filesystem-backed `WorkspaceMessageBus`, replay-log appends (including `sessionPublishEvent`) signal an error when the backend reports a failed write; no success cursor, log capping, or live-event fan-out follows that failure. A failed acknowledgement may still leave a persisted entry, so the bus does not automatically retry or delete it.
+
 ### SandboxSnapshotSpec — Sandbox Snapshots
 
 Persists Docker/K8s sandbox workspace as tar archives for cross-call recovery. Auto-wired into `SandboxFilesystemSpec` by `distributedStore`.

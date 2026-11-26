@@ -54,6 +54,14 @@ public final class HarnessContextBuilder implements ModelRequestPreparer {
 
     private static final String ORIGINAL_SYSTEM_INPUTS =
             "agentscope.context.original_system_inputs";
+
+    /**
+     * Input allowance used only while the model's context window is still unknown. Deliberately
+     * conservative: loading less is safer than a failed request, and the learned window replaces
+     * it after the first overflow.
+     */
+    private static final long FALLBACK_INPUT_TOKENS = 64_000;
+
     private static final String SKILL_CATALOG = "skill_catalog";
     private static final List<String> MATERIAL_KINDS =
             List.of(
@@ -68,6 +76,7 @@ public final class HarnessContextBuilder implements ModelRequestPreparer {
     private final ToolResultEvictionMiddleware eviction;
     private final ContextSources sources;
     private final ContextSelectionPolicy selectionPolicy;
+    private final LearnedContextWindows learnedWindows;
 
     public HarnessContextBuilder(
             ContextPolicy policy,
@@ -87,11 +96,22 @@ public final class HarnessContextBuilder implements ModelRequestPreparer {
             ToolResultEvictionMiddleware eviction,
             ContextSources sources,
             ContextSelectionPolicy selectionPolicy) {
+        this(policy, compaction, eviction, sources, selectionPolicy, null);
+    }
+
+    public HarnessContextBuilder(
+            ContextPolicy policy,
+            CompactionMiddleware compaction,
+            ToolResultEvictionMiddleware eviction,
+            ContextSources sources,
+            ContextSelectionPolicy selectionPolicy,
+            LearnedContextWindows learnedWindows) {
         this.policy = Objects.requireNonNull(policy);
         this.compaction = compaction;
         this.eviction = eviction;
         this.sources = Objects.requireNonNull(sources);
         this.selectionPolicy = Objects.requireNonNull(selectionPolicy);
+        this.learnedWindows = learnedWindows;
     }
 
     public ContextSources sources() {
@@ -517,7 +537,7 @@ public final class HarnessContextBuilder implements ModelRequestPreparer {
         return purpose == Purpose.REASONING ? project(input, snapshot) : input;
     }
 
-    /** Lay out the request independently of any history compaction. */
+    /** Stable layout: system, skills, conversation, pending deliveries, state, references. */
     private static ModelCallInput layout(ModelCallInput input, List<Msg> canonical) {
         List<Msg> ordered = new ArrayList<>();
         List<Msg> systems =
@@ -551,33 +571,26 @@ public final class HarnessContextBuilder implements ModelRequestPreparer {
                             .metadata(metadata)
                             .build());
         }
-        int afterSystem = ordered.size();
+        List<Msg> deliveries = new ArrayList<>();
+        List<Msg> state = new ArrayList<>();
+        List<Msg> references = new ArrayList<>();
         Msg catalog = null;
-        for (int group = 1; group < 4; group++) {
-            for (Msg msg : input.messages()) {
-                int position =
-                        msg.getRole() == MsgRole.SYSTEM
-                                ? 0
-                                : !msg.isRequestProjection(canonical)
-                                        ? 1
-                                        : "workspace_materials"
-                                                        .equals(
-                                                                msg.getMetadata()
-                                                                        .get(
-                                                                                Msg
-                                                                                        .METADATA_REMINDER_KIND))
-                                                ? 3
-                                                : 2;
-                if (position != group) continue;
-                if (group == 2
-                        && SKILL_CATALOG.equals(
-                                msg.getMetadata().get(Msg.METADATA_REMINDER_KIND))) {
-                    catalog = msg;
-                } else {
-                    ordered.add(msg);
-                }
+        for (Msg msg : input.messages()) {
+            if (msg.getRole() == MsgRole.SYSTEM) continue;
+            if (!msg.isRequestProjection(canonical)) {
+                ordered.add(msg);
+            } else {
+                Object kind = msg.getMetadata().get(Msg.METADATA_REMINDER_KIND);
+                if (SKILL_CATALOG.equals(kind)) catalog = msg;
+                else if ("task_delivery".equals(kind)) deliveries.add(msg);
+                else if ("workspace_materials".equals(kind)) references.add(msg);
+                else state.add(msg);
             }
         }
+        int afterSystem = systems.isEmpty() ? 0 : 1;
+        ordered.addAll(deliveries);
+        ordered.addAll(state);
+        ordered.addAll(references);
         if (catalog != null) {
             // A trailing assistant message can be interpreted as a prefill.
             int end = ordered.size();
@@ -633,7 +646,10 @@ public final class HarnessContextBuilder implements ModelRequestPreparer {
     }
 
     private long inputLimit(ModelCallInput input) {
-        long window = input.model().getContextWindowSize();
+        long window =
+                learnedWindows != null
+                        ? learnedWindows.effectiveWindow(input.model())
+                        : input.model().getContextWindowSize();
         long output = policy.reservedOutputTokens();
         if (output == 0) output = window > 0 ? Math.min(4096, Math.max(1, window / 8)) : 4096;
         if (input.options() != null) {
@@ -646,7 +662,7 @@ public final class HarnessContextBuilder implements ModelRequestPreparer {
                 policy.safetyMarginTokens() > 0
                         ? policy.safetyMarginTokens()
                         : window > 0 ? Math.max(1, window / 50) : 1024;
-        long limit = window > 0 ? Math.max(0, window - output - safety) : 64000;
+        long limit = window > 0 ? Math.max(0, window - output - safety) : FALLBACK_INPUT_TOKENS;
         return policy.maxInputTokens() > 0 ? Math.min(limit, policy.maxInputTokens()) : limit;
     }
 
