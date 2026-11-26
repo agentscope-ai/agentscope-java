@@ -276,6 +276,8 @@ agent.promoteSkill("notes-taker", "alice")                   // 手动晋升一�
 
 Harness 把本轮可见的技能渲染成 `<available_skills>` 块，放在临时 User 消息里。技能目录通常位于对话历史之前。随着历史增长，内容未变的系统指令和技能目录可以构成共享前缀。是否命中缓存取决于模型提供方及其缓存配置。历史压缩后的第一次推理请求仍会包含技能目录。
 
+较大的目录使用简洁的分页索引。
+
 ```xml
 <available_skills>
 <skill>
@@ -294,7 +296,9 @@ Harness 把本轮可见的技能渲染成 `<available_skills>` 块，放在临�
 
 加载某个 skill 时 agent 会调用内置工具 `load_skill_through_path`：
 
-- `load_skill_through_path(skillId, path="SKILL.md")` 返回 markdown 正文
+通过 `load_skill_through_path(query="关键词", offset=0)` 可按名称、ID 或描述查找可见 Skills；空 query 列出全部目录，按返回的 offset 翻页。大目录使用精简索引，完整内容和 files-root 在加载 SKILL.md 时返回；发现与加载都遵循当前调用的目录和权限。精简目录保留默认或自定义执行约定；当前调用的加载工具被隐藏或替换为外部工具时，保留完整目录。
+
+- `load_skill_through_path(skillId, path="SKILL.md")` 返回完整 markdown 和 files-root
 - `load_skill_through_path(skillId, path="references/style-guide.md")` 返回该 skill 目录下的任意文件
 
 具体怎么取文件，取决于 skill 来自哪里：

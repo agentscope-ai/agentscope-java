@@ -48,6 +48,26 @@ var events = journal.readAfter(0, 100);
 
 `ThreadHistory.Transcript` 包含完整消息和 `asOfSeq`，不是包含任务控制、流式片段和工具进度的公共页面快照。Durable 应用通过 Session/Thread/Turn 的 `snapshot()`、`history()` 和事件接口恢复页面；不要由业务层解析原生日志来推断 Turn 状态。可运行示例见[可恢复聊天](/dev/zh/blogs/best-practices/session-chat)。
 
+## 通过工具分页读取历史
+
+Agent 可以用 `thread_search` 和 `thread_list` 查找早期证据，不必一次请求全部结果。两者都接受可选的非负 `offset`，默认值为 `0`。还有后续结果时，应使用返回的 `nextOffset` 继续，不要根据请求上限或数组长度自行计算。`thread_search` 仍返回纯命中数组，续读信息附在最后一条实际返回的命中上；`thread_list` 则放在已有尾注中。搜索续页时保持 `query`、`matchMode` 和 `agentId` 不变，列表续页时保持 `agentId` 不变。
+
+```text
+thread_search query="deployment error" agentId="change-assistant" offset=0
+thread_list agentId="change-assistant" offset=0
+```
+
+每一页都会在当前调用方的 namespace 内重新校验访问权限。偏移和消息 ID 不授予访问权，也不能用于定位其他用户身份。Offset 分页不是事务快照，并发变化可能使不同页的结果位置发生偏移。应保持已授权的调用上下文不变，在依据多页证据作出判断前重新检查原始消息。
+
+需要向前翻阅一条 Thread 时，先用 `lastN` 调用 `thread_history`（默认 `20`，最大 `100`），再把返回的 `nextBeforeMessageId` 作为 `beforeMessageId` 传入。该游标为 exclusive，边界消息不会再次返回。`nextBeforeMessageId` 指向实际返回的最老消息，而不是请求范围中最老的消息；即使输出预算缩短了本页，也应使用它继续。`hasMore` 表示是否还有更早的消息。下面第二次调用中的 `oldest-returned-id` 应替换为返回的游标，并保持同一 Thread 身份。
+
+```text
+thread_history agentId="change-assistant" sessionId="conversation-001" lastN=20
+thread_history agentId="change-assistant" sessionId="conversation-001" lastN=20 beforeMessageId="oldest-returned-id"
+```
+
+分页结果仍遵守既有输出预算和预览规则。需要恢复一条完整原始消息时，应向 `thread_history` 传入精确的 `messageId`；这一原文读取方式不变，不能与 `beforeMessageId` 同时使用。每页的 `asOfSeq` 描述该页读取时的当前视图，不是整个分页过程共用的固定快照。续页应使用返回的 ID，不要把 `asOfSeq` 当作分页游标。
+
 ## 事件结构与读取
 
 `AgentEvent` 是本次调用的实时事件；`JournalEvent` 是原生已提交事实。实时发出不等于持久提交。原生 `seq` 在每条 Thread 内递增，不能与 Durable 的 Session 公共 cursor 混用。

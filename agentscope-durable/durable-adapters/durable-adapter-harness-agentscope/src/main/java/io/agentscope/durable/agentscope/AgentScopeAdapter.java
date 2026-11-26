@@ -240,7 +240,8 @@ public final class AgentScopeAdapter implements HarnessAdapter {
         return new AgentScopeAdapter(
                 invocation -> {
                     var binding = invocation.binding();
-                    // Default Harness memory work must finish inside the recoverable native phase.
+                    // Harness memory work, when the application enables it, must finish inside
+                    // the recoverable native phase.
                     binding.context().put(MemoryFlushMiddleware.INLINE_CONTEXT_KEY, true);
                     var builder =
                             Objects.requireNonNull(

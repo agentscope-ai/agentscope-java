@@ -85,8 +85,8 @@ class AgentSpawnToolLifecycleTest {
                         },
                         false);
         AgentSpawnTool tool = new AgentSpawnTool(manager, new StartingTaskRepository(), 0);
-        AgentState state = AgentState.builder().build();
         RuntimeContext context = context("owner", "parent");
+        AgentState state = context.getAgentState();
 
         for (int i = 0; i < 256; i++) {
             String spawn =
@@ -122,8 +122,8 @@ class AgentSpawnToolLifecycleTest {
         AtomicInteger closed = new AtomicInteger();
         DefaultAgentManager manager =
                 manager(rc -> closeableAgent("worker", closed, Mono.just(reply("done"))), false);
-        AgentState state = AgentState.builder().build();
         RuntimeContext context = context("owner", "one-shot-parent");
+        AgentState state = context.getAgentState();
         AgentSpawnTool tool = new AgentSpawnTool(manager, new StartingTaskRepository(), 0);
 
         String spawn =
@@ -169,8 +169,8 @@ class AgentSpawnToolLifecycleTest {
                         false);
         try (StartingTaskRepository repository = new StartingTaskRepository()) {
             AgentSpawnTool tool = new AgentSpawnTool(manager, repository, 0);
-            AgentState state = AgentState.builder().build();
             RuntimeContext context = context("owner", "async-one-shot-parent");
+            AgentState state = context.getAgentState();
 
             String spawn =
                     textOf(
@@ -206,8 +206,8 @@ class AgentSpawnToolLifecycleTest {
                 manager(rc -> closeableAgent("worker", new AtomicInteger(), Mono.empty()), false);
         DefaultAgentManager persistentManager =
                 manager(rc -> closeableAgent("worker", new AtomicInteger(), Mono.empty()), true);
-        AgentState state = AgentState.builder().build();
         RuntimeContext context = context("owner", "conflict-parent");
+        AgentState state = context.getAgentState();
         AgentSpawnTool tool = new AgentSpawnTool(manager, new StartingTaskRepository(), 0);
         AgentSpawnTool persistentTool =
                 new AgentSpawnTool(persistentManager, new StartingTaskRepository(), 0);
@@ -248,8 +248,8 @@ class AgentSpawnToolLifecycleTest {
         AtomicInteger closed = new AtomicInteger();
         DefaultAgentManager manager =
                 manager(rc -> closeableAgent("worker", closed, Mono.just(reply("done"))), false);
-        AgentState state = AgentState.builder().build();
         RuntimeContext context = context("owner", "parent");
+        AgentState state = context.getAgentState();
         AgentSpawnTool tool = new AgentSpawnTool(manager, new StartingTaskRepository(), 0);
 
         String spawn =
@@ -308,8 +308,8 @@ class AgentSpawnToolLifecycleTest {
                         },
                         false);
         AgentSpawnTool tool = new AgentSpawnTool(manager, new StartingTaskRepository(), 0);
-        AgentState state = AgentState.builder().build();
         RuntimeContext context = context("owner", "restore-race-parent");
+        AgentState state = context.getAgentState();
         String key = "agent:worker:restore-race";
         state.getToolContext()
                 .putSpawnEntry(
@@ -359,7 +359,7 @@ class AgentSpawnToolLifecycleTest {
                         rc -> closeableAgent("worker", closed, Mono.just(reply("continued"))),
                         false);
         SubagentGatewayBridge bridge = mock(SubagentGatewayBridge.class);
-        when(bridge.expose(any(), any(), any(), any()))
+        when(bridge.expose(any(), any(), any(), any(), any()))
                 .thenAnswer(
                         invocation -> {
                             exposureEntered.countDown();
@@ -369,8 +369,8 @@ class AgentSpawnToolLifecycleTest {
                             return new SubagentGatewayBridge.ExposeResult("public-handle");
                         });
         AgentSpawnTool tool = new AgentSpawnTool(manager, new StartingTaskRepository(), 0, bridge);
-        AgentState state = AgentState.builder().build();
         RuntimeContext context = context("owner", "exposure-parent");
+        AgentState state = context.getAgentState();
 
         ExecutorService caller = Executors.newSingleThreadExecutor();
         try {
@@ -429,9 +429,9 @@ class AgentSpawnToolLifecycleTest {
         RuntimeContext firstContext = context("same-user", "first-parent");
         RuntimeContext secondContext = context("same-user", "second-parent");
         RuntimeContext thirdContext = context("other-user", "first-parent");
-        AgentState firstState = AgentState.builder().build();
-        AgentState secondState = AgentState.builder().build();
-        AgentState thirdState = AgentState.builder().build();
+        AgentState firstState = firstContext.getAgentState();
+        AgentState secondState = secondContext.getAgentState();
+        AgentState thirdState = thirdContext.getAgentState();
 
         String first =
                 textOf(
@@ -521,8 +521,8 @@ class AgentSpawnToolLifecycleTest {
                                                 })),
                         false);
         AgentSpawnTool tool = new AgentSpawnTool(manager, new StartingTaskRepository(), 0);
-        AgentState state = AgentState.builder().build();
         RuntimeContext context = context("owner", "sync-parent");
+        AgentState state = context.getAgentState();
         ExecutorService caller = Executors.newSingleThreadExecutor();
         try {
             Future<String> spawn =
@@ -577,8 +577,8 @@ class AgentSpawnToolLifecycleTest {
                         false);
         try (StartingTaskRepository repository = new StartingTaskRepository()) {
             AgentSpawnTool tool = new AgentSpawnTool(manager, repository, 0);
-            AgentState state = AgentState.builder().build();
             RuntimeContext context = context("owner", "promoted-parent");
+            AgentState state = context.getAgentState();
 
             String spawn =
                     textOf(
@@ -630,8 +630,8 @@ class AgentSpawnToolLifecycleTest {
                         false);
         try (StartingTaskRepository repository = new StartingTaskRepository()) {
             AgentSpawnTool tool = new AgentSpawnTool(manager, repository, 0);
-            AgentState state = AgentState.builder().build();
             RuntimeContext context = context("owner", "async-parent");
+            AgentState state = context.getAgentState();
 
             String spawn =
                     textOf(
@@ -677,8 +677,8 @@ class AgentSpawnToolLifecycleTest {
                                         Mono.just(reply("done"))),
                         false);
         AgentSpawnTool tool = new AgentSpawnTool(manager, new StartingTaskRepository(), 0);
-        AgentState state = AgentState.builder().build();
         RuntimeContext context = context("owner", "label-parent");
+        AgentState state = context.getAgentState();
 
         List<String> results =
                 concurrently(
@@ -724,8 +724,8 @@ class AgentSpawnToolLifecycleTest {
                                         Mono.just(reply("done"))),
                         true);
         AgentSpawnTool tool = new AgentSpawnTool(manager, new StartingTaskRepository(), 0);
-        AgentState state = AgentState.builder().build();
         RuntimeContext context = context("owner", "persistent-parent");
+        AgentState state = context.getAgentState();
 
         List<String> results =
                 concurrently(
@@ -782,8 +782,8 @@ class AgentSpawnToolLifecycleTest {
                                                 })),
                         false);
         AgentSpawnTool tool = new AgentSpawnTool(manager, new StartingTaskRepository(), 0);
-        AgentState state = AgentState.builder().build();
         RuntimeContext context = context("owner", "send-parent");
+        AgentState state = context.getAgentState();
         String spawn =
                 textOf(
                         tool.agentSpawn(context, state, "worker", "initial", true, "racy", 30, null)
@@ -831,7 +831,8 @@ class AgentSpawnToolLifecycleTest {
         SubagentGatewayBridge bridge = mock(SubagentGatewayBridge.class);
         when(bridge.revokeBySessionId(any())).thenReturn(true);
         AgentSpawnTool tool = new AgentSpawnTool(manager, new StartingTaskRepository(), 0, bridge);
-        AgentState state = AgentState.builder().build();
+        RuntimeContext context = context("owner", "persisted-only-parent");
+        AgentState state = context.getAgentState();
         String key = "agent:worker:persisted-only";
         state.getToolContext()
                 .putSpawnEntry(
@@ -840,8 +841,7 @@ class AgentSpawnToolLifecycleTest {
                                 key, "worker", "child-session", "persisted", 1, true));
 
         assertTrue(
-                textOf(tool.agentRelease(RuntimeContext.empty(), state, key, null))
-                        .contains("status: released"));
+                textOf(tool.agentRelease(context, state, key, null)).contains("status: released"));
 
         verify(bridge, times(1)).revokeBySessionId("child-session");
         assertTrue(state.getToolContext().getSpawnRegistry().isEmpty());
@@ -853,11 +853,11 @@ class AgentSpawnToolLifecycleTest {
         DefaultAgentManager manager =
                 manager(rc -> closeableAgent("worker", closed, Mono.just(reply("done"))), false);
         SubagentGatewayBridge bridge = mock(SubagentGatewayBridge.class);
-        when(bridge.expose(any(), any(), any(), any()))
+        when(bridge.expose(any(), any(), any(), any(), any()))
                 .thenReturn(new SubagentGatewayBridge.ExposeResult("public-handle"));
         AgentSpawnTool tool = new AgentSpawnTool(manager, new StartingTaskRepository(), 0, bridge);
-        AgentState state = AgentState.builder().build();
         RuntimeContext context = context("owner", "gateway-parent");
+        AgentState state = context.getAgentState();
 
         String spawn =
                 textOf(
@@ -913,7 +913,11 @@ class AgentSpawnToolLifecycleTest {
     }
 
     private static RuntimeContext context(String userId, String sessionId) {
-        return RuntimeContext.builder().userId(userId).sessionId(sessionId).build();
+        return RuntimeContext.builder()
+                .userId(userId)
+                .sessionId(sessionId)
+                .agentState(AgentState.builder().userId(userId).sessionId(sessionId).build())
+                .build();
     }
 
     private static String onlySpawnKey(AgentState state) {

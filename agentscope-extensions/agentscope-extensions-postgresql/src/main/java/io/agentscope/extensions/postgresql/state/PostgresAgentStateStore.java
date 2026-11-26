@@ -683,7 +683,7 @@ public class PostgresAgentStateStore implements AgentStateStore {
                         + " WHERE session_id LIKE ? ORDER BY session_id";
         try (Connection conn = dataSource.getConnection();
                 PreparedStatement stmt = conn.prepareStatement(sql)) {
-            stmt.setString(1, prefix + "%");
+            stmt.setString(1, likePrefixPattern(prefix));
             try (ResultSet rs = stmt.executeQuery()) {
                 Set<String> sessionIds = new HashSet<>();
                 while (rs.next()) {
@@ -695,6 +695,24 @@ public class PostgresAgentStateStore implements AgentStateStore {
         } catch (SQLException e) {
             throw new RuntimeException("Failed to list sessions", e);
         }
+    }
+
+    /**
+     * Builds a {@code LIKE} pattern matching exactly {@code prefix} followed by any suffix,
+     * escaping PostgreSQL's LIKE wildcards ({@code %} and {@code _}) and its default escape
+     * character ({@code \}) so user ids containing those characters cannot widen the match
+     * across users (e.g. the anonymous user {@code "__anon__"} or a user id with {@code "%"}).
+     */
+    private static String likePrefixPattern(String prefix) {
+        StringBuilder pattern = new StringBuilder(prefix.length() + 1);
+        for (int i = 0; i < prefix.length(); i++) {
+            char ch = prefix.charAt(i);
+            if (ch == '\\' || ch == '%' || ch == '_') {
+                pattern.append('\\');
+            }
+            pattern.append(ch);
+        }
+        return pattern.append('%').toString();
     }
 
     private static final String ANON_USER = "__anon__";

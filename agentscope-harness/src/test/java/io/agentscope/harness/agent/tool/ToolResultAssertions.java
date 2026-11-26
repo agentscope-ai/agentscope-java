@@ -16,9 +16,12 @@
 package io.agentscope.harness.agent.tool;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 
 import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.message.ToolErrorKind;
+import io.agentscope.core.message.ToolErrorMetadata;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolResultState;
 
@@ -30,5 +33,21 @@ public final class ToolResultAssertions {
         assertNotNull(result);
         assertEquals(expected, result.getState());
         return ((TextBlock) result.getOutput().get(0)).getText();
+    }
+
+    public static void assertErrorKind(ToolResultBlock result, ToolErrorKind kind, String scope) {
+        assertEquals(
+                kind.getValue(), result.getMetadata().get(ToolErrorMetadata.METADATA_ERROR_KIND));
+        assertEquals(scope, result.getMetadata().get(ToolErrorMetadata.METADATA_ERROR_SCOPE));
+    }
+
+    public static void assertRetriable(ToolResultBlock result, boolean retriable) {
+        assertEquals(retriable, result.getMetadata().get(ToolErrorMetadata.METADATA_RETRIABLE));
+    }
+
+    public static void assertNoErrorMetadata(ToolResultBlock result) {
+        assertFalse(result.getMetadata().containsKey(ToolErrorMetadata.METADATA_ERROR_KIND));
+        assertFalse(result.getMetadata().containsKey(ToolErrorMetadata.METADATA_ERROR_SCOPE));
+        assertFalse(result.getMetadata().containsKey(ToolErrorMetadata.METADATA_RETRIABLE));
     }
 }

@@ -132,6 +132,7 @@ class HarnessAgentIntegrationExampleTest {
                         .sysPrompt("You are the main agent in an integration test.")
                         .model(model)
                         .workspace(workspace)
+                        .enableLongTermMemory()
                         .build()) {
             Msg reply =
                     agent.call(
