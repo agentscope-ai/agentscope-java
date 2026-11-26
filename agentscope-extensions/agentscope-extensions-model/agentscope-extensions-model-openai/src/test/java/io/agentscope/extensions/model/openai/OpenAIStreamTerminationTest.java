@@ -62,6 +62,10 @@ class OpenAIStreamTerminationTest {
             "{\"id\":\"1\",\"choices\":[{\"delta\":{\"content\":\"hello\"},\"index\":0}]}";
     private static final String CHUNK_FINISH =
             "{\"id\":\"1\",\"choices\":[{\"delta\":{},\"finish_reason\":\"stop\",\"index\":0}]}";
+    private static final String CHUNK_CONTENT_CANDIDATE_1 =
+            "{\"id\":\"1\",\"choices\":[{\"delta\":{\"content\":\"world\"},\"index\":1}]}";
+    private static final String CHUNK_FINISH_CANDIDATE_1 =
+            "{\"id\":\"1\",\"choices\":[{\"delta\":{},\"finish_reason\":\"stop\",\"index\":1}]}";
 
     /**
      * A transport that emits two content chunks and the {@code [DONE]} sentinel, then never
@@ -226,6 +230,88 @@ class OpenAIStreamTerminationTest {
     @DisplayName("OkHttp transport accepts finish_reason without [DONE]")
     void okHttpTransportAcceptsFinishReasonWithoutDoneSentinel() throws IOException {
         assertFinishReasonWithoutDoneCompletes(new OkHttpTransport());
+    }
+
+    @Test
+    @DisplayName("Built-in transports reject [DONE]-less streams with unfinished candidates")
+    void builtInTransportsRejectPartiallyFinishedCandidatesWithoutDoneSentinel()
+            throws IOException {
+        assertMultiCandidateWithoutDone(
+                new JdkHttpTransport(HttpClient.newHttpClient(), HttpTransportConfig.defaults()),
+                false,
+                CHUNK_CONTENT_CANDIDATE_1,
+                CHUNK_FINISH);
+        assertMultiCandidateWithoutDone(
+                new OkHttpTransport(), false, CHUNK_CONTENT_CANDIDATE_1, CHUNK_FINISH);
+    }
+
+    @Test
+    @DisplayName("Built-in transports accept [DONE]-less streams when all candidates finish")
+    void builtInTransportsAcceptAllFinishedCandidatesWithoutDoneSentinel() throws IOException {
+        assertMultiCandidateWithoutDone(
+                new JdkHttpTransport(HttpClient.newHttpClient(), HttpTransportConfig.defaults()),
+                true,
+                CHUNK_CONTENT,
+                CHUNK_CONTENT_CANDIDATE_1,
+                CHUNK_FINISH,
+                CHUNK_FINISH_CANDIDATE_1);
+        assertMultiCandidateWithoutDone(
+                new OkHttpTransport(),
+                true,
+                CHUNK_CONTENT,
+                CHUNK_CONTENT_CANDIDATE_1,
+                CHUNK_FINISH,
+                CHUNK_FINISH_CANDIDATE_1);
+    }
+
+    private static void assertMultiCandidateWithoutDone(
+            HttpTransport transport, boolean expectComplete, String... chunks) throws IOException {
+        HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        server.createContext(
+                "/v1/chat/completions",
+                exchange -> {
+                    StringBuilder body = new StringBuilder();
+                    for (String chunk : chunks) {
+                        body.append("data: ").append(chunk).append("\n\n");
+                    }
+                    byte[] bytes = body.toString().getBytes(StandardCharsets.UTF_8);
+                    exchange.getResponseHeaders().set("Content-Type", "text/event-stream");
+                    exchange.sendResponseHeaders(200, bytes.length);
+                    try (OutputStream output = exchange.getResponseBody()) {
+                        output.write(bytes);
+                    }
+                });
+        server.start();
+        try {
+            OpenAIRequest request = sampleRequest();
+            request.setN(2);
+            StepVerifier.Step<?> verification =
+                    StepVerifier.create(
+                                    new OpenAIClient(transport)
+                                            .stream(
+                                                    "test-key",
+                                                    "http://127.0.0.1:"
+                                                            + server.getAddress().getPort(),
+                                                    request,
+                                                    GenerateOptions.builder().build()))
+                            .expectNextCount(chunks.length);
+            if (expectComplete) {
+                verification.expectComplete().verify(Duration.ofSeconds(5));
+            } else {
+                verification
+                        .expectErrorMatches(
+                                e ->
+                                        e instanceof OpenAIException
+                                                && "stream_terminated_early"
+                                                        .equals(
+                                                                ((OpenAIException) e)
+                                                                        .getErrorCode()))
+                        .verify(Duration.ofSeconds(5));
+            }
+        } finally {
+            transport.close();
+            server.stop(0);
+        }
     }
 
     private static void assertFinishReasonWithoutDoneCompletes(HttpTransport transport)
