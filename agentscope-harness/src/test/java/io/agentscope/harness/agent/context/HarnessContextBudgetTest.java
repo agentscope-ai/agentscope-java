@@ -149,6 +149,49 @@ class HarnessContextBudgetTest {
     }
 
     @Test
+    void manifestAttributedPerItemTokensWithTheRequestEstimator() {
+        // Deterministic estimator: 100 shared overhead + 10 tokens per content char. The
+        // per-item figure for each message must then be exactly 10 * length — the overhead
+        // cancels — proving the attribution uses the same estimator as the whole-request
+        // figure (#4198).
+        ContextTokenEstimator estimator =
+                request ->
+                        new ContextTokenEstimator.Estimate(
+                                100
+                                        + request.messages().stream()
+                                                .mapToLong(
+                                                        msg -> 10L * msg.getTextContent().length())
+                                                .sum(),
+                                "custom",
+                                false);
+        List<Msg> history =
+                List.of(message("a".repeat(20)), message("b".repeat(8)), message("respond"));
+
+        ModelCallInput prepared = prepare(builderNoCompaction(100_000, estimator), input(history));
+
+        ContextManifest manifest = manifests.get(0);
+        for (ContextManifest.Item item : manifest.items()) {
+            assertTrue(
+                    item.estimatedTokens() >= 0,
+                    () -> "item " + item.sourceId() + " must carry a non-negative figure");
+        }
+        for (ContextManifest.Item item : manifest.items()) {
+            if (!"message".equals(item.sourceType())) {
+                continue;
+            }
+            Msg attributed =
+                    prepared.messages().stream()
+                            .filter(msg -> msg.getId().equals(item.sourceId()))
+                            .findFirst()
+                            .orElseThrow();
+            assertEquals(
+                    10L * attributed.getTextContent().length(),
+                    item.estimatedTokens(),
+                    () -> "per-item figure for " + item.sourceId() + " must match the estimator");
+        }
+    }
+
+    @Test
     void customCheapMediaDoesNotTriggerDefaultMediaAccounting() {
         ContextTokenEstimator estimator =
                 request ->
@@ -520,6 +563,24 @@ class HarnessContextBudgetTest {
                         .triggerMessages(0)
                         .triggerTokens(0)
                         .keepTokens(keepTokens)
+                        .keepMessages(1)
+                        .flushBeforeCompact(false)
+                        .truncateArgs(null)
+                        .prune(null)
+                        .build();
+        return new HarnessContextBuilder(
+                new ContextPolicy(cap, 1, 1, estimator, manifests::add),
+                new CompactionMiddleware(null, summary, config),
+                null);
+    }
+
+    /** Like {@link #builder}, but with compaction triggers set high enough to never fire. */
+    private HarnessContextBuilder builderNoCompaction(int cap, ContextTokenEstimator estimator) {
+        CompactionConfig config =
+                CompactionConfig.builder()
+                        .triggerMessages(10_000)
+                        .triggerTokens(10_000_000)
+                        .keepTokens(0)
                         .keepMessages(1)
                         .flushBeforeCompact(false)
                         .truncateArgs(null)
