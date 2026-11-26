@@ -47,6 +47,7 @@ class JevAutoConfigurationTest {
                 .withPropertyValues(
                         "agentscope.jev.api-key=test-key",
                         "agentscope.jev.base-url=http://typesafe.test",
+                        "agentscope.jev.endpoint-path=/v1/decisions",
                         "agentscope.jev.model=jev-test",
                         "agentscope.jev.timeout=5s",
                         "agentscope.jev.retry.max-retries=2",
@@ -63,11 +64,32 @@ class JevAutoConfigurationTest {
 
                             HttpRequest httpRequest = transport.request.get();
                             assertThat(httpRequest.getUrl())
-                                    .isEqualTo("http://typesafe.test/v1/systemone");
+                                    .isEqualTo("http://typesafe.test/v1/decisions");
                             assertThat(httpRequest.getHeaders().get("Authorization"))
                                     .isEqualTo("Bearer test-key");
                             JsonNode body = MAPPER.readTree(httpRequest.getBody());
                             assertThat(body.get("model").asText()).isEqualTo("jev-test");
+                        });
+    }
+
+    @Test
+    void shouldUseDefaultEndpointPathWhenNotConfigured() {
+        RecordingTransport transport = new RecordingTransport();
+        contextRunner
+                .withPropertyValues(
+                        "agentscope.jev.api-key=test-key",
+                        "agentscope.jev.base-url=http://typesafe.test")
+                .withBean(
+                        "transportCustomizer",
+                        JevClientBuilderCustomizer.class,
+                        () -> builder -> builder.transport(transport))
+                .run(
+                        context -> {
+                            JevClient client = context.getBean(JevClient.class);
+                            client.systemOneBlocking(request());
+
+                            assertThat(transport.request.get().getUrl())
+                                    .isEqualTo("http://typesafe.test/v1/systemone");
                         });
     }
 

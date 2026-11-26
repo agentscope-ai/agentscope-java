@@ -234,7 +234,7 @@ agent-sandbox 后端不通过 `kubectl exec` 进容器，而是访问运行时�
 
 `Sandbox` 抽象的主数据面入口是 `exec(command)`。这是刻意的——`edit_file` / `grep_files` 这类工具的语义（正则、字符串替换、glob）不可能靠有限的文件 API 端点表达，靠镜像内的标准工具链执行 shell 脚本是唯一通用解。文件 API（upload/download）只承担"纯字节搬运"：工作区快照和单文件上传下载走它（后端通过实现 `SandboxFileTransfer` 可选接口声明该能力），其余一切走 `execute`。这也意味着：**镜像契约本身就是沙箱接口的一部分**，换镜像前先跑上面的自检。
 
-**从模型视角跨越边界。** 上面的文件 API（upload/download）是内部机制——对 LLM 不可见，`FilesystemTool` 不暴露任何传输工具。沙箱中的 agent 把自己产出的产物交给沙箱外目标的受支持方式是通用 **`deliver_artifact`** 工具。只有当你通过 `HarnessAgent.builder().artifactDeliveryTarget(...)` 配置了 `ArtifactDeliveryTarget` 时它才会被注册。该 SPI 保持业务无关——`deliver(RuntimeContext, ArtifactDeliveryRequest) -> ArtifactDeliveryResult`——目标逻辑（例如 WebDAV 上传）由你的应用实现。工具会从沙箱工作区下载文件字节，并把传输委托给 target。未配置 target 时，沙箱工作区提示语会明确说明文件无法离开容器。
+**从模型视角跨越边界。** 上面的文件 API（upload/download）是内部机制——对 LLM 不可见，`FilesystemTool` 不暴露任何传输工具。沙箱中的 agent 把自己产出的产物交给沙箱外目标的受支持方式是通用 **`deliver_artifact`** 工具。只有当你通过 `HarnessAgent.builder().artifactDeliveryTarget(...)` 配置了 `ArtifactDeliveryTarget` 时它才会被注册。该 SPI 保持业务无关——`deliver(RuntimeContext, ArtifactDeliveryRequest) -> ArtifactDeliveryResult`——目标逻辑（例如 WebDAV 上传）由你的应用实现。工具会从沙箱工作区下载文件字节，并把传输委托给 target。未配置 target 时，沙箱工作区提示语不会指明任何交付工具，只说明：除非工具列表中包含交付或上传工具（例如宿主应用自行注册的工具），否则文件仍留在执行后端。
 
 ## Kubernetes 后端的状态保存：PVC 是第一层
 
@@ -275,7 +275,7 @@ spec:
           storage: 1Gi
 ```
 
-2. **注意 claim 的生命周期边界**。`shutdownTime` / `shutdownPolicy: Delete` 到期删除 Sandbox 后，PVC 模式的热恢复就失效了——下次 resume 找不到 claim，框架会新建沙箱（新 PVC 是空的）。能不能找回工作区，取决于第 3 条。
+2. **注意 claim 的生命周期边界**。`shutdownTime` / `shutdownPolicy: Delete` 到期删除 Sandbox 后，PVC 模式的热恢复就失效了——下次 resume 找不到 claim，框架会新建沙箱（新 PVC 是空的）。能不能找回工作区，取决于第 3 条。设置 `shutdownAfterSeconds(...)` 可写入此生命周期，让集群在进程异常退出后回收 claim；默认不设。设置后从创建时计时，resume 不续期，因此须覆盖整个沙箱会话的时长。
 
 3. **按需选 snapshotSpec**。PVC + `NoopSnapshotSpec`（默认）：省掉每次 call 结束的 tar 打包传输，代价是 claim 没了就冷启动；PVC + OSS / Redis 快照：双保险，claim 过期、PVC 丢失、跨集群迁移都能从快照冷恢复，代价是每次 call 结束多一次全量打包。
 

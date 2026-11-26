@@ -15,6 +15,8 @@
  */
 package io.agentscope.harness.agent.filesystem.model;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
+
 /**
  * Result of code/shell execution.
  *
@@ -22,12 +24,22 @@ package io.agentscope.harness.agent.filesystem.model;
  * @param exitCode the process exit code (0 indicates success, non-zero indicates failure)
  * @param truncated whether the output was truncated due to filesystem limitations
  * @param timedOut whether the execution path confirmed that the command timed out
+ * @param outputDigest nullable SHA-256 fingerprint of the captured raw stdout/stderr streams,
+ *                     independent of display notices and saved-output paths
  */
 public record ExecuteResponse(
-        String output, Integer exitCode, boolean truncated, boolean timedOut) {
+        String output,
+        Integer exitCode,
+        boolean truncated,
+        boolean timedOut,
+        @JsonInclude(JsonInclude.Include.NON_NULL) String outputDigest) {
 
     public ExecuteResponse(String output, Integer exitCode, boolean truncated) {
-        this(output, exitCode, truncated, false);
+        this(output, exitCode, truncated, false, null);
+    }
+
+    public ExecuteResponse(String output, Integer exitCode, boolean truncated, boolean timedOut) {
+        this(output, exitCode, truncated, timedOut, null);
     }
 
     public boolean isSuccess() {

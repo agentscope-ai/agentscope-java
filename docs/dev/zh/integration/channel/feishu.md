@@ -68,4 +68,4 @@ gw.start();
 
 **入站：** `FeishuCallbackController` → 可选解密 → URL 验证检查 → event_id 去重 → `FeishuInboundMapper`（当前仅支持文本消息） → 防循环 → Gateway。
 
-**出站：** `FeishuOutboundClient` 通过 `POST /open-apis/im/v1/messages` 发送回复，使用 `FeishuAccessTokenProvider` 获取 `tenant_access_token`。Token 自动缓存并在约 80% TTL 时主动刷新。
+**出站：** `FeishuOutboundClient` 通过 `POST /open-apis/im/v1/messages` 向聊天发送消息。出站地址带有话题 ID 时，每条消息通过 `POST /open-apis/im/v1/messages/{threadId}/reply` 回复到该话题。两条路径都使用 `FeishuAccessTokenProvider` 获取的 `tenant_access_token`。Token 自动缓存并在约 80% TTL 时主动刷新。

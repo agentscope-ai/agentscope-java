@@ -612,7 +612,7 @@ public class E2bSandbox extends AbstractBaseSandbox implements SandboxFileTransf
         for (String ex : volumeTarExcludeArgs()) {
             script.append(shellSingleQuote(ex)).append(' ');
         }
-        script.append(create ? "-cf " : "-xf ")
+        script.append(create ? "-cf " : "-xpf ")
                 .append(tarPath)
                 .append(" -C ")
                 .append(shellSingleQuote(root));

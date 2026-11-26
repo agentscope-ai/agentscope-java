@@ -25,6 +25,7 @@ import io.agentscope.harness.agent.skill.SkillResources;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicReference;
@@ -114,7 +115,8 @@ public final class SkillLoadTool implements AgentTool {
 
     @Override
     public String getDescription() {
-        return "Read a skill's full instructions or a referenced resource file.";
+        return "Read a skill's full instructions/resource using skillId and path; or discover"
+                + " visible skills using query (empty lists all) and offset.";
     }
 
     @Override
@@ -151,8 +153,25 @@ public final class SkillLoadTool implements AgentTool {
                                         "Exact file path relative to the skill root: 'SKILL.md'"
                                                 + " for instructions, or a referenced resource"
                                                 + " such as 'references/guide.md' or"
-                                                + " 'scripts/run.py'.")),
-                "required", List.of("skillId", "path"));
+                                                + " 'scripts/run.py'."),
+                                "query",
+                                Map.of(
+                                        "type",
+                                        "string",
+                                        "description",
+                                        "Discovery mode: case-insensitive name, ID or description"
+                                                + " match; empty lists all visible skills. Omit"
+                                                + " skillId/path."),
+                                "offset",
+                                Map.of(
+                                        "type",
+                                        "integer",
+                                        "minimum",
+                                        0,
+                                        "description",
+                                        "Discovery page offset from the previous response; default"
+                                                + " 0.")),
+                "required", List.of());
     }
 
     @Override
@@ -161,6 +180,36 @@ public final class SkillLoadTool implements AgentTool {
             Map<String, Object> input = param.getInput();
             String skillId = stringOrNull(input.get("skillId"));
             String path = stringOrNull(input.get("path"));
+            if ((skillId == null || skillId.isEmpty()) && input.containsKey("query")) {
+                String query = stringOrNull(input.get("query"));
+                if (query == null)
+                    return Mono.just(ToolResultBlock.error("query must be a string"));
+                Object rawOffset = input.getOrDefault("offset", 0);
+                if (!(rawOffset instanceof Number number)
+                        || number.doubleValue() < 0
+                        || number.doubleValue() != number.intValue()) {
+                    return Mono.just(
+                            ToolResultBlock.error("offset must be a non-negative integer"));
+                }
+                String needle = query.toLowerCase(Locale.ROOT);
+                List<HarnessSkillEntry> matches =
+                        catalogFor(param).all().stream()
+                                .filter(entry -> isSkillGranted(param, entry))
+                                .filter(
+                                        entry ->
+                                                (entry.skill().getName()
+                                                                + "\n"
+                                                                + entry.skill().getSkillId()
+                                                                + "\n"
+                                                                + entry.skill().getDescription())
+                                                        .toLowerCase(Locale.ROOT)
+                                                        .contains(needle))
+                                .toList();
+                return Mono.just(
+                        ToolResultBlock.text(
+                                new SkillPromptBuilder()
+                                        .renderIndex(matches, number.intValue(), query)));
+            }
             if (skillId == null || skillId.isEmpty()) {
                 return Mono.just(
                         ToolResultBlock.error("Missing or empty required parameter: skillId"));

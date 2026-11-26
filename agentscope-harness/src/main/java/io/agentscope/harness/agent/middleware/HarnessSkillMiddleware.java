@@ -26,6 +26,7 @@ import io.agentscope.core.skill.util.SkillFileSystemHelper;
 import io.agentscope.core.tool.Toolkit;
 import io.agentscope.harness.agent.IsolationScope;
 import io.agentscope.harness.agent.context.ContextItem;
+import io.agentscope.harness.agent.context.HarnessContextBuilder;
 import io.agentscope.harness.agent.context.WorkspaceContextMaterials;
 import io.agentscope.harness.agent.skill.LazyResourceCapable;
 import io.agentscope.harness.agent.skill.SkillResources;
@@ -36,6 +37,7 @@ import io.agentscope.harness.agent.skill.runtime.MarketplaceStager.RepoBound;
 import io.agentscope.harness.agent.skill.runtime.MarketplaceStager.StageResult;
 import io.agentscope.harness.agent.skill.runtime.ShellPathPolicy;
 import io.agentscope.harness.agent.skill.runtime.SkillCatalog;
+import io.agentscope.harness.agent.skill.runtime.SkillLoadTool;
 import io.agentscope.harness.agent.skill.runtime.SkillRuntime;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -68,9 +70,9 @@ import reactor.core.publisher.Mono;
  *       resolved {@code filesRoot}).
  *   <li>Bind the catalog to the current {@link RuntimeContext} through {@link SkillRuntime}, which
  *       also (idempotently) registers {@code load_skill_through_path} on the runtime toolkit.
- *   <li>Render the {@code <available_skills>} prompt block and register it as a tail runtime
- *       material ({@code WorkspaceContextMaterials}) instead of appending it to the system
- *       prompt, keeping the system head byte-stable across steps.
+ *   <li>Render the {@code <available_skills>} block as request-only material in
+ *       {@code WorkspaceContextMaterials}. The context builder places it independently of
+ *       system instructions and other runtime material.
  * </ol>
  *
  * <p><b>Toolkit note:</b> construction registers the load tool as ungrouped before {@link
@@ -355,20 +357,27 @@ public class HarnessSkillMiddleware implements HarnessRuntimeMiddleware {
         SkillCatalog catalog = SkillCatalog.of(entries);
         runtime.install(catalog, ctx, agentToolkit);
 
-        registerSkillsMaterial(ctx, runtime.renderPrompt(catalog, SkillFilter.all()));
+        boolean canDiscover =
+                agentToolkit != null
+                        && agentToolkit.getTool(SkillLoadTool.TOOL_NAME, ctx.getToolRequestConfig())
+                                instanceof SkillLoadTool;
+        registerSkillsMaterial(ctx, runtime.renderPrompt(catalog, SkillFilter.all(), canDiscover));
         return Mono.just(currentPrompt);
     }
 
     /**
-     * Ships the rendered {@code <available_skills>} block as a tail runtime material instead of
-     * appending it to the system prompt: the catalog changes while a session runs (skills are
-     * installed or removed), and head bytes must stay stable for prefix caching. Registering a
-     * blank item keeps the sourceId deterministic when nothing is visible. The catalog is
-     * required so skill discovery remains available when conversation history is compacted.
+     * Register the catalog as required material so skill discovery survives history compaction.
+     * A blank item replaces the previous catalog when no skills are visible.
      */
     private static void registerSkillsMaterial(RuntimeContext ctx, String block) {
         WorkspaceContextMaterials.register(
-                ctx, List.of(ContextItem.runtimeState("skills", "harness:skills", true, block)));
+                ctx,
+                List.of(
+                        ContextItem.runtimeState(
+                                "skills",
+                                HarnessContextBuilder.SKILL_CATALOG_SOURCE_ID,
+                                true,
+                                block)));
     }
 
     // ---------------------------------------------------------------------

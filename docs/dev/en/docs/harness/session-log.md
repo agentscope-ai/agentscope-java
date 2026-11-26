@@ -46,7 +46,27 @@ var events = journal.readAfter(0, 100);
 
 Reads neither claim a writer nor repair state or invoke a model. Harness also supplies `threadTranscript(ctx)` and `inspectThread(ctx)`. Native queries and storage SPIs are blocking; WebFlux applications must schedule them on suitable blocking workers rather than network event loops.
 
-`ThreadHistory.Transcript` contains complete messages and `asOfSeq`, not a public UI snapshot with task controls, partial text and tool progress. Durable applications restore the UI through Session/Thread/Turn `snapshot()`, `history()` and event APIs instead of inferring Turn state from native logs. See the runnable [recoverable chat example](/v2/en/blogs/best-practices/session-chat).
+`ThreadHistory.Transcript` contains complete messages and `asOfSeq`, not a public UI snapshot with task controls, partial text and tool progress. Durable applications restore the UI through Session/Thread/Turn `snapshot()`, `history()` and event APIs instead of inferring Turn state from native logs. See the runnable [recoverable chat example](/dev/en/blogs/best-practices/session-chat).
+
+## Page through history with tools
+
+The Agent can use `thread_search` and `thread_list` to find earlier evidence without requesting all results at once. Both accept an optional non-negative `offset`, defaulting to `0`. When more results remain, continue with the returned `nextOffset` rather than calculate it from a requested limit or array length. `thread_search` still returns a pure array of matches, with continuation information on the last returned match; `thread_list` places it in its existing trailing note. Keep `query`, `matchMode` and `agentId` unchanged when continuing a search, and keep `agentId` unchanged when continuing a list.
+
+```text
+thread_search query="deployment error" agentId="change-assistant" offset=0
+thread_list agentId="change-assistant" offset=0
+```
+
+Each page rechecks access within the current caller's namespace. Offsets and message IDs do not authorize access or allow locating another user's identity. Offset pagination is not a transactional snapshot: concurrent changes can shift results between pages. Keep the authorized caller context unchanged and recheck the original messages before relying on evidence collected across changing pages.
+
+To walk backward through one Thread, call `thread_history` with `lastN` (default `20`, maximum `100`), then pass the returned `nextBeforeMessageId` as `beforeMessageId`. This cursor is exclusive, so the boundary message is not included again. `nextBeforeMessageId` identifies the oldest message actually returned, not the oldest message requested; use it even when the output budget shortened the page. `hasMore` indicates whether earlier messages remain. In the second call below, replace `oldest-returned-id` with the returned cursor and retain the same Thread identity.
+
+```text
+thread_history agentId="change-assistant" sessionId="conversation-001" lastN=20
+thread_history agentId="change-assistant" sessionId="conversation-001" lastN=20 beforeMessageId="oldest-returned-id"
+```
+
+Paged results retain their existing output budgets and previews. To recover one full original message, pass its exact `messageId` to `thread_history`; this original-text read is unchanged and cannot be combined with `beforeMessageId`. Each page's `asOfSeq` describes that page's current view, not a fixed snapshot shared by the pagination sequence. Use the returned IDs for continuation instead of treating `asOfSeq` as a paging cursor.
 
 ## Event envelope and reads
 
@@ -81,6 +101,8 @@ Recording failures do not trigger provider retries, and committed-result replay 
 ## Storage and backend configuration
 
 Harness defaults to `WorkspaceThreadJournalStore`, scoped by its Workspace Filesystem. POSIX local storage uses atomic file commits under `.agentscope-runtime/`; Windows uses `journal.sqlite3` in that directory. Remote storage uses a reserved BaseStore partition. Do not edit internal files or keys manually.
+
+With `RemoteFilesystemSpec`, native thread journals use the remote `sessions` backend and its configured isolation scope. Custom `CompositeFilesystem` assemblies can pass an explicit journal backend as the third constructor argument; file routing remains independent. Existing local journals are not migrated automatically.
 
 Override storage with `.threadJournalStore(store)`. Custom backends implement `ThreadJournalStore`; atomic storage implementations can supply `AtomicJournalStorage` and reuse `AtomicThreadJournal`. Preserve CAS, writer fencing, ordered/idempotent batches and export cursors. Filesystems expose this through `journalStorage(context)`; ordinary file reads/writes cannot implement atomic journal commits.
 

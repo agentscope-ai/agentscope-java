@@ -55,8 +55,8 @@ import reactor.core.publisher.Mono;
  * <h2>Algorithm</h2>
  * <ol>
  *   <li><b>Check trigger</b> — token count or message count exceeds threshold</li>
- *   <li><b>Determine cutoff</b> — find the earliest index that keeps the tail within the
- *       "keep" budget; never split an ASSISTANT tool-call from its TOOL result(s)</li>
+ *   <li><b>Determine cutoff</b> — choose a recent tail by the "keep" budget, preserve tool-call
+ *       pairs, and carry the latest user input forward verbatim.</li>
  *   <li><b>Memory flush</b> (optional) — extract long-term memories from the prefix via
  *       {@link MemoryFlushManager#flushMemories}</li>
  *   <li><b>Summarize</b> — one LLM call to distill the prefix into a structured summary</li>
@@ -286,8 +286,16 @@ public class ConversationCompactor {
         // Keep prior summaries in the summarization input so each compaction builds on the
         // previous one, but exclude them from memory flushing to avoid duplicate extraction.
         List<Msg> summaryInput = new ArrayList<>(messages.subList(0, cutoff));
-        List<Msg> flushInput = filterSummaryMessages(summaryInput);
         List<Msg> tail = new ArrayList<>(messages.subList(cutoff, messages.size()));
+        int latestUser = findLatestUserInput(messages);
+        if (latestUser >= 0 && latestUser < cutoff) {
+            // Keep the original input without retaining every tool step that followed it.
+            tail.add(0, summaryInput.remove(latestUser));
+        }
+        if (summaryInput.isEmpty()) {
+            return Mono.just(lightweightResult(messages, conversationMessages));
+        }
+        List<Msg> flushInput = filterSummaryMessages(summaryInput);
 
         log.info(
                 "Compaction triggered: total={} msgs / {} tokens, cutoff={}, keeping={} msgs",
@@ -298,7 +306,7 @@ public class ConversationCompactor {
 
         // Step 2: Flush long-term memories only from newly compacted raw messages (best-effort).
         Mono<Void> flushStep =
-                config.isFlushBeforeCompact()
+                config.isFlushBeforeCompact() && flushManager != null
                         ? flushManager
                                 .flushMemories(rc, flushInput)
                                 .doOnSuccess(v -> log.debug("Memory flush before compaction done"))
@@ -341,7 +349,10 @@ public class ConversationCompactor {
                                 return lightweightResult(messages, conversationMessages);
                             }
                             Msg summaryMsg =
-                                    buildSummaryMessage(summary.get(), historyReference)
+                                    buildSummaryMessage(
+                                                    summary.get(),
+                                                    historyReference,
+                                                    !tail.isEmpty())
                                             .withMetadata(
                                                     Map.of(
                                                             "context.summary_version", 1,
@@ -421,7 +432,13 @@ public class ConversationCompactor {
                             findTokenBasedCutoff(messages, totalTokens, config.getKeepTokens()),
                             messages.size() - 1);
         } else {
-            rawCutoff = findMessageBasedCutoff(messages, config.getKeepMessages());
+            // However small keepMessages is, the newest message always survives verbatim:
+            // a request reduced to a summary alone leaves the model no actionable message
+            // (and would swallow the iteration-limit fallback's closing instruction).
+            rawCutoff =
+                    Math.min(
+                            findMessageBasedCutoff(messages, config.getKeepMessages()),
+                            messages.size() - 1);
         }
         return findSafeCutoffPoint(messages, rawCutoff);
     }
@@ -446,6 +463,19 @@ public class ConversationCompactor {
             return 0;
         }
         return messages.size() - keepMessages;
+    }
+
+    private static int findLatestUserInput(List<Msg> messages) {
+        for (int i = messages.size() - 1; i >= 0; i--) {
+            Msg msg = messages.get(i);
+            if (msg.getRole() == MsgRole.USER
+                    && !SUMMARY_MSG_NAME.equals(msg.getName())
+                    && !Boolean.TRUE.equals(msg.getMetadata().get(Msg.METADATA_SYNTHETIC))
+                    && !Boolean.TRUE.equals(msg.getMetadata().get("synthetic"))) {
+                return i;
+            }
+        }
+        return -1;
     }
 
     /**
@@ -584,7 +614,9 @@ public class ConversationCompactor {
      * <p>Tool calls retain their names and argument previews; tool results retain their names,
      * error state, and head+tail previews. Documents retain a reference (name, MIME type, and
      * where the bytes live) so a compacted conversation still records that a file was part of it.
-     * Omitted content is marked explicitly.
+     * Omitted content is marked explicitly. Line-start occurrences of transcript labels inside
+     * a message body are backslash-escaped so quoted text cannot masquerade as a message
+     * boundary.
      */
     static String formatMessagesForSummary(List<Msg> messages) {
         return messages.stream()
@@ -597,13 +629,21 @@ public class ConversationCompactor {
     private static final int SUMMARY_PREVIEW_CHARS = 600;
 
     private static String renderMessageForSummary(Msg msg) {
+        // Prior summaries and synthetic messages can carry USER role without being user
+        // speech, so label them distinctly in the transcript.
         String roleLabel =
-                switch (msg.getRole()) {
-                    case USER -> "Human";
-                    case ASSISTANT -> "AI";
-                    case TOOL -> "Tool";
-                    default -> msg.getRole().name();
-                };
+                SUMMARY_MSG_NAME.equals(msg.getName())
+                        ? "PriorSummary"
+                        : msg.getMetadata() != null
+                                        && Boolean.TRUE.equals(
+                                                msg.getMetadata().get(Msg.METADATA_SYNTHETIC))
+                                ? "FrameworkMessage"
+                                : switch (msg.getRole()) {
+                                    case USER -> "Human";
+                                    case ASSISTANT -> "AI";
+                                    case TOOL -> "Tool";
+                                    default -> msg.getRole().name();
+                                };
 
         StringBuilder sb = new StringBuilder(roleLabel).append(": ");
         boolean first = true;
@@ -632,7 +672,12 @@ public class ConversationCompactor {
                 sb.append(DocumentReferenceRenderer.render(doc));
             }
         }
-        return sb.toString().strip();
+        // Escape label-like line starts inside the body (the message's own leading label is
+        // excluded by the \A lookahead) so quoted labels cannot masquerade as message boundaries.
+        return sb.toString()
+                .strip()
+                .replaceAll(
+                        "(?m)^(?!\\A)(Human|AI|Tool|PriorSummary|FrameworkMessage):", "\\\\$1:");
     }
 
     /** Keep every argument name and short value; abbreviate large values individually. */
@@ -689,12 +734,14 @@ public class ConversationCompactor {
      *
      * <p>Both variants carry the same continuation preamble: the summary is established
      * background, and the model continues from it directly — no recap, no fresh greeting, no
-     * mention of the summarization step itself.
+     * mention of the summarization step itself. When a preserved tail follows ({@code
+     * preservedTail}), a closing note states that those messages are newer than the summary,
+     * which was written without seeing them.
      *
      * <p>The message name is set to {@link #SUMMARY_MSG_NAME} so hooks can identify generated
      * summaries, and the stable content-based ID keeps repeated summaries identifiable.
      */
-    private static Msg buildSummaryMessage(String summary, String historyReference) {
+    static Msg buildSummaryMessage(String summary, String historyReference, boolean preservedTail) {
         String historyHint =
                 historyReference == null
                         ? ""
@@ -710,6 +757,13 @@ public class ConversationCompactor {
                         + "summarization.\n\n<summary>\n"
                         + summary
                         + "\n</summary>";
+        if (preservedTail) {
+            content +=
+                    "\n\nThe messages that follow this summary are the most recent messages "
+                            + "from before compaction, kept verbatim. The summary was written "
+                            + "without seeing them — something it describes as pending may "
+                            + "already be done there.";
+        }
         return Msg.builder()
                 .id(buildSummaryMessageId(content))
                 .role(MsgRole.USER)

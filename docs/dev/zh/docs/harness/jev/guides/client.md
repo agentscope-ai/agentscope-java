@@ -55,6 +55,16 @@ System.out.println("记录支持回答的概率：" + answer.noul());
 
 客户端向 `/v1/systemone` 发请求，对 HTTP 429、529 和 5xx 按策略退避重试；非重试错误、重试耗尽和响应校验失败抛出 `JevException`。它检查题目集合、答案类型、概率分布和 Score 等级。应用不应从缺失答案中补造成功结果。
 
+对接兼容网关或内部服务时，可设置自定义端点路径替换 `/v1/systemone`，路径会拼接在 base URL 之后。若 base URL 以 `/v1` 结尾且路径以 `/v1/` 开头，则不会重复版本前缀：
+
+```java
+var client = JevClient.builder()
+    .apiKey(System.getenv("TYPESAFE_API_KEY"))
+    .baseUrl("https://inner.example.com")
+    .endpointPath("/v1/decisions")
+    .build();
+```
+
 单次 HTTP 超时与一次逻辑判断的总预算不同。多批次、重试和退避的总上限由 [JevExecution](/dev/zh/docs/harness/jev/guides/harness-runtime)、Judge 或对应组件设置。取消可以停止本地订阅，远端请求是否中断取决于传输实现。
 
 ## Spring Boot 配置
@@ -78,7 +88,7 @@ agentscope:
       initial-backoff: 500ms
 ```
 
-可用 `JevClientBuilderCustomizer` bean 定制构建器。Starter 配置客户端；具体 Harness 能力仍需显式注册和设置模式。
+可用 `JevClientBuilderCustomizer` bean 定制构建器。设置 `endpoint-path`（如 `/v1/decisions`）可替换默认的 `/v1/systemone`。Starter 配置客户端；具体 Harness 能力仍需显式注册和设置模式。
 
 ## 使用文本模型做同题对照
 

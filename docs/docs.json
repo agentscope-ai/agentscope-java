@@ -58,7 +58,6 @@
                     "group": "Building Blocks",
                     "pages": [
                       "v2/en/docs/building-blocks/agent",
-                      "v2/en/docs/building-blocks/capability-grant",
                       "v2/en/docs/building-blocks/message-and-event",
                       "v2/en/docs/building-blocks/middleware",
                       "v2/en/docs/building-blocks/model",
@@ -250,7 +249,6 @@
                     "group": "Integration",
                     "pages": [
                       "v2/en/integration/overview",
-                      "v2/en/integration/judge/openai-decisions",
                       {
                         "group": "Model Providers",
                         "pages": [
@@ -381,6 +379,7 @@
                   {
                     "group": "Publications",
                     "pages": [
+                      "v2/zh/blogs/agentscope-durable",
                       "v2/zh/blogs/jev-structured-decision-for-agents",
                       "v2/zh/blogs/how-to-build-agent-harness/01-patterns",
                       "v2/zh/blogs/how-to-build-agent-harness/02-task-orchestration",
@@ -395,12 +394,6 @@
                       "v2/en/blogs/managed-agents-agentscope-rumtime",
                       "v2/en/blogs/agentscope-service-release",
                       "v2/en/blogs/agentscope-service-release-tech"
-                    ]
-                  },
-                  {
-                    "group": "Best Practices",
-                    "pages": [
-                      "v2/en/blogs/best-practices/session-chat"
                     ]
                   },
                   {
@@ -453,6 +446,7 @@
                         "group": "Building Blocks",
                         "pages": [
                           "dev/en/docs/building-blocks/agent",
+                          "dev/en/docs/building-blocks/capability-grant",
                           "dev/en/docs/building-blocks/message-and-event",
                           "dev/en/docs/building-blocks/middleware",
                           "dev/en/docs/building-blocks/model",
@@ -598,6 +592,7 @@
                     "group": "Integration",
                     "pages": [
                       "dev/en/integration/overview",
+                      "dev/en/integration/judge/openai-decisions",
                       {
                         "group": "Model Providers",
                         "pages": [
@@ -717,6 +712,7 @@
                   {
                     "group": "Publications",
                     "pages": [
+                      "v2/zh/blogs/agentscope-durable",
                       "v2/zh/blogs/jev-structured-decision-for-agents",
                       "v2/zh/blogs/how-to-build-agent-harness/01-patterns",
                       "v2/zh/blogs/how-to-build-agent-harness/02-task-orchestration",
@@ -731,7 +727,7 @@
                   {
                     "group": "Best Practices",
                     "pages": [
-                      "v2/en/blogs/best-practices/session-chat"
+                      "dev/en/blogs/best-practices/session-chat"
                     ]
                   },
                   {
@@ -905,7 +901,6 @@
                     "group": "核心组件",
                     "pages": [
                       "v2/zh/docs/building-blocks/agent",
-                      "v2/zh/docs/building-blocks/capability-grant",
                       "v2/zh/docs/building-blocks/message-and-event",
                       "v2/zh/docs/building-blocks/middleware",
                       "v2/zh/docs/building-blocks/model",
@@ -1097,7 +1092,6 @@
                     "group": "集成",
                     "pages": [
                       "v2/zh/integration/overview",
-                      "v2/zh/integration/judge/openai-decisions",
                       {
                         "group": "模型提供商",
                         "pages": [
@@ -1228,6 +1222,7 @@
                   {
                     "group": "内容发布",
                     "pages": [
+                      "v2/zh/blogs/agentscope-durable",
                       "v2/zh/blogs/jev-structured-decision-for-agents",
                       "v2/zh/blogs/how-to-build-agent-harness/01-patterns",
                       "v2/zh/blogs/how-to-build-agent-harness/02-task-orchestration",
@@ -1242,12 +1237,6 @@
                       "v2/zh/blogs/managed-agents-agentscope-rumtime",
                       "v2/zh/blogs/agentscope-service-release",
                       "v2/zh/blogs/agentscope-service-release-tech"
-                    ]
-                  },
-                  {
-                    "group": "最佳实践",
-                    "pages": [
-                      "v2/zh/blogs/best-practices/session-chat"
                     ]
                   },
                   {
@@ -1300,6 +1289,7 @@
                         "group": "核心组件",
                         "pages": [
                           "dev/zh/docs/building-blocks/agent",
+                          "dev/zh/docs/building-blocks/capability-grant",
                           "dev/zh/docs/building-blocks/message-and-event",
                           "dev/zh/docs/building-blocks/middleware",
                           "dev/zh/docs/building-blocks/model",
@@ -1445,6 +1435,7 @@
                     "group": "集成",
                     "pages": [
                       "dev/zh/integration/overview",
+                      "dev/zh/integration/judge/openai-decisions",
                       {
                         "group": "模型提供商",
                         "pages": [
@@ -1564,6 +1555,7 @@
                   {
                     "group": "内容发布",
                     "pages": [
+                      "v2/zh/blogs/agentscope-durable",
                       "v2/zh/blogs/jev-structured-decision-for-agents",
                       "v2/zh/blogs/how-to-build-agent-harness/01-patterns",
                       "v2/zh/blogs/how-to-build-agent-harness/02-task-orchestration",
@@ -1578,7 +1570,7 @@
                   {
                     "group": "最佳实践",
                     "pages": [
-                      "v2/zh/blogs/best-practices/session-chat"
+                      "dev/zh/blogs/best-practices/session-chat"
                     ]
                   },
                   {
@@ -5001,35 +4993,35 @@
     },
     {
       "source": "/dev/en/docs/harness/session-chat",
-      "destination": "/v2/en/blogs/best-practices/session-chat"
+      "destination": "/dev/en/blogs/best-practices/session-chat"
     },
     {
       "source": "/v2/en/docs/harness/session-chat",
-      "destination": "/v2/en/blogs/best-practices/session-chat"
+      "destination": "/dev/en/blogs/best-practices/session-chat"
     },
     {
       "source": "/dev/en/docs/harness/session-chat.html",
-      "destination": "/v2/en/blogs/best-practices/session-chat"
+      "destination": "/dev/en/blogs/best-practices/session-chat"
     },
     {
       "source": "/v2/en/docs/harness/session-chat.html",
-      "destination": "/v2/en/blogs/best-practices/session-chat"
+      "destination": "/dev/en/blogs/best-practices/session-chat"
     },
     {
       "source": "/dev/zh/docs/harness/session-chat",
-      "destination": "/v2/zh/blogs/best-practices/session-chat"
+      "destination": "/dev/zh/blogs/best-practices/session-chat"
     },
     {
       "source": "/v2/zh/docs/harness/session-chat",
-      "destination": "/v2/zh/blogs/best-practices/session-chat"
+      "destination": "/dev/zh/blogs/best-practices/session-chat"
     },
     {
       "source": "/dev/zh/docs/harness/session-chat.html",
-      "destination": "/v2/zh/blogs/best-practices/session-chat"
+      "destination": "/dev/zh/blogs/best-practices/session-chat"
     },
     {
       "source": "/v2/zh/docs/harness/session-chat.html",
-      "destination": "/v2/zh/blogs/best-practices/session-chat"
+      "destination": "/dev/zh/blogs/best-practices/session-chat"
     },
     {
       "source": "/dev/zh/docs/harness/session-log-reference",
@@ -6413,6 +6405,66 @@
     {
       "source": "/dev/zh/jev/sdk-reference",
       "destination": "/dev/zh/docs/harness/jev/sdk-reference",
+      "permanent": true
+    },
+    {
+      "source": "/v2/en/docs/building-blocks/capability-grant",
+      "destination": "/dev/en/docs/building-blocks/capability-grant",
+      "permanent": true
+    },
+    {
+      "source": "/v2/en/docs/building-blocks/capability-grant.html",
+      "destination": "/dev/en/docs/building-blocks/capability-grant",
+      "permanent": true
+    },
+    {
+      "source": "/v2/en/integration/judge/openai-decisions",
+      "destination": "/dev/en/integration/judge/openai-decisions",
+      "permanent": true
+    },
+    {
+      "source": "/v2/en/integration/judge/openai-decisions.html",
+      "destination": "/dev/en/integration/judge/openai-decisions",
+      "permanent": true
+    },
+    {
+      "source": "/v2/en/blogs/best-practices/session-chat",
+      "destination": "/dev/en/blogs/best-practices/session-chat",
+      "permanent": true
+    },
+    {
+      "source": "/v2/en/blogs/best-practices/session-chat.html",
+      "destination": "/dev/en/blogs/best-practices/session-chat",
+      "permanent": true
+    },
+    {
+      "source": "/v2/zh/docs/building-blocks/capability-grant",
+      "destination": "/dev/zh/docs/building-blocks/capability-grant",
+      "permanent": true
+    },
+    {
+      "source": "/v2/zh/docs/building-blocks/capability-grant.html",
+      "destination": "/dev/zh/docs/building-blocks/capability-grant",
+      "permanent": true
+    },
+    {
+      "source": "/v2/zh/integration/judge/openai-decisions",
+      "destination": "/dev/zh/integration/judge/openai-decisions",
+      "permanent": true
+    },
+    {
+      "source": "/v2/zh/integration/judge/openai-decisions.html",
+      "destination": "/dev/zh/integration/judge/openai-decisions",
+      "permanent": true
+    },
+    {
+      "source": "/v2/zh/blogs/best-practices/session-chat",
+      "destination": "/dev/zh/blogs/best-practices/session-chat",
+      "permanent": true
+    },
+    {
+      "source": "/v2/zh/blogs/best-practices/session-chat.html",
+      "destination": "/dev/zh/blogs/best-practices/session-chat",
       "permanent": true
     }
   ]

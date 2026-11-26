@@ -94,7 +94,7 @@ en_link: /dev/en/docs/harness/workspace
 
 **唯一你真正需要写的是 `AGENTS.md`**（不写也能跑，只是少一段人格注入）。其他目录在你启用对应能力时自动出现：
 
-- 启用记忆压缩（`.compaction(...)`）→ `memory/` + `MEMORY.md`
+- 启用长期记忆（`.enableLongTermMemory()`）→ `memory/` + `MEMORY.md`（`.compaction(...)` 独立控制上下文压缩）
 - 放子 agent spec → `subagents/`
 - 装技能 → `skills/`
 - 启用 Plan Mode → `plans/`
@@ -151,13 +151,15 @@ env:
 - ...
 ```
 
+长期记忆**默认关闭**：调用 `enableLongTermMemory()` 才会注册 `memory_search` / `memory_get` / `memory_save`、运行 flush + 后台维护并注入 `MEMORY.md`。原生 Thread 工具（`thread_search` / `thread_history` / `thread_list`）与该开关无关。
+
 可关掉的子系统（生产很少用，调试或自管时有用）：
 
 | 方法 | 关掉的是 |
 |------|---------|
 | `disableWorkspaceContext()` | 工作区指令和参考材料加载（`AGENTS.md` / `MEMORY.md` / `knowledge/`） |
-| `disableMemoryHooks()` | 记忆 flush + 后台维护；同时去掉 Persistence 段里「对话结束自动抽取」的文案。与 `disableMemoryTools()` 一起用时，也不再注入 `HARNESS_CONTEXT` 中的 memory 材料（`MEMORY.md`） |
-| `disableMemoryTools()` | `memory_search` / `memory_get` / `memory_save` / `thread_search` 工具；同时去掉 Memory Recall 与依赖这些工具的 Persistence 引导 |
+| `disableMemoryHooks()` | 记忆 flush + 后台维护；同时去掉 Persistence 段里「对话结束自动抽取」的文案。与 `disableMemoryTools()` 一起用时，也不再注入 `HARNESS_CONTEXT` 中的 memory 材料（`MEMORY.md`）。只在 `enableLongTermMemory()` 之后有意义 |
+| `disableMemoryTools()` | `memory_search` / `memory_get` / `memory_save` / `thread_search` 工具；同时去掉 Memory Recall 与依赖这些工具的 Persistence 引导。`memory_*` 在未开启长期记忆时本就不注册；Thread 工具则始终可单独关掉 |
 | `disableSubagents()` | 整个子 agent 子系统 |
 | `disableDynamicSkills()` | 每轮重新合并技能；改成 build 时一次 |
 | `disableToolsConfig()` | 不读 `tools.json` |
@@ -380,7 +382,7 @@ skills/code-reviewer/
 3. `workspace/skills/` —— 工作区共用
 4. `<userId>/skills/` —— 用户隔离（覆盖以上所有）
 
-下层独有的 skill 都保留，重名时上层覆盖。每轮推理前 `DynamicSkillMiddleware` 重新合成 → 在 system prompt 里渲染成 `<available_skills>` 块（只列 name + description），agent 看到觉得相关才会 `load_skill_through_path` 拉详情。完整工作机制见 [技能](/dev/zh/docs/harness/skill)。
+下层独有的技能会保留，重名时上层覆盖。Harness 把合并后的目录渲染成仅供当前请求使用的 `<available_skills>` 块，通常放在对话历史之前。Agent 在需要时调用 `load_skill_through_path` 读取详情。参见[技能](/dev/zh/docs/harness/skill)。
 
 ### `subagents/`
 

@@ -85,6 +85,7 @@ class AgentSpawnToolKeyTest {
                                         null,
                                         "default-agent",
                                         "ignored",
+                                        true,
                                         null,
                                         1,
                                         null)
@@ -117,6 +118,7 @@ class AgentSpawnToolKeyTest {
                                 null,
                                 "primary-agent",
                                 "ignored",
+                                true,
                                 null,
                                 1,
                                 null)
@@ -130,6 +132,7 @@ class AgentSpawnToolKeyTest {
                                 null,
                                 "unknown-agent",
                                 "ignored",
+                                true,
                                 null,
                                 1,
                                 null)
@@ -138,7 +141,11 @@ class AgentSpawnToolKeyTest {
                         .contains("Unknown agent_id"));
 
         RuntimeContext scopedContext =
-                RuntimeContext.builder().sessionId("s1").userId("u1").build();
+                RuntimeContext.builder()
+                        .sessionId("s1")
+                        .userId("u1")
+                        .agentState(AgentState.builder().userId("u1").sessionId("s1").build())
+                        .build();
         scopedContext.put(AgentSpawnTool.CTX_AGENT_MANAGER, scopedManager);
         String persistentSpawn =
                 assertText(
@@ -147,6 +154,7 @@ class AgentSpawnToolKeyTest {
                                         null,
                                         "scoped-agent",
                                         "first task",
+                                        true,
                                         "scoped",
                                         0,
                                         null)
@@ -170,14 +178,14 @@ class AgentSpawnToolKeyTest {
         assertTrue(backgroundSend.contains("task_id:"));
         assertEquals("done", repository.runLatestLocalTask());
 
-        AgentState restoredState = AgentState.builder().build();
+        AgentState restoredState = AgentState.builder().userId("u1").sessionId("s1").build();
         String restoredKey = "agent:scoped-agent:restored";
         restoredState
                 .getToolContext()
                 .putSpawnEntry(
                         restoredKey,
                         new ToolContextState.SpawnEntry(
-                                restoredKey, "scoped-agent", "sub-restored", null, 1));
+                                restoredKey, "scoped-agent", "sub-restored", null, 1, true));
         AgentSpawnTool restoreTool = new AgentSpawnTool(defaultManager, repository, 0);
         String restored =
                 assertText(

@@ -178,6 +178,7 @@ Main `KubernetesFilesystemSpec` options:
 | `serverPort(int)` | runtime HTTP API port | `8888` |
 | `kubernetesClient(KubernetesClient)` | custom fabric8 client | kubeconfig auto-loaded |
 | `snapshotSpec(SandboxSnapshotSpec)` | snapshot strategy (see the sandbox page for the PVC trade-off) | `NoopSnapshotSpec` |
+| `shutdownAfterSeconds(Long)` | Positive lifetime in seconds for new SandboxClaims; `null` inherits client defaults. Resume does not renew it. | `null` (no lifecycle by default) |
 
 When neither `apiUrl` nor `gateway*` is set, a local tunnel via `kubectl port-forward` is used (good for development). The runtime image must satisfy the [runtime image contract](/dev/en/docs/harness/sandbox#runtime-image-contract); **workspace persistence depends on the PVC configured in the template** — see [Sandbox - Kubernetes state persistence](/dev/en/docs/harness/sandbox#kubernetes-state-persistence-pvc-is-the-first-layer).
 
@@ -311,7 +312,7 @@ HarnessAgent agent = HarnessAgent.builder()
 ```java
 .filesystem(new LocalFilesystemSpec()
     .executeTimeoutSeconds(120)       // shell command timeout
-    .maxOutputBytes(100_000)          // max output bytes per command
+    .maxOutputBytes(100_000)          // retained output preview budget
     .env("MY_VAR", "value")          // extra environment variables
     .inheritEnv(true)                // inherit parent process env
     .mode(LocalFsMode.ROOTED)        // path policy
@@ -322,7 +323,7 @@ HarnessAgent agent = HarnessAgent.builder()
 | Method | Description | Default |
 |--------|-------------|---------|
 | `executeTimeoutSeconds(int)` | Shell command timeout (seconds) | 120 |
-| `maxOutputBytes(int)` | Max captured output bytes per command | 100,000 |
+| `maxOutputBytes(int)` | Retained output preview byte budget per command | 100,000 |
 | `env(String, String)` | Add a shell environment variable | none |
 | `inheritEnv(boolean)` | Inherit parent process environment | `false` |
 | `mode(LocalFsMode)` | Path resolution policy | `ROOTED` |
@@ -468,7 +469,7 @@ workspace/
 
 ### Skills
 
-`DynamicSkillMiddleware` merges skills from the repository list before each reasoning turn and renders them into the system prompt. Skill file loading goes through the `AbstractFilesystem` interface, so it works transparently across all three modes:
+Harness renders the visible repository skills as a request-only `<available_skills>` block. Skill file loading goes through the `AbstractFilesystem` interface in all three modes:
 
 | Mode | How skills load |
 |------|----------------|
@@ -495,6 +496,14 @@ All file tools call through the `AbstractFilesystem` interface, passing the curr
 | Local | Yes | Host `sh -c`, cwd = `project` directory |
 | Shared store | No | Shell not provided |
 | Sandbox | Yes | Inside the sandbox container |
+
+Local shell output exceeding `maxOutputBytes` retains a UTF-8-safe head and tail, with an explicit omitted-byte marker. The byte budget applies to retained output, not the omission and recovery notices. Capture uses bounded memory and streams output to an archive instead of accumulating the full output in memory. The complete captured output is saved through the local filesystem's existing path policy and namespace, under the tool-result eviction directory, and a `read_file` reference is returned only after a successful save. Use that returned path to inspect omitted diagnostics. Saving failures are reported without changing the command's exit code or rerunning it. Timeout results retain available output and label it partial.
+
+`ExecuteResponse.outputDigest` is an optional SHA-256 fingerprint of the captured raw stdout/stderr streams. Shell tool results expose an available digest as `agentscope_output_sha256` metadata; it excludes display notices and archive paths, so it can identify repeated captured output even when the saved path changes. A missing digest means it is unavailable, not that output was empty.
+
+On cancellation or timeout, local execution makes a best-effort attempt to clean up parent and child processes, streams and temporary files. Escaped processes may remain, and the preview budget is not a disk quota; use a sandbox and deployment-level resource controls when stronger isolation or storage limits are needed.
+
+For other execution backends, already-truncated content cannot be reconstructed without a backend-provided reference; the tool does not invent one. Exit 0 remains successful even when output contains business-error text. Failure scope identifies the executable behind simple `cd`, environment-assignment and launcher prefixes, without arguments; ambiguous shell syntax has no scope. This best-effort classification is not a shell parser or a permission boundary.
 
 ### tools.json / MCP servers
 
