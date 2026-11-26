@@ -39,6 +39,10 @@ OllamaChatModel model = OllamaChatModel.builder()
     .build();
 ```
 
+## Streaming responses
+
+Ollama streams newline-delimited JSON records. The client logs and skips records that cannot be decoded, and skips JSON `null` records, so subsequent valid chunks can still be delivered. Explicit Ollama error records and transport failures remain errors; they are not discarded as malformed records.
+
 ## Spring Boot
 
 Spring Boot applications can use the Ollama starter:

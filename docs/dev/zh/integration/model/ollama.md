@@ -39,6 +39,10 @@ OllamaChatModel model = OllamaChatModel.builder()
     .build();
 ```
 
+## 流式响应
+
+Ollama 通过换行分隔的 JSON 记录传输流式响应。客户端会记录并跳过无法解码的记录，同时跳过 JSON `null` 记录，让后续有效内容可以继续传递。Ollama 明确返回的错误记录和网络传输故障仍会作为错误向上传递，不会被当作格式错误而忽略。
+
 ## Spring Boot
 
 Spring Boot 应用可以使用 Ollama starter：
