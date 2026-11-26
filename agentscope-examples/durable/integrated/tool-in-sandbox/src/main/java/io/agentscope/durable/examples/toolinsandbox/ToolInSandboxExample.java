@@ -105,7 +105,7 @@ public final class ToolInSandboxExample implements ApplicationRunner {
                         properties.getNamespace(), "workspace", "v1", DurableJson.value(Map.of()));
         var tool = sandboxTool();
         var executionsSettled = new AtomicBoolean();
-        try (var backend = LocalBackend.open(data.resolve("brain"));
+        try (var backend = LocalBackend.sqlite(data.resolve("brain"));
                 var handsRecords = JdbcRecordStore.sqlite(data.resolve("hands.db"));
                 var sandboxes =
                         SandboxBindings.builder()

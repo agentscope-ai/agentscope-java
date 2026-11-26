@@ -15,6 +15,12 @@
  */
 package io.agentscope.extensions.durable.jdbc;
 
+import com.sun.jna.Native;
+import com.sun.jna.Platform;
+import com.sun.jna.platform.win32.Kernel32;
+import com.sun.jna.platform.win32.WinBase;
+import com.sun.jna.platform.win32.WinDef.DWORD;
+import com.sun.jna.platform.win32.WinError;
 import io.agentscope.durable.DurableException;
 import io.agentscope.durable.store.ObjectStore;
 import java.io.IOException;
@@ -52,13 +58,19 @@ public final class FileObjectStore implements ObjectStore {
                 channel.force(true);
             }
             try {
-                Files.createLink(destination, temporary);
+                if (Platform.isWindows()) {
+                    moveWindows(temporary, destination, false);
+                } else {
+                    Files.createLink(destination, temporary);
+                }
             } catch (FileAlreadyExistsException existing) {
-                ObjectStore.verify(id(), ref, read(ref));
+                read(ref); // Verify the winner's size and digest.
             }
-            try (var directory =
-                    FileChannel.open(destination.getParent(), StandardOpenOption.READ)) {
-                directory.force(true);
+            if (!Platform.isWindows()) {
+                try (var directory =
+                        FileChannel.open(destination.getParent(), StandardOpenOption.READ)) {
+                    directory.force(true);
+                }
             }
             return ref;
         } catch (IOException failure) {
@@ -71,6 +83,34 @@ public final class FileObjectStore implements ObjectStore {
                 Files.deleteIfExists(temporary);
             } catch (IOException ignored) {
                 /* Unreferenced staging can be removed by maintenance. */
+            }
+        }
+    }
+
+    // Windows cannot open the parent directory as a Java FileChannel. Publish in the
+    // same directory with write-through and without permission to replace an existing object.
+    static void moveWindows(Path temporary, Path destination, boolean replace) throws IOException {
+        var flags =
+                new DWORD(
+                        WinBase.MOVEFILE_WRITE_THROUGH
+                                | (replace ? WinBase.MOVEFILE_REPLACE_EXISTING : 0));
+        // Windows can deny replacement briefly while another filesystem reader releases its handle.
+        for (int attempt = 0; ; attempt++) {
+            if (Kernel32.INSTANCE.MoveFileEx(temporary.toString(), destination.toString(), flags))
+                return;
+            int error = Native.getLastError();
+            if (error == WinError.ERROR_ALREADY_EXISTS || error == WinError.ERROR_FILE_EXISTS)
+                throw new FileAlreadyExistsException(destination.toString());
+            if (!replace
+                    || attempt >= 8
+                    || (error != WinError.ERROR_ACCESS_DENIED
+                            && error != WinError.ERROR_SHARING_VIOLATION))
+                throw new IOException("MoveFileEx failed with Windows error " + error);
+            try {
+                Thread.sleep(Math.min(100, 5L << attempt));
+            } catch (InterruptedException interrupted) {
+                Thread.currentThread().interrupt();
+                throw new IOException("Interrupted while publishing local record", interrupted);
             }
         }
     }

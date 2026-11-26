@@ -16,6 +16,7 @@
 
 package io.agentscope.extensions.durable.jdbc;
 
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -32,6 +33,7 @@ import io.agentscope.durable.DurableTypes.ThreadBinding;
 import io.agentscope.durable.DurableTypes.ThreadKey;
 import io.agentscope.durable.SessionBackend;
 import io.agentscope.durable.Wakeups;
+import io.agentscope.durable.store.ObjectStore;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.sql.DriverManager;
@@ -111,6 +113,45 @@ class BackendAssemblyTest {
     }
 
     @Test
+    void sqliteSelectionSurvivesReopenAndCannotShadowFileRecords() {
+        var sqlite = directory.resolve("explicit-sqlite");
+        try (var first = LocalBackend.sqlite(sqlite)) {
+            first.create(
+                    new SessionSpec(
+                            session,
+                            new ThreadBinding("fixture", "v1", "1"),
+                            DurableJson.value(null)));
+        }
+        try (var reopened = LocalBackend.open(sqlite)) {
+            assertTrue(reopened.snapshot(session).turns().isEmpty());
+            assertFalse(Files.exists(sqlite.resolve("records")));
+        }
+        var files = directory.resolve("only-files");
+        try (var local = LocalBackend.open(files)) {
+            assertThrows(IllegalArgumentException.class, () -> LocalBackend.sqlite(files));
+            assertFalse(Files.exists(files.resolve("durable.db")));
+        }
+    }
+
+    @Test
+    void immutableFilePublicationReusesAndVerifiesTheExistingDestination() throws Exception {
+        var root = directory.resolve("objects");
+        var writer = new FileObjectStore(root);
+        var reopened = new FileObjectStore(root);
+        byte[] content = {1, 2, 3};
+        String scope = ObjectStore.digest(content);
+        var ref = writer.put(scope, content);
+        assertArrayEquals(content, reopened.read(ref));
+        assertEquals(ref, reopened.put(scope, content));
+        byte[] damaged = {3, 2, 1};
+        Files.write(root.resolve(ref.key()), damaged);
+        assertEquals(
+                DurableException.Code.INVALID,
+                assertThrows(DurableException.class, () -> writer.put(scope, content)).code());
+        assertArrayEquals(damaged, Files.readAllBytes(root.resolve(ref.key())));
+    }
+
+    @Test
     void completeBackendReopensOriginalAdmissionAndClosesOnlyItsOwnStore() throws Exception {
         var notifications = new AtomicInteger();
         var other = open();
@@ -133,7 +174,7 @@ class BackendAssemblyTest {
                     backend.submit(
                             new ThreadKey(session, "main"), "request", DurableJson.value("hello")));
             if (dataSource == null)
-                assertTrue(Files.isRegularFile(directory.resolve("nested/data/durable.db")));
+                assertTrue(Files.isDirectory(directory.resolve("nested/data/records")));
         }
     }
 

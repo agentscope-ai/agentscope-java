@@ -1827,7 +1827,7 @@ public abstract class SessionBackendContract {
                 tx -> {
                     assertTrue(
                             tx.get("thread-data:" + DurableJson.hash("main") + ":checkpoint")
-                                    .hasNonNull("reference"));
+                                    .hasNonNull("chunked"));
                     assertTrue(
                             tx.get("thread-data:" + DurableJson.hash("main") + ":checkpoint")
                                             .toString()
@@ -1838,7 +1838,7 @@ public abstract class SessionBackendContract {
                                             "thread-data:"
                                                     + DurableJson.hash("main")
                                                     + ":journal:initial:00000000000000000001")
-                                    .hasNonNull("reference"));
+                                    .hasNonNull("chunked"));
                     return null;
                 });
         byte[] bytes = "private artifact".getBytes(StandardCharsets.UTF_8);

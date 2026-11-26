@@ -16,25 +16,55 @@
 
 package io.agentscope.extensions.durable.jdbc;
 
+import io.agentscope.durable.DurableException;
 import io.agentscope.durable.SessionBackend;
 import io.agentscope.durable.TransactionalSessionBackend;
 import io.agentscope.durable.Wakeups;
+import java.io.IOException;
+import java.nio.channels.FileChannel;
+import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.Objects;
+import java.nio.file.StandardOpenOption;
 
-/** Complete embedded backend: persistent SQLite records and process-local notifications. */
+/** Complete embedded backend: persistent local records and process-local notifications. */
 public final class LocalBackend {
     private LocalBackend() {}
 
-    /**
-     * Opens or creates directory/durable.db, preserving the same sessions across restarts.
-     * Close the returned backend after its runtimes/observers. No external services are required.
-     */
+    /** Opens a local directory. New directories use files. Existing SQLite directories reopen in place. */
     public static SessionBackend open(Path directory) {
-        var path = Objects.requireNonNull(directory);
-        return new TransactionalSessionBackend(
-                        JdbcRecordStore.sqlite(path.resolve("durable.db")),
-                        new FileObjectStore(path.resolve("objects")))
-                .withWakeups(Wakeups.local());
+        return open(directory, false);
+    }
+
+    /** Explicitly selects SQLite for a new or existing SQLite directory. */
+    public static SessionBackend sqlite(Path directory) {
+        return open(directory, true);
+    }
+
+    private static synchronized SessionBackend open(Path directory, boolean sqlite) {
+        try {
+            Files.createDirectories(directory);
+            try (var channel =
+                            FileChannel.open(
+                                    directory.resolve("backend.lock"),
+                                    StandardOpenOption.CREATE,
+                                    StandardOpenOption.WRITE);
+                    var lock = channel.lock()) {
+                var database = directory.resolve("durable.db");
+                var records = directory.resolve("records");
+                boolean useDatabase = sqlite || Files.exists(database);
+                if (useDatabase && Files.exists(records))
+                    throw new IllegalArgumentException("Directory already contains file records");
+                var store =
+                        useDatabase
+                                ? JdbcRecordStore.sqlite(database)
+                                : new FileRecordStore(records);
+                return new TransactionalSessionBackend(
+                                store, new FileObjectStore(directory.resolve("objects")))
+                        .withWakeups(Wakeups.local());
+            }
+        } catch (IOException error) {
+            throw new DurableException(
+                    DurableException.Code.UNAVAILABLE, "Cannot open local backend", error);
+        }
     }
 }

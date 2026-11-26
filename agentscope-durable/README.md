@@ -19,7 +19,7 @@ You add Durable to an existing Java application, register an Agent factory, and
 choose a persistent Backend. The application keeps its model, prompts, tools,
 permissions, and workspace configuration. Durable supplies task admission,
 scheduling, recovery coordination, tool-result handoff, and replayable public events.
-Local integration can run in one JVM with SQLite; shared storage and independent
+Local integration defaults to files in one directory; shared storage and independent
 tool Workers are available when the application needs multiple hosts.
 
 This is a development source API. The repository includes an AgentScope Java
@@ -184,6 +184,10 @@ request whose result was never committed may need another model invocation.
 Workspace files and remote resources must also remain accessible; a saved checkpoint
 cannot reconstruct a deleted workspace or an expired external operation.
 
+Large journal entries and checkpoints share
+immutable content-defined chunks within a Session. Readers support the original
+whole-object references. Upgrade every reader before writing the chunked format.
+
 ### 2. Queue Turns, add instructions, and cancel work
 
 While an assistant investigates an incident, the user asks for a follow-up summary
@@ -307,6 +311,11 @@ the hosts at the same database. Each host needs matching definition/state versio
 and access to the required tools and workspace resources. Close each host and its
 Backend at application shutdown; the application owns the supplied pool.
 
+Schema initialization also creates the binary-collation indexes used for prefix pagination.
+For an existing database, run the initializer with the provisioning identity to install
+`durable_parts_prefix` and `durable_records_prefix`. Ordinary runtime startup uses
+the existing schema.
+
 Runtime scans durable ready work and renews ownership while executing it. Fencing
 rejects writes from an expired owner even if that process later reconnects. Optional
 wakeup notifications reduce latency; durable scans compensate for lost hints.
@@ -386,14 +395,14 @@ Infrastructure extensions all live in [`../agentscope-extensions`](../agentscope
 
 | Extension directory | Use |
 | --- | --- |
-| [durable-jdbc](../agentscope-extensions/agentscope-extensions-durable-jdbc) | SQLite and PostgreSQL backends |
+| [durable-jdbc](../agentscope-extensions/agentscope-extensions-durable-jdbc) | File, SQLite and PostgreSQL backends |
 | [durable-http](../agentscope-extensions/agentscope-extensions-durable-http) | Public/internal HTTP clients, handlers and SSE |
 | [durable-sandbox](../agentscope-extensions/agentscope-extensions-durable-sandbox) | Sandbox bindings, detached operations, output and cleanup |
 | [durable-rocketmq](../agentscope-extensions/agentscope-extensions-durable-rocketmq) | Queued Brain–Hands execution and optional wakeups |
 | [durable-objects](../agentscope-extensions/agentscope-extensions-durable-objects) | S3/MinIO and OSS object stores |
 | [durable-mcp](../agentscope-extensions/agentscope-extensions-durable-mcp) | MCP connections and explicit recovery extensions |
 
-SQLite needs no database service. PostgreSQL requires a service and an explicit dependency
+New `LocalBackend.open(directory)` stores use local files. Existing SQLite directories reopen in place. Select SQLite explicitly with `LocalBackend.sqlite(directory)`. The file backend rewrites one scope per commit and scans scope files for ready work. Use SQLite for larger single-host workloads. PostgreSQL requires a service and an explicit dependency
 on the optional `org.postgresql:postgresql` driver. Applications own models, pools,
 credentials, resource authorization and host lifecycle.
 
@@ -429,6 +438,20 @@ From the repository root:
 ```sh
 make -C agentscope-durable check
 make -C agentscope-durable independent
+```
+
+For a single-Thread PostgreSQL test database, the read-only profiler attributes
+`durable_parts.payload` bytes to native checkpoints, other journal entries and their
+shared immutable chunks. Each shared chunk is counted once. The record-backed
+object store compresses each compressible chunk after deduplication, preserving
+its original content digest. The profiler reports the stored payload length. With `--detail-turn`, the per-type breakdown attributes a shared chunk to the first
+event that wrote it. The milestone is the
+number of distinct Turns encountered in journal order. Take the measurement after
+the last measured Turn finishes. Checkpoint-history rows, events, PostgreSQL indexes
+and TOAST statistics can be measured separately.
+
+```sh
+python3 agentscope-durable/scripts/docker-regression/profile_journal.py CONTAINER DATABASE USER 100 1000 --detail-turn 100
 ```
 
 Normal checking covers build, formatting and tests. Isolation checking builds source
