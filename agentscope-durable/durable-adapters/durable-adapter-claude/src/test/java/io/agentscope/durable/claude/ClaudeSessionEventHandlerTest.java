@@ -49,6 +49,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -108,11 +109,19 @@ class ClaudeSessionEventHandlerTest {
     }
 
     @AfterEach
-    void close() {
+    void close() throws InterruptedException {
         if (server != null) server.stop(0);
-        if (workers != null) workers.shutdownNow();
-        if (runtime != null) runtime.close();
-        if (backend != null) backend.close();
+        boolean terminated = true;
+        try {
+            if (workers != null) {
+                workers.shutdownNow();
+                terminated = workers.awaitTermination(5, TimeUnit.SECONDS);
+            }
+        } finally {
+            if (runtime != null) runtime.close();
+            if (backend != null) backend.close();
+        }
+        assertTrue(terminated, "HTTP test executor did not terminate");
     }
 
     @Test
