@@ -38,6 +38,42 @@ import redis.clients.jedis.UnifiedJedis;
 @EnabledIfEnvironmentVariable(named = "AGENTSCOPE_TEST_REDIS_URL", matches = ".+")
 class RedisSessionStorageIntegrationTest {
     @Test
+    void namespaceDelimiterCannotAliasAnExistingNamespace() {
+        String prefix = "namespace-regression:" + UUID.randomUUID() + ":";
+        List<String> namespace = List.of("tenant", "project");
+        List<String> malformedNamespace = List.of("tenant\0project");
+        try (var client = new UnifiedJedis(System.getenv("AGENTSCOPE_TEST_REDIS_URL"))) {
+            var store = new RedisStore(client, prefix);
+            try {
+                store.put(namespace, "key", Map.of("marker", "original"));
+                assertThrows(
+                        IllegalArgumentException.class, () -> store.get(malformedNamespace, "key"));
+                assertThrows(
+                        IllegalArgumentException.class,
+                        () ->
+                                store.put(
+                                        malformedNamespace,
+                                        "key",
+                                        Map.of("marker", "overwritten")));
+                assertThrows(
+                        IllegalArgumentException.class,
+                        () -> store.putIfVersion(malformedNamespace, "key", Map.of(), 1));
+                assertThrows(
+                        IllegalArgumentException.class,
+                        () -> store.search(malformedNamespace, 10, 0));
+                assertThrows(
+                        IllegalArgumentException.class,
+                        () -> store.delete(malformedNamespace, "key"));
+                assertEquals(Map.of("marker", "original"), store.get(namespace, "key").value());
+                assertEquals(1, store.get(namespace, "key").version());
+                assertEquals(1, store.search(namespace, 10, 0).size());
+            } finally {
+                for (String key : client.keys(prefix + "*")) client.del(key);
+            }
+        }
+    }
+
+    @Test
     void independentClientsRaceCasAndRecoverTheFencedCommittedPrefix() throws Exception {
         String prefix = "regression:" + UUID.randomUUID() + ":";
         String url = System.getenv("AGENTSCOPE_TEST_REDIS_URL");

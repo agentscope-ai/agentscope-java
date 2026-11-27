@@ -79,6 +79,8 @@ BaseStore store = new RedisStore(jedis, "myapp:store:");
 
 Concurrency-safe: `put` / `putIfVersion` use Lua scripts for atomicity.
 
+RedisStore reserves the NUL character (`U+0000`) as the separator between namespace segments. A segment containing NUL is rejected before a Redis command runs, so it cannot alias a multi-segment namespace. Existing keys for segments without NUL keep their current encoding; Unicode and other separators remain supported. Applications that supplied NUL inside a segment must choose a distinct identifier and inspect existing data for collisions before migrating it.
+
 ### 3. RedisSnapshotSpec
 
 Sandbox snapshots stored as Redis binary keys. Best for small workspaces + short TTL.

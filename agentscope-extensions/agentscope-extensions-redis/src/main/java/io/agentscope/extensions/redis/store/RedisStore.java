@@ -40,7 +40,8 @@ import redis.clients.jedis.UnifiedJedis;
  *       {@link #search} via {@code ZRANGEBYLEX} without scanning the keyspace.
  * </ul>
  *
- * <p>{@code <ns>} is the namespace components joined with {@code "\0"}.
+ * <p>{@code <ns>} is the namespace components joined with {@code "\0"}. Namespace segments
+ * must not contain NUL, because it is reserved as the segment separator.
  *
  * <h2>Concurrency</h2>
  *
@@ -251,6 +252,10 @@ public class RedisStore implements BaseStore {
             String segment = namespace.get(i);
             if (segment == null) {
                 throw new IllegalArgumentException("namespace segment must not be null");
+            }
+            if (segment.indexOf('\0') >= 0) {
+                throw new IllegalArgumentException(
+                        "namespace segment must not contain the NUL character");
             }
             if (i > 0) {
                 sb.append(NS_SEPARATOR);

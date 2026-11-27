@@ -84,6 +84,8 @@ BaseStore store = new RedisStore(jedis, "myapp:store:");
 
 **并发安全**：`put` / `putIfVersion` 使用 Lua 脚本保证原子性（version read + hash write + index update 单次 `EVAL`），`putIfVersion` 可作为分布式 CAS 原语。
 
+RedisStore 使用 NUL 字符（`U+0000`）分隔命名空间中的各个分段。如果分段本身包含 NUL，操作会在执行 Redis 命令前被拒绝，避免它与多分段命名空间映射到相同的键。不含 NUL 的分段保持原有编码，仍支持中文等 Unicode 字符和其他分隔符。如果应用曾在分段内使用 NUL，需要改用不同的标识，并在迁移前检查已有数据是否发生过键冲突。
+
 ### 3. RedisSnapshotSpec
 
 沙箱快照存储到 Redis 二进制 key。适合小工作区 + 短 TTL 场景。
