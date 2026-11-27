@@ -16,6 +16,7 @@
 package io.agentscope.extensions.redis.state.redisson;
 
 import io.agentscope.core.state.AgentStateStore;
+import io.agentscope.core.state.ListHashUtil;
 import io.agentscope.core.state.State;
 import io.agentscope.core.state.VersionedState;
 import io.agentscope.core.util.JsonUtils;
@@ -64,6 +65,7 @@ public class RedissonAgentStateStore implements AgentStateStore {
     private static final String DEFAULT_KEY_PREFIX = "agentscope:session:";
     private static final String KEYS_SUFFIX = ":_keys";
     private static final String LIST_SUFFIX = ":list";
+    private static final String HASH_SUFFIX = ":_hash";
 
     private final RedissonClient redissonClient;
     private final String keyPrefix;
@@ -160,27 +162,66 @@ public class RedissonAgentStateStore implements AgentStateStore {
         }
     }
 
+    /**
+     * Save a list of state values with hash-based change detection.
+     *
+     * <p>This method uses hash-based change detection to handle both append-only and mutable lists:
+     *
+     * <ul>
+     *   <li>If the hash changes (list was modified), the Redis list is deleted and recreated
+     *   <li>If the list shrinks, the Redis list is deleted and recreated
+     *   <li>If the list only grows (append-only), only new items are appended
+     *   <li>If nothing changes, the operation is skipped
+     * </ul>
+     *
+     * @param userId the user identifier
+     * @param sessionId the session identifier
+     * @param key the state key (e.g., "memory_messages")
+     * @param values the list of state values to save
+     */
     @Override
     public void save(String userId, String sessionId, String key, List<? extends State> values) {
         String slotId = slotId(userId, sessionId);
-        String redisKey = getListKey(slotId, key);
+        String listKey = getListKey(slotId, key);
+        String hashKey = listKey + HASH_SUFFIX;
         String keysKey = getKeysKey(slotId);
 
         try {
-            RList<String> rList = redissonClient.getList(redisKey, StringCodec.INSTANCE);
+            RList<String> rList = redissonClient.getList(listKey, StringCodec.INSTANCE);
+
+            // Compute current hash
+            String currentHash = ListHashUtil.computeHash(values);
+
+            // Get stored hash
+            RBucket<String> hashBucket = redissonClient.getBucket(hashKey, StringCodec.INSTANCE);
+            String storedHash = hashBucket.get();
 
             // Get current list length to support incremental append
             int existingCount = rList.size();
 
-            // Only append new items
-            if (values.size() > existingCount) {
-                List<? extends State> newItems = values.subList(existingCount, values.size());
+            // Determine if full rewrite is needed
+            boolean needsFullRewrite =
+                    ListHashUtil.needsFullRewrite(values, storedHash, existingCount);
 
+            if (needsFullRewrite) {
+                // Delete and recreate the list
+                rList.delete();
+                for (State item : values) {
+                    String json = JsonUtils.getJsonCodec().toJson(item);
+                    rList.add(json);
+                }
+            } else if (values.size() > existingCount) {
+                // Incremental append
+                List<? extends State> newItems = values.subList(existingCount, values.size());
                 for (State item : newItems) {
                     String json = JsonUtils.getJsonCodec().toJson(item);
                     rList.add(json);
                 }
             }
+            // else: no change, skip
+
+            // Update hash
+            hashBucket.set(currentHash);
 
             // Track this key in the session's key set
             RSet<String> keysSet = redissonClient.getSet(keysKey, StringCodec.INSTANCE);
@@ -264,6 +305,7 @@ public class RedissonAgentStateStore implements AgentStateStore {
                         String baseKey =
                                 trackedKey.substring(0, trackedKey.length() - LIST_SUFFIX.length());
                         keysToDelete.add(getListKey(slotId, baseKey));
+                        keysToDelete.add(getListKey(slotId, baseKey) + HASH_SUFFIX);
                     } else {
                         keysToDelete.add(getStateKey(slotId, trackedKey));
                         keysToDelete.add(

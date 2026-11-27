@@ -284,6 +284,7 @@ public class JedisAgentStateStore implements AgentStateStore {
                         String baseKey =
                                 trackedKey.substring(0, trackedKey.length() - LIST_SUFFIX.length());
                         keysToDelete.add(getListKey(slotId, baseKey));
+                        keysToDelete.add(getListKey(slotId, baseKey) + HASH_SUFFIX);
                     } else {
                         keysToDelete.add(getStateKey(slotId, trackedKey));
                         keysToDelete.add(
