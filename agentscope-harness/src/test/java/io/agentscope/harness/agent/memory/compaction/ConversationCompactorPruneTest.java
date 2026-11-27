@@ -32,6 +32,7 @@ import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolResultState;
 import io.agentscope.core.model.ChatUsage;
 import io.agentscope.core.model.Model;
+import io.agentscope.core.state.AgentState;
 import io.agentscope.harness.agent.memory.MemoryFlushManager;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -124,7 +125,10 @@ class ConversationCompactorPruneTest {
         assertTrue(prunedText.contains("chars pruned"));
         assertTrue(prunedText.length() < 1_000);
 
-        assertEquals(metadata, pruned.getMetadata());
+        assertTrue(pruned.getMetadata().entrySet().containsAll(metadata.entrySet()));
+        assertEquals(
+                Boolean.TRUE,
+                pruned.getMetadata().get(ConversationCompactor.TOOL_RESULT_PRUNED_METADATA_KEY));
         assertTrue(pruned.isSuspended());
         assertEquals(ToolResultState.ERROR, pruned.getState());
         assertEquals(details, pruned.getExecutionDetails());
@@ -195,7 +199,10 @@ class ConversationCompactorPruneTest {
         assertSame(trailing, preview.get(7));
         assertEquals(original.getId(), pruned.getId());
         assertEquals(original.getName(), pruned.getName());
-        assertEquals(original.getMetadata(), pruned.getMetadata());
+        assertTrue(pruned.getMetadata().entrySet().containsAll(original.getMetadata().entrySet()));
+        assertEquals(
+                Boolean.TRUE,
+                pruned.getMetadata().get(ConversationCompactor.TOOL_RESULT_PRUNED_METADATA_KEY));
         assertEquals(state, pruned.getState());
         assertEquals(details, pruned.getExecutionDetails());
         assertEquals(output, original.getOutput(), "Pruning must not mutate the source result");
@@ -293,7 +300,9 @@ class ConversationCompactorPruneTest {
                 compactor.pruneToolResults(List.of(toolMsg), pruneConfig(100, 1, 0, Set.of()));
 
         ToolResultBlock pruned = (ToolResultBlock) result.get(0).getContent().get(0);
-        assertTrue(pruned.getMetadata().isEmpty());
+        assertEquals(
+                Boolean.TRUE,
+                pruned.getMetadata().get(ConversationCompactor.TOOL_RESULT_PRUNED_METADATA_KEY));
         assertEquals(ToolResultState.RUNNING, pruned.getState());
         assertTrue(((TextBlock) pruned.getOutput().get(0)).getText().contains("chars pruned"));
     }
@@ -332,10 +341,163 @@ class ConversationCompactorPruneTest {
         assertSame(small, blocks.get(0));
         ToolResultBlock prunedLarge = (ToolResultBlock) blocks.get(1);
         assertTrue(((TextBlock) prunedLarge.getOutput().get(0)).getText().contains("chars pruned"));
-        assertEquals(Map.of("large_meta", "v"), prunedLarge.getMetadata());
+        assertEquals(
+                Map.of(
+                        "large_meta",
+                        "v",
+                        ConversationCompactor.TOOL_RESULT_PRUNED_METADATA_KEY,
+                        Boolean.TRUE),
+                prunedLarge.getMetadata());
         assertEquals(ToolResultState.ERROR, prunedLarge.getState());
         assertEquals("call-large", prunedLarge.getId());
         assertEquals("msg-5", result.get(0).getId());
+    }
+
+    @Test
+    void pruneToolResults_doesNotRewriteAnAlreadyPrunedPreview() {
+        Msg original =
+                Msg.builder()
+                        .role(MsgRole.TOOL)
+                        .content(ToolResultBlock.of("call-old", "execute", text("x".repeat(1_000))))
+                        .build();
+        CompactionConfig.PruneConfig config = pruneConfig(100, 1, 0, Set.of());
+
+        List<Msg> firstPass = compactor.pruneToolResults(List.of(original), config);
+        ToolResultBlock previouslyPruned = (ToolResultBlock) firstPass.get(0).getContent().get(0);
+        String preview = ((TextBlock) previouslyPruned.getOutput().get(0)).getText();
+        assertTrue(preview.length() > 100, "the preview must still exceed the candidate limit");
+        assertEquals(
+                Boolean.TRUE,
+                previouslyPruned
+                        .getMetadata()
+                        .get(ConversationCompactor.TOOL_RESULT_PRUNED_METADATA_KEY));
+
+        List<Msg> secondPass = compactor.pruneToolResults(firstPass, config);
+
+        assertSame(firstPass, secondPass);
+        assertEquals(
+                preview,
+                ((TextBlock)
+                                ((ToolResultBlock) secondPass.get(0).getContent().get(0))
+                                        .getOutput()
+                                        .get(0))
+                        .getText());
+    }
+
+    @Test
+    void pruneToolResults_prunesOnlyNewResultsAfterAnOlderPreview() {
+        CompactionConfig.PruneConfig config = pruneConfig(100, 1, 0, Set.of());
+        List<Msg> firstPass =
+                compactor.pruneToolResults(
+                        List.of(
+                                Msg.builder()
+                                        .role(MsgRole.TOOL)
+                                        .content(
+                                                ToolResultBlock.of(
+                                                        "call-old",
+                                                        "execute",
+                                                        text("x".repeat(1_000))))
+                                        .build()),
+                        config);
+        ToolResultBlock previouslyPruned = (ToolResultBlock) firstPass.get(0).getContent().get(0);
+        Msg newResult =
+                Msg.builder()
+                        .role(MsgRole.TOOL)
+                        .content(ToolResultBlock.of("call-new", "execute", text("y".repeat(1_000))))
+                        .build();
+
+        List<Msg> nextPass =
+                compactor.pruneToolResults(List.of(firstPass.get(0), newResult), config);
+
+        assertSame(previouslyPruned, nextPass.get(0).getContent().get(0));
+        ToolResultBlock newlyPruned = (ToolResultBlock) nextPass.get(1).getContent().get(0);
+        assertTrue(((TextBlock) newlyPruned.getOutput().get(0)).getText().contains("chars pruned"));
+        assertEquals(
+                Boolean.TRUE,
+                newlyPruned
+                        .getMetadata()
+                        .get(ConversationCompactor.TOOL_RESULT_PRUNED_METADATA_KEY));
+    }
+
+    @Test
+    void pruneToolResults_countsMarkedResultsTowardRecentProtection() {
+        ConversationCompactor fixedCostCompactor =
+                new ConversationCompactor(null, null, messages -> 0L, message -> 1_000L);
+        CompactionConfig.PruneConfig unprotected = pruneConfig(100, 1, 0, Set.of());
+        Msg recentFull =
+                Msg.builder()
+                        .role(MsgRole.TOOL)
+                        .content(
+                                ToolResultBlock.of(
+                                        "call-recent", "execute", text("r".repeat(1_000))))
+                        .build();
+        ToolResultBlock recentPreview =
+                (ToolResultBlock)
+                        fixedCostCompactor
+                                .pruneToolResults(List.of(recentFull), unprotected)
+                                .get(0)
+                                .getContent()
+                                .get(0);
+        Msg older =
+                Msg.builder()
+                        .role(MsgRole.TOOL)
+                        .content(
+                                ToolResultBlock.of(
+                                        "call-older", "execute", text("o".repeat(1_000))))
+                        .build();
+        Msg recent = Msg.builder().role(MsgRole.TOOL).content(recentPreview).build();
+
+        List<Msg> protectedPass =
+                fixedCostCompactor.pruneToolResults(
+                        List.of(older, recent), pruneConfig(100, 1, 1_000, Set.of()));
+
+        ToolResultBlock prunedOlder = (ToolResultBlock) protectedPass.get(0).getContent().get(0);
+        assertTrue(((TextBlock) prunedOlder.getOutput().get(0)).getText().contains("chars pruned"));
+        assertSame(recentPreview, protectedPass.get(1).getContent().get(0));
+    }
+
+    @Test
+    void pruneToolResults_keepsMarkerAcrossAgentStateJsonRoundTrip() {
+        CompactionConfig.PruneConfig config = pruneConfig(100, 1, 0, Set.of());
+        List<Msg> firstPass =
+                compactor.pruneToolResults(
+                        List.of(
+                                Msg.builder()
+                                        .role(MsgRole.TOOL)
+                                        .content(
+                                                ToolResultBlock.of(
+                                                        "call-state",
+                                                        "execute",
+                                                        text("s".repeat(1_000))))
+                                        .build()),
+                        config);
+        AgentState restored =
+                AgentState.fromJsonString(
+                        AgentState.builder().addMessage(firstPass.get(0)).build().toJson());
+        List<Msg> restoredMessages = restored.getContext();
+        String restoredPreview =
+                ((TextBlock)
+                                ((ToolResultBlock) restoredMessages.get(0).getContent().get(0))
+                                        .getOutput()
+                                        .get(0))
+                        .getText();
+
+        List<Msg> afterRestore = compactor.pruneToolResults(restoredMessages, config);
+
+        assertSame(restoredMessages, afterRestore);
+        assertTrue(restoredPreview.length() > 100);
+        assertEquals(
+                restoredPreview,
+                ((TextBlock)
+                                ((ToolResultBlock) afterRestore.get(0).getContent().get(0))
+                                        .getOutput()
+                                        .get(0))
+                        .getText());
+        assertEquals(
+                Boolean.TRUE,
+                ((ToolResultBlock) afterRestore.get(0).getContent().get(0))
+                        .getMetadata()
+                        .get(ConversationCompactor.TOOL_RESULT_PRUNED_METADATA_KEY));
     }
 
     @Test
