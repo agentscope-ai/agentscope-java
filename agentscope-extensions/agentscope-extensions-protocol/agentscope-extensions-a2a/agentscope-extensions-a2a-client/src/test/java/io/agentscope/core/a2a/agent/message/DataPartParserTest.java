@@ -20,13 +20,14 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import io.a2a.spec.DataPart;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import org.a2aproject.sdk.spec.DataPart;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -103,6 +104,28 @@ class DataPartParserTest {
         ToolResultBlock toolResultBlock = (ToolResultBlock) result;
         assertEquals("calculator", toolResultBlock.getName());
         assertEquals("123", toolResultBlock.getId());
+    }
+
+    @Test
+    @DisplayName("Should drop null metadata values, which content blocks do not accept")
+    void testParseToolBlocksWithNullMetadataValues() {
+        for (String blockType : new String[] {"tool_use", "tool_result"}) {
+            Map<String, Object> metadata = new HashMap<>();
+            metadata.put("_agentscope_block_type", blockType);
+            metadata.put("_agentscope_tool_name", "calculator");
+            metadata.put("_agentscope_tool_call_id", "123");
+            metadata.put("_agentscope_msg_source", null);
+            metadata.put("kept", "value");
+            DataPart part = new DataPart(Map.of("_agentscope_tool_output", "2"), metadata);
+
+            ContentBlock result = parser.parse(part);
+
+            Map<String, Object> blockMetadata =
+                    result instanceof ToolUseBlock toolUse
+                            ? toolUse.getMetadata()
+                            : ((ToolResultBlock) result).getMetadata();
+            assertEquals(Map.of("kept", "value"), blockMetadata, blockType);
+        }
     }
 
     @Test

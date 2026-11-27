@@ -183,6 +183,20 @@ import io.agentscope.extensions.redis.snapshot.RedisSnapshotSpec;
 SandboxSnapshotSpec spec = new RedisSnapshotSpec(jedis, "myapp:snapshot:", 3600);
 ```
 
+Lettuce is supported too — pass the sync commands of a `byte[]` connection:
+
+```java
+// Standalone / Sentinel
+StatefulRedisConnection<byte[], byte[]> connection =
+    redisClient.connect(ByteArrayCodec.INSTANCE);
+SandboxSnapshotSpec spec = new RedisSnapshotSpec(connection.sync(), "myapp:snapshot:", 3600);
+
+// Cluster
+StatefulRedisClusterConnection<byte[], byte[]> clusterConnection =
+    redisClusterClient.connect(ByteArrayCodec.INSTANCE);
+SandboxSnapshotSpec spec = new RedisSnapshotSpec(clusterConnection.sync(), "myapp:snapshot:", 3600);
+```
+
 ### 4. RedisSandboxExecutionGuard
 
 Redis `SET NX PX` lease-based distributed lock for multi-replica sandbox concurrency control.

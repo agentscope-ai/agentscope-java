@@ -104,6 +104,9 @@ public final class MessageMetadataKeys {
      */
     public static final String CHAT_USAGE = "_chat_usage";
 
+    /** Metadata key marking that model generation stopped at its output token limit. */
+    public static final String OUTPUT_LIMIT_REACHED = "_output_limit_reached";
+
     /**
      * Metadata key for structured output data.
      *

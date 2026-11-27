@@ -16,6 +16,8 @@
 
 package io.agentscope.core.model;
 
+import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
+import com.fasterxml.jackson.databind.annotation.JsonPOJOBuilder;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
@@ -25,6 +27,7 @@ import java.util.Objects;
  * Immutable tool schema definition.
  * Describes a tool's interface using JSON Schema for parameters.
  */
+@JsonDeserialize(builder = ToolSchema.Builder.class)
 public class ToolSchema {
     private final String name;
     private final String description;
@@ -32,6 +35,7 @@ public class ToolSchema {
     private final Map<String, Object> outputSchema;
     private final Boolean strict;
     private final Boolean deferLoading;
+    private final boolean toolSearch;
 
     /**
      * Creates a new ToolSchema instance using the builder pattern.
@@ -51,6 +55,7 @@ public class ToolSchema {
                         : null;
         this.strict = builder.strict;
         this.deferLoading = builder.deferLoading;
+        this.toolSearch = builder.toolSearch;
     }
 
     /**
@@ -98,6 +103,11 @@ public class ToolSchema {
         return strict;
     }
 
+    /** Whether this schema represents native client-executed tool search rather than a function. */
+    public boolean isToolSearch() {
+        return toolSearch;
+    }
+
     /**
      * Gets the deferred tool definition loading flag.
      *
@@ -123,6 +133,7 @@ public class ToolSchema {
     /**
      * Builder for creating ToolSchema instances.
      */
+    @JsonPOJOBuilder(withPrefix = "")
     public static class Builder {
         private String name;
         private String description;
@@ -130,6 +141,7 @@ public class ToolSchema {
         private Map<String, Object> outputSchema;
         private Boolean strict;
         private Boolean deferLoading;
+        private boolean toolSearch;
 
         /**
          * Sets the tool name.
@@ -183,6 +195,12 @@ public class ToolSchema {
          */
         public Builder strict(Boolean strict) {
             this.strict = strict;
+            return this;
+        }
+
+        /** Mark a native client-executed tool-search declaration. */
+        public Builder toolSearch(boolean toolSearch) {
+            this.toolSearch = toolSearch;
             return this;
         }
 

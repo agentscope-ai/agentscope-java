@@ -116,6 +116,24 @@ public interface AgentTool {
     }
 
     /**
+     * Gets the human-readable display name of this tool, for rendering to an end user.
+     *
+     * <p>{@link #getName()} is a programmatic identifier chosen for model consumption and
+     * {@link #getDescription()} is model-facing guidance; neither is suitable as a UI label. MCP
+     * servers may supply a display name via the spec's {@code Tool.title} (falling back to
+     * {@code ToolAnnotations.title}), which {@link io.agentscope.core.tool.mcp.McpTool} surfaces
+     * here.
+     *
+     * <p>Local {@code @Tool} methods have no display name, so the default implementation returns
+     * {@code null}. Callers must fall back to {@link #getName()} when this is {@code null}.
+     *
+     * @return the display title, or {@code null} when the tool provides none
+     */
+    default String getTitle() {
+        return null;
+    }
+
+    /**
      * Returns whether this tool performs only read operations and never mutates state.
      *
      * <p>Read-only tools are automatically permitted in restricted execution modes such as
@@ -124,6 +142,48 @@ public interface AgentTool {
      * @return {@code true} if the tool is read-only; {@code false} by default
      */
     default boolean isReadOnly() {
+        return false;
+    }
+
+    /**
+     * Whether large-tool-result eviction may offload this tool's results to a workspace file,
+     * leaving a head+tail preview. An intrinsic per-tool declaration (like {@link #isReadOnly()});
+     * consumers must honor it instead of guessing by tool name. Defaults to {@code true}.
+     *
+     * @return {@code true} if this tool's results may be offloaded by eviction
+     */
+    default boolean isEvictable() {
+        return true;
+    }
+
+    /**
+     * Whether aggregate tool-result pruning may replace this tool's older results with a
+     * head+tail preview. Defaults to {@code true}; declare {@code false} when a preview is not
+     * enough to reconstruct the tool's value.
+     *
+     * @return {@code true} if this tool's results may be pruned to a preview
+     */
+    default boolean isPrunable() {
+        return true;
+    }
+
+    /**
+     * Whether this is a framework-provided system capability that must remain available for the
+     * agent to operate (e.g. meta tools). System tools bypass grant-layer trimming but still
+     * obey group activation. Marking a business tool {@code system=true} exempts it from grant
+     * trimming — an explicit declaration by the assembler (trusted boundary).
+     */
+    default boolean isSystem() {
+        return false;
+    }
+
+    /**
+     * Whether this tool manages its own timeout, bypassing the ordinary tool execution timeout.
+     * Parent cancellation still propagates to the tool.
+     *
+     * @return true if the tool owns its timeout budget
+     */
+    default boolean isTimeoutManaged() {
         return false;
     }
 

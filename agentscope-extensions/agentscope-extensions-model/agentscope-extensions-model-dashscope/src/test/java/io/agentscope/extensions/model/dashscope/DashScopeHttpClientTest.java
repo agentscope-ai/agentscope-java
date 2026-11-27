@@ -35,6 +35,7 @@ import io.agentscope.extensions.model.dashscope.dto.DashScopeMessage;
 import io.agentscope.extensions.model.dashscope.dto.DashScopeParameters;
 import io.agentscope.extensions.model.dashscope.dto.DashScopeRequest;
 import io.agentscope.extensions.model.dashscope.dto.DashScopeResponse;
+import io.agentscope.extensions.model.dashscope.dto.DashScopeSkill;
 import java.nio.charset.StandardCharsets;
 import java.security.KeyPair;
 import java.security.KeyPairGenerator;
@@ -262,6 +263,21 @@ class DashScopeHttpClientTest {
     void testQwen38ModelNameWithExtraHyphenDoesNotMatch() {
         assertFalse(DashScopeHttpClient.isMultimodalModel("qwen-3.8-max"));
         assertFalse(DashScopeHttpClient.isMultimodalModel("qwen-3.8-flash"));
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"qwen4-max", "Qwen4-Max", "qwen4-max-2026-11-01", "qwen4-max-preview"})
+    void testQwen4MultimodalRouting(String modelName) {
+        assertTrue(DashScopeHttpClient.isMultimodalModel(modelName));
+        assertTrue(client.requiresMultimodalApi(modelName, EndpointType.AUTO));
+        assertEquals(
+                DashScopeHttpClient.MULTIMODAL_GENERATION_ENDPOINT,
+                client.selectEndpoint(modelName, EndpointType.AUTO));
+    }
+
+    @Test
+    void testQwen4ModelNameWithExtraHyphenDoesNotMatch() {
+        assertFalse(DashScopeHttpClient.isMultimodalModel("qwen-4-max"));
     }
 
     @Test
@@ -1778,6 +1794,43 @@ class DashScopeHttpClientTest {
         // When output is not a string, decryptResponse should return original response
         assertNotNull(response);
         assertNotNull(response.getOutput());
+    }
+
+    @Test
+    void testSkillOnNonStreamingCallIsRejected() {
+        DashScopeRequest request =
+                DashScopeRequest.builder()
+                        .model("qwen-doc-turbo")
+                        .parameters(
+                                DashScopeParameters.builder()
+                                        .skill(List.of(DashScopeSkill.pptTemplate("news_01")))
+                                        .build())
+                        .build();
+
+        IllegalStateException ex =
+                assertThrows(
+                        IllegalStateException.class, () -> client.call(request, null, null, null));
+        assertTrue(ex.getMessage().contains("stream mode"), ex.getMessage());
+
+        // Requests without a skill are untouched.
+        String responseJson =
+                """
+                {
+                  "request_id": "test",
+                  "output": {
+                    "choices": [{
+                      "message": { "role": "assistant", "content": "ok" },
+                      "finish_reason": "stop"
+                    }]
+                  }
+                }
+                """;
+        mockServer.enqueue(
+                new MockResponse()
+                        .setResponseCode(200)
+                        .setBody(responseJson)
+                        .setHeader("Content-Type", "application/json"));
+        assertNotNull(client.call(createTestRequest("qwen-doc-turbo", "hello"), null, null, null));
     }
 
     private DashScopeRequest createTestRequest(String model, String content) {

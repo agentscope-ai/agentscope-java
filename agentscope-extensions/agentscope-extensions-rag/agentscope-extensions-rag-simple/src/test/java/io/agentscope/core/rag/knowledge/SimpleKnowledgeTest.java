@@ -21,12 +21,16 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.embedding.EmbeddingModel;
+import io.agentscope.core.embedding.EmbeddingResponse;
+import io.agentscope.core.embedding.EmbeddingUsage;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.rag.model.Document;
 import io.agentscope.core.rag.model.DocumentMetadata;
 import io.agentscope.core.rag.model.RetrieveConfig;
 import io.agentscope.core.rag.store.InMemoryStore;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -45,6 +49,8 @@ import reactor.test.StepVerifier;
 class SimpleKnowledgeTest {
 
     private static final int DIMENSIONS = 3;
+    private static final EmbeddingUsage TEST_USAGE =
+            EmbeddingUsage.builder().inputTokens(7).totalTokens(7).time(0.1).build();
 
     private MockEmbeddingModel embeddingModel;
     private InMemoryStore vectorStore;
@@ -100,6 +106,73 @@ class SimpleKnowledgeTest {
 
         // Size() returns -1 for SimpleKnowledge, check vector store instead
         assertEquals(2, vectorStore.size());
+    }
+
+    @Test
+    @DisplayName("Should notify usage listener when adding documents")
+    void testUsageListenerForAddDocuments() {
+        List<EmbeddingUsage> observedUsages = Collections.synchronizedList(new ArrayList<>());
+        SimpleKnowledge kb =
+                SimpleKnowledge.builder()
+                        .embeddingModel(embeddingModel)
+                        .embeddingStore(vectorStore)
+                        .usageListener(observedUsages::add)
+                        .build();
+        embeddingModel.setUsage(TEST_USAGE);
+
+        StepVerifier.create(
+                        kb.addDocuments(
+                                List.of(
+                                        createDocument("doc1", "Content 1"),
+                                        createDocument("doc2", "Content 2"))))
+                .verifyComplete();
+
+        assertEquals(2, observedUsages.size());
+        assertEquals(TEST_USAGE, observedUsages.get(0));
+        assertEquals(TEST_USAGE, observedUsages.get(1));
+    }
+
+    @Test
+    @DisplayName("Should notify usage listener when retrieving documents")
+    void testUsageListenerForRetrieve() {
+        knowledgeBase.addDocuments(List.of(createDocument("doc1", "Machine learning"))).block();
+        List<EmbeddingUsage> observedUsages = Collections.synchronizedList(new ArrayList<>());
+        SimpleKnowledge kb =
+                SimpleKnowledge.builder()
+                        .embeddingModel(embeddingModel)
+                        .embeddingStore(vectorStore)
+                        .usageListener(observedUsages::add)
+                        .build();
+        embeddingModel.setUsage(TEST_USAGE);
+
+        RetrieveConfig config = RetrieveConfig.builder().limit(5).scoreThreshold(0.0).build();
+        StepVerifier.create(kb.retrieve("machine learning", config))
+                .assertNext(results -> assertTrue(results.size() <= 5))
+                .verifyComplete();
+
+        assertEquals(1, observedUsages.size());
+        assertEquals(TEST_USAGE, observedUsages.get(0));
+    }
+
+    @Test
+    @DisplayName("Should not notify usage listener when usage is unavailable")
+    void testUsageListenerNotCalledWithoutUsage() {
+        List<EmbeddingUsage> observedUsages = Collections.synchronizedList(new ArrayList<>());
+        SimpleKnowledge kb =
+                SimpleKnowledge.builder()
+                        .embeddingModel(embeddingModel)
+                        .embeddingStore(vectorStore)
+                        .usageListener(observedUsages::add)
+                        .build();
+
+        StepVerifier.create(kb.addDocuments(List.of(createDocument("doc1", "Content"))))
+                .verifyComplete();
+        RetrieveConfig config = RetrieveConfig.builder().limit(5).scoreThreshold(0.0).build();
+        StepVerifier.create(kb.retrieve("content", config))
+                .assertNext(results -> assertTrue(results.size() <= 5))
+                .verifyComplete();
+
+        assertTrue(observedUsages.isEmpty());
     }
 
     @Test
@@ -288,6 +361,7 @@ class SimpleKnowledgeTest {
     private static class MockEmbeddingModel implements EmbeddingModel {
         private final int dimensions;
         private final Map<String, double[]> embeddings = new HashMap<>();
+        private EmbeddingUsage usage;
         private boolean shouldThrowError = false;
 
         MockEmbeddingModel(int dimensions) {
@@ -298,8 +372,12 @@ class SimpleKnowledgeTest {
             this.shouldThrowError = shouldThrowError;
         }
 
+        void setUsage(EmbeddingUsage usage) {
+            this.usage = usage;
+        }
+
         @Override
-        public Mono<double[]> embed(ContentBlock block) {
+        public Mono<EmbeddingResponse> embed(ContentBlock block) {
             if (shouldThrowError) {
                 return Mono.error(new RuntimeException("Mock embedding error"));
             }
@@ -310,7 +388,7 @@ class SimpleKnowledgeTest {
                             // Generate deterministic embedding based on text
                             double[] embedding =
                                     embeddings.computeIfAbsent(text, k -> generateEmbedding(text));
-                            return embedding.clone();
+                            return new EmbeddingResponse(embedding.clone(), usage);
                         });
             }
             return Mono.error(new UnsupportedOperationException("Unsupported content block type"));

@@ -27,9 +27,11 @@ import io.agentscope.harness.agent.subagent.task.TaskStatus;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
+import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.BooleanSupplier;
+import java.util.function.LongSupplier;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -61,6 +63,9 @@ public class WaitAsyncResultsTool {
 
     private final MessageBus messageBus;
     private final TaskRepository taskRepository;
+    private final LongSupplier currentTimeMillis;
+    private final Sleeper sleeper;
+    private final long pollIntervalMs;
     private final ConcurrentHashMap<String, AtomicInteger> consecutiveEmptyWaitsBySession =
             new ConcurrentHashMap<>();
     private volatile BooleanSupplier externalWorkProbe;
@@ -70,8 +75,53 @@ public class WaitAsyncResultsTool {
     }
 
     public WaitAsyncResultsTool(MessageBus messageBus, TaskRepository taskRepository) {
+        this(
+                messageBus,
+                taskRepository,
+                System::currentTimeMillis,
+                Thread::sleep,
+                POLL_INTERVAL_MS);
+    }
+
+    /**
+     * Same as {@link #WaitAsyncResultsTool(MessageBus, TaskRepository)}, with a custom polling
+     * granularity for tests: mid-budget task completion is noticed after one test interval instead
+     * of one production interval.
+     */
+    WaitAsyncResultsTool(
+            MessageBus messageBus, TaskRepository taskRepository, long pollIntervalMs) {
+        this(messageBus, taskRepository, System::currentTimeMillis, Thread::sleep, pollIntervalMs);
+    }
+
+    /** Allows timeout tests to advance elapsed time without waiting for the real deadline. */
+    WaitAsyncResultsTool(
+            MessageBus messageBus,
+            TaskRepository taskRepository,
+            LongSupplier currentTimeMillis,
+            Sleeper sleeper) {
+        this(messageBus, taskRepository, currentTimeMillis, sleeper, POLL_INTERVAL_MS);
+    }
+
+    /**
+     * Allows timeout tests to advance elapsed time without waiting for the real deadline, and to
+     * shrink the polling granularity so waits complete promptly.
+     */
+    WaitAsyncResultsTool(
+            MessageBus messageBus,
+            TaskRepository taskRepository,
+            LongSupplier currentTimeMillis,
+            Sleeper sleeper,
+            long pollIntervalMs) {
         this.messageBus = messageBus;
         this.taskRepository = taskRepository;
+        this.currentTimeMillis = currentTimeMillis;
+        this.sleeper = sleeper;
+        this.pollIntervalMs = pollIntervalMs;
+    }
+
+    @FunctionalInterface
+    interface Sleeper {
+        void sleep(long millis) throws InterruptedException;
     }
 
     /**
@@ -99,6 +149,7 @@ public class WaitAsyncResultsTool {
 
     @Tool(
             name = "wait_async_results",
+            timeoutManaged = true,
             description =
                     "Wait for background async tool, subagent, or teammate results. "
                             + "Prefer barrier mode: task_ids waits until those specific tasks are "
@@ -234,10 +285,10 @@ public class WaitAsyncResultsTool {
                 timeout,
                 sessionId);
 
-        long deadlineMs = System.currentTimeMillis() + (timeout * 1000L);
+        long deadlineMs = currentTimeMillis.getAsLong() + (timeout * 1000L);
 
         while (true) {
-            long remainingMs = deadlineMs - System.currentTimeMillis();
+            long remainingMs = deadlineMs - currentTimeMillis.getAsLong();
             if (remainingMs <= 0) {
                 break;
             }
@@ -252,7 +303,7 @@ public class WaitAsyncResultsTool {
                                 + " or wait_all=true when you need every task in a group.");
             }
             // Cap sleep to the remaining budget so the tool never overshoots the caller's timeout.
-            Thread.sleep(Math.min(POLL_INTERVAL_MS, remainingMs));
+            sleepForPollInterval(remainingMs);
         }
 
         int emptyCount = emptyWaits.incrementAndGet();
@@ -343,14 +394,14 @@ public class WaitAsyncResultsTool {
                 sessionId,
                 waitSet);
 
-        long deadlineMs = System.currentTimeMillis() + (timeout * 1000L);
+        long deadlineMs = currentTimeMillis.getAsLong() + (timeout * 1000L);
         while (true) {
             completed = completeTaskBarrierIfReady(runtimeContext, sessionId, waitSet);
             if (completed != null) {
                 emptyWaits.set(0);
                 return completed;
             }
-            long remainingMs = deadlineMs - System.currentTimeMillis();
+            long remainingMs = deadlineMs - currentTimeMillis.getAsLong();
             if (remainingMs <= 0) {
                 break;
             }
@@ -430,16 +481,20 @@ public class WaitAsyncResultsTool {
                 sb.append("agent_id: ").append(task.getAgentId()).append('\n');
             }
             sb.append("status: ").append(task.getStatus()).append('\n');
+            Exception error = task.getError();
             if (task.getResult() != null) {
                 sb.append("Result:\n").append(task.getResult()).append('\n');
-            } else if (task.getError() != null) {
-                Exception err = task.getError();
-                sb.append("Error:\n").append(err.getMessage()).append('\n');
-                if (err.getCause() != null) {
-                    sb.append("Cause: ").append(err.getCause().getMessage()).append('\n');
+            } else if (error != null && task.getTaskStatus() != TaskStatus.CANCELLED) {
+                sb.append("Error:\n")
+                        .append(
+                                Objects.toString(
+                                        error.getMessage(), error.getClass().getSimpleName()))
+                        .append('\n');
+                if (error.getCause() != null) {
+                    sb.append("Cause: ").append(error.getCause().getMessage()).append('\n');
                 }
             } else {
-                sb.append("Task completed with no result.").append('\n');
+                sb.append("No result.").append('\n');
             }
         }
         return ToolResultBlock.text(sb.toString().trim()).withState(barrierState(tasks));
@@ -506,7 +561,7 @@ public class WaitAsyncResultsTool {
     }
 
     private void sleepForPollInterval(long remainingMs) throws InterruptedException {
-        Thread.sleep(Math.min(POLL_INTERVAL_MS, remainingMs));
+        sleeper.sleep(Math.min(pollIntervalMs, remainingMs));
     }
 
     private List<String> parseTaskIds(String taskIds) {

@@ -137,9 +137,11 @@ public final class SharedSandboxFilesystem extends BaseSandboxFilesystem {
                 String cmd = "base64 " + shellSingleQuote(path);
                 ExecResult r = sandbox.exec(runtimeContext, cmd, null);
                 if (r.ok()) {
+                    // POSIX base64 wraps output at 76 columns with \n separators; strip all
+                    // whitespace before decoding with the strict decoder (#3966).
+                    String encoded = r.stdout() != null ? r.stdout().replaceAll("\\s+", "") : "";
                     byte[] decoded =
-                            Base64.getDecoder()
-                                    .decode(r.stdout().trim().getBytes(StandardCharsets.UTF_8));
+                            Base64.getDecoder().decode(encoded.getBytes(StandardCharsets.UTF_8));
                     results.add(FileDownloadResponse.success(path, decoded));
                 } else {
                     results.add(FileDownloadResponse.fail(path, r.combinedOutput()));

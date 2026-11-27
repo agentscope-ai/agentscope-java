@@ -17,7 +17,6 @@ package io.agentscope.core.tool.mcp;
 
 import static io.agentscope.core.Version.VERSION;
 
-import io.agentscope.core.Version;
 import io.modelcontextprotocol.client.McpAsyncClient;
 import io.modelcontextprotocol.client.McpClient;
 import io.modelcontextprotocol.client.McpSyncClient;
@@ -26,11 +25,11 @@ import io.modelcontextprotocol.client.transport.HttpClientStreamableHttpTranspor
 import io.modelcontextprotocol.client.transport.ServerParameters;
 import io.modelcontextprotocol.client.transport.StdioClientTransport;
 import io.modelcontextprotocol.client.transport.customizer.McpSyncHttpClientRequestCustomizer;
-import io.modelcontextprotocol.json.McpJsonMapper;
 import io.modelcontextprotocol.json.TypeRef;
+import io.modelcontextprotocol.json.jackson2.JacksonMcpJsonMapper;
 import io.modelcontextprotocol.spec.McpClientTransport;
 import io.modelcontextprotocol.spec.McpSchema;
-import io.modelcontextprotocol.spec.McpSchema.ElicitRequest;
+import io.modelcontextprotocol.spec.McpSchema.ElicitFormRequest;
 import io.modelcontextprotocol.spec.McpSchema.ElicitResult;
 import io.modelcontextprotocol.spec.McpSchema.JSONRPCMessage;
 import java.net.URI;
@@ -101,10 +100,11 @@ public class McpClientBuilder {
     private TransportConfig transportConfig;
     private Duration requestTimeout = DEFAULT_REQUEST_TIMEOUT;
     private Duration initializationTimeout = DEFAULT_INIT_TIMEOUT;
-    private Function<ElicitRequest, Mono<ElicitResult>> asyncElicitationHandler;
-    private Function<ElicitRequest, ElicitResult> syncElicitationHandler;
+    private Function<ElicitFormRequest, Mono<ElicitResult>> asyncElicitationHandler;
+    private Function<ElicitFormRequest, ElicitResult> syncElicitationHandler;
     private List<String> protocolVersions;
     private boolean propagateMeta = true;
+    private List<McpToolResultCustomizer> resultCustomizers = List.of();
 
     private McpClientBuilder(String name) {
         this.name = name;
@@ -421,7 +421,8 @@ public class McpClientBuilder {
      * @param handler function to handle elicit requests asynchronously
      * @return this builder
      */
-    public McpClientBuilder asyncElicitation(Function<ElicitRequest, Mono<ElicitResult>> handler) {
+    public McpClientBuilder asyncElicitation(
+            Function<ElicitFormRequest, Mono<ElicitResult>> handler) {
         this.asyncElicitationHandler = handler;
         return this;
     }
@@ -457,7 +458,7 @@ public class McpClientBuilder {
      * @param handler function to handle elicit requests synchronously
      * @return this builder
      */
-    public McpClientBuilder syncElicitation(Function<ElicitRequest, ElicitResult> handler) {
+    public McpClientBuilder syncElicitation(Function<ElicitFormRequest, ElicitResult> handler) {
         this.syncElicitationHandler = handler;
         return this;
     }
@@ -490,6 +491,54 @@ public class McpClientBuilder {
     }
 
     /**
+     * Configures ordered customizers for the MCP tool result metadata exposed to the agent.
+     *
+     * <p>The server's raw {@code _meta} map is not exposed automatically. When at least one
+     * customizer is configured, the map passed to the customizers starts empty and becomes the value
+     * stored under {@link McpTool#METADATA_MCP_RESULT_META} on the {@link
+     * io.agentscope.core.message.ToolResultBlock}, and from there on {@code ToolResultEndEvent}
+     * metadata. Customizers can read the server's raw map from {@link
+     * McpToolResultContext#resultMeta()} and copy selected entries or add derived values. They run
+     * in list order and the resulting list is fixed when the wrapper is built:
+     *
+     * <pre>{@code
+     * McpClientWrapper customized = McpClientBuilder.create("customized-mcp")
+     *         .streamableHttpTransport("https://mcp.example.com/http")
+     *         .resultCustomizers(List.of(
+     *                 (ctx, resultMetadata) -> {
+     *                     Object traceId = ctx.resultMeta().get("traceId");
+     *                     if (traceId != null) {
+     *                         resultMetadata.put("trace.id", traceId);
+     *                     }
+     *                 }))
+     *         .buildSync();
+     * }</pre>
+     *
+     * <p>The customizer is per connection and applies to every tool on it, including results the
+     * server flags as errors. Each customizer failure is logged and skipped without changing the
+     * original tool result. See {@link McpToolResultCustomizer} for the contract.
+     *
+     * @param resultCustomizers ordered customizers to apply; {@code null} means no customizers
+     * @return this builder
+     */
+    public McpClientBuilder resultCustomizers(List<McpToolResultCustomizer> resultCustomizers) {
+        this.resultCustomizers =
+                resultCustomizers == null ? List.of() : List.copyOf(resultCustomizers);
+        return this;
+    }
+
+    /**
+     * Configures ordered result metadata customizers.
+     *
+     * @param resultCustomizers ordered customizers to apply
+     * @return this builder
+     */
+    public McpClientBuilder resultCustomizers(McpToolResultCustomizer... resultCustomizers) {
+        this.resultCustomizers = resultCustomizers == null ? List.of() : List.of(resultCustomizers);
+        return this;
+    }
+
+    /**
      * Builds an asynchronous MCP client wrapper.
      *
      * @return Mono emitting the async client wrapper
@@ -509,8 +558,9 @@ public class McpClientBuilder {
                     }
 
                     McpSchema.Implementation clientInfo =
-                            new McpSchema.Implementation(
-                                    "agentscope-java", "AgentScope Java Framework", VERSION);
+                            McpSchema.Implementation.builder("agentscope-java", VERSION)
+                                    .title("AgentScope Java Framework")
+                                    .build();
 
                     McpSchema.ClientCapabilities clientCapabilities =
                             buildCapabilities(asyncElicitationHandler != null);
@@ -528,7 +578,8 @@ public class McpClientBuilder {
 
                     McpAsyncClient mcpClient = clientBuilder.build();
 
-                    McpAsyncClientWrapper wrapper = new McpAsyncClientWrapper(name, mcpClient);
+                    McpAsyncClientWrapper wrapper =
+                            new McpAsyncClientWrapper(name, mcpClient, resultCustomizers);
                     wrapper.setPropagateMeta(propagateMeta);
                     return wrapper;
                 });
@@ -551,8 +602,9 @@ public class McpClientBuilder {
         }
 
         McpSchema.Implementation clientInfo =
-                new McpSchema.Implementation(
-                        "agentscope-java", "AgentScope Java Framework", Version.VERSION);
+                McpSchema.Implementation.builder("agentscope-java", VERSION)
+                        .title("AgentScope Java Framework")
+                        .build();
 
         McpSchema.ClientCapabilities clientCapabilities =
                 buildCapabilities(syncElicitationHandler != null);
@@ -570,7 +622,7 @@ public class McpClientBuilder {
 
         McpSyncClient mcpClient = clientBuilder.build();
 
-        McpSyncClientWrapper wrapper = new McpSyncClientWrapper(name, mcpClient);
+        McpSyncClientWrapper wrapper = new McpSyncClientWrapper(name, mcpClient, resultCustomizers);
         wrapper.setPropagateMeta(propagateMeta);
         return wrapper;
     }
@@ -681,7 +733,9 @@ public class McpClientBuilder {
             }
 
             ServerParameters params = paramsBuilder.build();
-            return new StdioClientTransport(params, McpJsonMapper.getDefault());
+            return new StdioClientTransport(
+                    params,
+                    new JacksonMcpJsonMapper(new com.fasterxml.jackson.databind.ObjectMapper()));
         }
     }
 
@@ -821,16 +875,10 @@ public class McpClientBuilder {
 
             clientTransportBuilder.sseEndpoint(extractEndpoint());
 
-            if (!headers.isEmpty()) {
-                clientTransportBuilder.customizeRequest(
-                        requestBuilder -> {
-                            headers.forEach(requestBuilder::header);
-                        });
-            }
-
-            // Apply per-request HTTP customizer for dynamic token injection, etc.
-            if (httpRequestCustomizer != null) {
-                clientTransportBuilder.httpRequestCustomizer(httpRequestCustomizer);
+            McpSyncHttpClientRequestCustomizer effectiveCustomizer =
+                    composeRequestCustomizer(headers, httpRequestCustomizer);
+            if (effectiveCustomizer != null) {
+                clientTransportBuilder.httpRequestCustomizer(effectiveCustomizer);
             }
 
             return clientTransportBuilder.build();
@@ -867,19 +915,33 @@ public class McpClientBuilder {
 
             clientTransportBuilder.endpoint(extractEndpoint());
 
-            if (!headers.isEmpty()) {
-                clientTransportBuilder.customizeRequest(
-                        requestBuilder -> {
-                            headers.forEach(requestBuilder::header);
-                        });
-            }
-
-            // Apply per-request HTTP customizer for dynamic token injection, etc.
-            if (httpRequestCustomizer != null) {
-                clientTransportBuilder.httpRequestCustomizer(httpRequestCustomizer);
+            McpSyncHttpClientRequestCustomizer effectiveCustomizer =
+                    composeRequestCustomizer(headers, httpRequestCustomizer);
+            if (effectiveCustomizer != null) {
+                clientTransportBuilder.httpRequestCustomizer(effectiveCustomizer);
             }
 
             return clientTransportBuilder.build();
         }
+    }
+
+    /**
+     * Combines static header configuration with an optional per-request customizer into
+     * a single customizer. Returns null when neither is configured.
+     */
+    private static McpSyncHttpClientRequestCustomizer composeRequestCustomizer(
+            Map<String, String> headers, McpSyncHttpClientRequestCustomizer delegate) {
+        boolean hasHeaders = headers != null && !headers.isEmpty();
+        if (!hasHeaders && delegate == null) {
+            return null;
+        }
+        return (builder, method, uri, body, ctx) -> {
+            if (hasHeaders) {
+                headers.forEach(builder::header);
+            }
+            if (delegate != null) {
+                delegate.customize(builder, method, uri, body, ctx);
+            }
+        };
     }
 }

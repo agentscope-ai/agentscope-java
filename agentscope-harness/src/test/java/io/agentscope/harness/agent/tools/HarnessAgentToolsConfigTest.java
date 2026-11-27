@@ -59,6 +59,7 @@ class HarnessAgentToolsConfigTest {
                         .model(stubModel())
                         .workspace(workspace)
                         .abstractFilesystem(new LocalFilesystem(workspace))
+                        .enableLongTermMemory()
                         .build();
 
         List<String> toolNames = toolNames(agent);
@@ -80,6 +81,7 @@ class HarnessAgentToolsConfigTest {
                         .model(stubModel())
                         .workspace(workspace)
                         .abstractFilesystem(new LocalFilesystem(workspace))
+                        .enableLongTermMemory()
                         .build();
 
         List<String> toolNames = toolNames(agent);
@@ -87,7 +89,7 @@ class HarnessAgentToolsConfigTest {
         assertTrue(toolNames.contains("list_files"));
         assertFalse(toolNames.contains("memory_search"));
         assertFalse(toolNames.contains("memory_get"));
-        assertFalse(toolNames.contains("session_search"));
+        assertFalse(toolNames.contains("thread_search"));
     }
 
     @Test
@@ -111,6 +113,7 @@ class HarnessAgentToolsConfigTest {
                         .model(stubModel())
                         .workspace(workspace)
                         .abstractFilesystem(new LocalFilesystem(workspace))
+                        .enableLongTermMemory()
                         .disableToolsConfig()
                         .mcpServerRegistrationListener(results::add)
                         .build()) {
@@ -184,6 +187,7 @@ class HarnessAgentToolsConfigTest {
                         .model(stubModel())
                         .workspace(workspace)
                         .abstractFilesystem(new LocalFilesystem(workspace))
+                        .enableLongTermMemory()
                         .toolsConfig(override)
                         .build();
 
@@ -203,6 +207,7 @@ class HarnessAgentToolsConfigTest {
                         .model(stubModel())
                         .workspace(workspace)
                         .abstractFilesystem(new LocalFilesystem(workspace))
+                        .enableLongTermMemory()
                         .build();
 
         // Loader returned empty for malformed JSON; default tools remain available.

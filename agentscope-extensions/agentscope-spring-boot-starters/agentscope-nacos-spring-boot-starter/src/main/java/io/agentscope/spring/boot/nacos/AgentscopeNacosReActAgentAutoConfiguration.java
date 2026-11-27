@@ -55,7 +55,7 @@ import org.springframework.context.annotation.Scope;
         prefix = NacosConstants.NACOS_PROMPT_PREFIX,
         name = "enabled",
         havingValue = "true",
-        matchIfMissing = true)
+        matchIfMissing = false)
 public class AgentscopeNacosReActAgentAutoConfiguration {
 
     private static final Logger log =

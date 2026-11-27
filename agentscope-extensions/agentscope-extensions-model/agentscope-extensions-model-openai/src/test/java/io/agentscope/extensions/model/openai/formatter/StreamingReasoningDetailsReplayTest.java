@@ -16,21 +16,34 @@
 package io.agentscope.extensions.model.openai.formatter;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import io.agentscope.core.agent.accumulator.ReasoningContext;
+import io.agentscope.core.message.Msg;
 import io.agentscope.core.util.JsonUtils;
 import io.agentscope.extensions.model.openai.dto.OpenAIMessage;
 import io.agentscope.extensions.model.openai.dto.OpenAIReasoningDetail;
+import io.agentscope.extensions.model.openai.dto.OpenAIRequest;
 import io.agentscope.extensions.model.openai.dto.OpenAIResponse;
 import java.time.Instant;
 import java.util.List;
-import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 
 class StreamingReasoningDetailsReplayTest {
 
-    @Test
-    void preservesDistinctReasoningBlocksAcrossStreamingChunks() {
+    @ParameterizedTest
+    @CsvSource({
+        "reasoning.text,false",
+        "reasoning.text,true",
+        "reasoning.summary,false",
+        "reasoning.summary,true",
+        "reasoning.encrypted,false",
+        "reasoning.encrypted,true"
+    })
+    void preservesReasoningBlocksWithoutReplayingStreamingIndexes(String type, boolean persisted) {
         OpenAIResponseParser parser = new OpenAIResponseParser();
         ReasoningContext context = new ReasoningContext("assistant");
         for (int index = 0; index < 2; index++) {
@@ -38,19 +51,31 @@ class StreamingReasoningDetailsReplayTest {
                     """
                     {"id":"reply-1","object":"chat.completion.chunk","choices":[
                       {"index":0,"delta":{"reasoning_details":[
-                        {"type":"reasoning.encrypted","id":"rs_%d","index":%d,
-                         "format":"anthropic-claude-v1","data":"opaque_%d"}
+                        {"type":"%s","id":"rs_%d","index":%d,
+                         "format":"anthropic-claude-v1","data":"opaque_%d","text":"text_%d"}
                       ]}}
                     ]}
                     """
-                            .formatted(index, index, index);
+                            .formatted(type, index, index, index, index);
             OpenAIResponse response = JsonUtils.getJsonCodec().fromJson(json, OpenAIResponse.class);
+            assertEquals(
+                    index,
+                    response.getFirstChoice().getDelta().getReasoningDetails().get(0).getIndex());
             context.processChunk(parser.parseResponse(response, Instant.now()));
         }
 
-        OpenAIMessage replay =
-                new OpenAIMessageConverter(m -> "", b -> "")
-                        .convertToMessage(context.buildFinalMessage(), false);
+        Msg history = context.buildFinalMessage();
+        if (persisted) {
+            history =
+                    JsonUtils.getJsonCodec()
+                            .fromJson(JsonUtils.getJsonCodec().toJson(history), Msg.class);
+        }
+        String originalHistory = JsonUtils.getJsonCodec().toJson(history);
+        OpenAIChatFormatter formatter = new OpenAIChatFormatter();
+        OpenAIRequest request =
+                formatter.buildRequest(
+                        "kimi-k2.8-preview", formatter.format(List.of(history)), true);
+        OpenAIMessage replay = request.getMessages().get(0);
         assertNotNull(replay.getReasoningDetails());
         assertEquals(
                 List.of("rs_0", "rs_1"),
@@ -58,5 +83,23 @@ class StreamingReasoningDetailsReplayTest {
         assertEquals(
                 List.of("opaque_0", "opaque_1"),
                 replay.getReasoningDetails().stream().map(OpenAIReasoningDetail::getData).toList());
+        assertEquals(
+                List.of("text_0", "text_1"),
+                replay.getReasoningDetails().stream().map(OpenAIReasoningDetail::getText).toList());
+        for (OpenAIReasoningDetail detail : replay.getReasoningDetails()) {
+            assertEquals(type, detail.getType());
+            assertEquals("anthropic-claude-v1", detail.getFormat());
+        }
+        JsonNode wire =
+                JsonUtils.getJsonCodec()
+                        .fromJson(JsonUtils.getJsonCodec().toJson(request), JsonNode.class);
+        JsonNode details = wire.path("messages").path(0).path("reasoning_details");
+        assertEquals(2, details.size());
+        for (JsonNode detail : details) {
+            assertFalse(
+                    detail.has("index"),
+                    "Request reasoning details must not contain streaming index");
+        }
+        assertEquals(originalHistory, JsonUtils.getJsonCodec().toJson(history));
     }
 }

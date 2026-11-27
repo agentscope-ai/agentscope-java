@@ -92,6 +92,63 @@
                 <version>${project.version}</version>
             </dependency>
 
+            <!-- Durable: neutral runtime, native adapter and optional providers -->
+            <dependency>
+                <groupId>io.agentscope</groupId>
+                <artifactId>agentscope-durable-adapter-harness-agentscope</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.agentscope</groupId>
+                <artifactId>agentscope-durable-adapter-claude</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.agentscope</groupId>
+                <artifactId>agentscope-durable-adapter-agui</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.agentscope</groupId>
+                <artifactId>agentscope-durable-worker</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.agentscope</groupId>
+                <artifactId>agentscope-extensions-durable-http</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.agentscope</groupId>
+                <artifactId>agentscope-extensions-durable-sandbox</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.agentscope</groupId>
+                <artifactId>agentscope-extensions-durable-rocketmq</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.agentscope</groupId>
+                <artifactId>agentscope-extensions-durable-objects</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.agentscope</groupId>
+                <artifactId>agentscope-extensions-durable-mcp</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.agentscope</groupId>
+                <artifactId>agentscope-durable-runtime</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.agentscope</groupId>
+                <artifactId>agentscope-extensions-durable-jdbc</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+
             <!-- AgentScope All -->
             <dependency>
                 <groupId>io.agentscope</groupId>
@@ -303,13 +360,6 @@
                 <version>${project.version}</version>
             </dependency>
 
-            <!-- AgentScope controlplane BYO data-plane SDK -->
-            <dependency>
-                <groupId>io.agentscope</groupId>
-                <artifactId>agentscope-extensions-controlplane</artifactId>
-                <version>${project.version}</version>
-            </dependency>
-
             <!-- AgentScope Channel Extensions -->
             <dependency>
                 <groupId>io.agentscope</groupId>
@@ -358,6 +408,13 @@
             <dependency>
                 <groupId>io.agentscope</groupId>
                 <artifactId>agentscope-extensions-jev</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+
+            <!-- AgentScope OpenAI Decisions Extension -->
+            <dependency>
+                <groupId>io.agentscope</groupId>
+                <artifactId>agentscope-extensions-openai-decisions</artifactId>
                 <version>${project.version}</version>
             </dependency>
 
@@ -471,6 +528,13 @@
             <dependency>
                 <groupId>io.agentscope</groupId>
                 <artifactId>agentscope-jev-spring-boot-starter</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+
+            <!-- AgentScope OpenAI Decisions Spring Boot Starter -->
+            <dependency>
+                <groupId>io.agentscope</groupId>
+                <artifactId>agentscope-openai-decisions-spring-boot-starter</artifactId>
                 <version>${project.version}</version>
             </dependency>
 

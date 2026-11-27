@@ -85,6 +85,7 @@ class AgentSpawnToolKeyTest {
                                         null,
                                         "default-agent",
                                         "ignored",
+                                        true,
                                         null,
                                         1,
                                         null)
@@ -117,6 +118,7 @@ class AgentSpawnToolKeyTest {
                                 null,
                                 "primary-agent",
                                 "ignored",
+                                true,
                                 null,
                                 1,
                                 null)
@@ -130,6 +132,7 @@ class AgentSpawnToolKeyTest {
                                 null,
                                 "unknown-agent",
                                 "ignored",
+                                true,
                                 null,
                                 1,
                                 null)
@@ -138,7 +141,11 @@ class AgentSpawnToolKeyTest {
                         .contains("Unknown agent_id"));
 
         RuntimeContext scopedContext =
-                RuntimeContext.builder().sessionId("s1").userId("u1").build();
+                RuntimeContext.builder()
+                        .sessionId("s1")
+                        .userId("u1")
+                        .agentState(AgentState.builder().userId("u1").sessionId("s1").build())
+                        .build();
         scopedContext.put(AgentSpawnTool.CTX_AGENT_MANAGER, scopedManager);
         String persistentSpawn =
                 assertText(
@@ -147,6 +154,7 @@ class AgentSpawnToolKeyTest {
                                         null,
                                         "scoped-agent",
                                         "first task",
+                                        true,
                                         "scoped",
                                         0,
                                         null)
@@ -170,14 +178,14 @@ class AgentSpawnToolKeyTest {
         assertTrue(backgroundSend.contains("task_id:"));
         assertEquals("done", repository.runLatestLocalTask());
 
-        AgentState restoredState = AgentState.builder().build();
+        AgentState restoredState = AgentState.builder().userId("u1").sessionId("s1").build();
         String restoredKey = "agent:scoped-agent:restored";
         restoredState
                 .getToolContext()
                 .putSpawnEntry(
                         restoredKey,
                         new ToolContextState.SpawnEntry(
-                                restoredKey, "scoped-agent", "sub-restored", null, 1));
+                                restoredKey, "scoped-agent", "sub-restored", null, 1, true));
         AgentSpawnTool restoreTool = new AgentSpawnTool(defaultManager, repository, 0);
         String restored =
                 assertText(
@@ -253,56 +261,71 @@ class AgentSpawnToolKeyTest {
 
     @Test
     void sameInputs_produceSameHash() {
-        String h1 = AgentSpawnTool.deterministicHash("session-1", "code-reviewer", "review");
-        String h2 = AgentSpawnTool.deterministicHash("session-1", "code-reviewer", "review");
+        String h1 =
+                AgentSpawnTool.deterministicHash("user", "session-1", "code-reviewer", "review");
+        String h2 =
+                AgentSpawnTool.deterministicHash("user", "session-1", "code-reviewer", "review");
         assertEquals(h1, h2);
     }
 
     @Test
+    void userIdentity_hasUnambiguousBoundaries() {
+        assertNotEquals(
+                AgentSpawnTool.deterministicHash("alice", "s1", "worker", null),
+                AgentSpawnTool.deterministicHash("bob", "s1", "worker", null));
+        assertNotEquals(
+                AgentSpawnTool.deterministicHash("a/b", "c", "worker", null),
+                AgentSpawnTool.deterministicHash("a", "b/c", "worker", null));
+        for (String literal : List.of("anon", "null", "")) {
+            assertNotEquals(
+                    AgentSpawnTool.deterministicHash(null, "s1", "worker", null),
+                    AgentSpawnTool.deterministicHash(literal, "s1", "worker", null));
+        }
+    }
+
+    @Test
     void hashIs12HexChars() {
-        String h = AgentSpawnTool.deterministicHash("s1", "worker", null);
+        String h = AgentSpawnTool.deterministicHash("user", "s1", "worker", null);
         assertEquals(12, h.length());
         assertTrue(h.matches("[0-9a-f]{12}"));
     }
 
     @Test
     void differentParentSession_differentHash() {
-        String h1 = AgentSpawnTool.deterministicHash("session-A", "worker", null);
-        String h2 = AgentSpawnTool.deterministicHash("session-B", "worker", null);
+        String h1 = AgentSpawnTool.deterministicHash("user", "session-A", "worker", null);
+        String h2 = AgentSpawnTool.deterministicHash("user", "session-B", "worker", null);
         assertNotEquals(h1, h2);
     }
 
     @Test
     void differentAgentId_differentHash() {
-        String h1 = AgentSpawnTool.deterministicHash("s1", "code-reviewer", null);
-        String h2 = AgentSpawnTool.deterministicHash("s1", "test-runner", null);
+        String h1 = AgentSpawnTool.deterministicHash("user", "s1", "code-reviewer", null);
+        String h2 = AgentSpawnTool.deterministicHash("user", "s1", "test-runner", null);
         assertNotEquals(h1, h2);
     }
 
     @Test
     void differentLabel_differentHash() {
-        String h1 = AgentSpawnTool.deterministicHash("s1", "worker", "alpha");
-        String h2 = AgentSpawnTool.deterministicHash("s1", "worker", "beta");
+        String h1 = AgentSpawnTool.deterministicHash("user", "s1", "worker", "alpha");
+        String h2 = AgentSpawnTool.deterministicHash("user", "s1", "worker", "beta");
         assertNotEquals(h1, h2);
     }
 
     @Test
     void nullLabel_differentFromNonNullLabel() {
-        String h1 = AgentSpawnTool.deterministicHash("s1", "worker", null);
-        String h2 = AgentSpawnTool.deterministicHash("s1", "worker", "label");
+        String h1 = AgentSpawnTool.deterministicHash("user", "s1", "worker", null);
+        String h2 = AgentSpawnTool.deterministicHash("user", "s1", "worker", "label");
         assertNotEquals(h1, h2);
     }
 
     @Test
-    void nullParentSession_usesAnonFallback() {
-        String h1 = AgentSpawnTool.deterministicHash(null, "worker", null);
-        String h2 = AgentSpawnTool.deterministicHash(null, "worker", null);
+    void nullParentSession_isDistinctFromLiteralAnon() {
+        String h1 = AgentSpawnTool.deterministicHash("user", null, "worker", null);
+        String h2 = AgentSpawnTool.deterministicHash("user", null, "worker", null);
         assertEquals(h1, h2);
 
-        // "anon" seed differs from a real session id
-        String h3 = AgentSpawnTool.deterministicHash("anon", "worker", null);
-        // null → "anon" so these are the same
-        assertEquals(h1, h3);
+        String h3 = AgentSpawnTool.deterministicHash("user", "anon", "worker", null);
+        assertNotEquals(h1, h3);
     }
 
     @Test

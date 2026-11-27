@@ -20,6 +20,7 @@ import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.middleware.ReasoningInput;
+import io.agentscope.core.state.AgentState;
 import io.agentscope.harness.agent.filesystem.AbstractFilesystem;
 import io.agentscope.harness.agent.filesystem.model.FileInfo;
 import io.agentscope.harness.agent.filesystem.model.GlobResult;
@@ -29,6 +30,7 @@ import io.agentscope.harness.agent.subagent.DefaultAgentManager;
 import io.agentscope.harness.agent.subagent.SubagentDeclaration;
 import io.agentscope.harness.agent.subagent.SubagentFactory;
 import io.agentscope.harness.agent.subagent.task.TaskRepository;
+import io.agentscope.harness.agent.subagent.task.WorkspaceTaskRepository;
 import io.agentscope.harness.agent.tool.AgentSpawnTool;
 import io.agentscope.harness.agent.tool.TaskTool;
 import java.nio.file.Files;
@@ -78,6 +80,7 @@ public class DynamicSubagentsMiddleware implements HarnessRuntimeMiddleware {
     private final Function<SubagentDeclaration, SubagentFactory> factoryBuilder;
     private final DefaultAgentManager agentManager;
     private volatile Object subagentTool;
+    private volatile AgentSpawnTool ownedAgentSpawnTool;
     private final TaskTool taskTool;
     private final TaskRepository taskRepository;
 
@@ -96,17 +99,29 @@ public class DynamicSubagentsMiddleware implements HarnessRuntimeMiddleware {
         this.agentManager = agentManager;
         java.util.Objects.requireNonNull(taskRepository, "taskRepository");
         this.taskRepository = taskRepository;
-        this.subagentTool =
-                subagentTool != null
-                        ? subagentTool
-                        : new AgentSpawnTool(agentManager, taskRepository, 0);
+        if (subagentTool != null) {
+            this.subagentTool = subagentTool;
+            this.ownedAgentSpawnTool = null;
+        } else {
+            AgentSpawnTool spawnTool = new AgentSpawnTool(agentManager, taskRepository, 0);
+            this.subagentTool = spawnTool;
+            this.ownedAgentSpawnTool = spawnTool;
+        }
         this.taskTool = new TaskTool(taskRepository);
     }
 
     /** Narrow declaration: subclasses overriding more hooks must extend this set. */
     @Override
     public Set<ExtensionPoint> activePoints() {
-        return EnumSet.of(ExtensionPoint.ON_REASONING);
+        return EnumSet.of(ExtensionPoint.ON_AGENT_STATE_READY, ExtensionPoint.ON_REASONING);
+    }
+
+    @Override
+    public void onAgentStateReady(
+            Agent agent, RuntimeContext ctx, AgentState state, List<Msg> inputMessages) {
+        // Permission confirmation can resume directly in acting with a fresh RuntimeContext.
+        // Install only after admission/state restoration, using this call's resolved identity.
+        refreshAgentManager(ctx);
     }
 
     /**
@@ -126,9 +141,20 @@ public class DynamicSubagentsMiddleware implements HarnessRuntimeMiddleware {
         if (this.subagentTool instanceof AgentSpawnTool ast) {
             ast.setGatewayBridge(bridge);
         } else {
-            this.subagentTool = new AgentSpawnTool(agentManager, taskRepository, 0, bridge);
+            AgentSpawnTool spawnTool = new AgentSpawnTool(agentManager, taskRepository, 0, bridge);
+            this.subagentTool = spawnTool;
+            this.ownedAgentSpawnTool = spawnTool;
         }
         return this;
+    }
+
+    /** Closes the internally-created spawn tool without touching an injected external tool. */
+    public synchronized void closeOwnedAgentSpawnTool() {
+        AgentSpawnTool spawnTool = ownedAgentSpawnTool;
+        if (spawnTool != null) {
+            ownedAgentSpawnTool = null;
+            spawnTool.close();
+        }
     }
 
     /**
@@ -138,6 +164,12 @@ public class DynamicSubagentsMiddleware implements HarnessRuntimeMiddleware {
      */
     public DefaultAgentManager getAgentManager() {
         return agentManager;
+    }
+
+    /** Loads declarations for host-owned continuation without invoking a model. */
+    public DefaultAgentManager refreshAgentManager(RuntimeContext context) {
+        RuntimeContext effective = context == null ? RuntimeContext.empty() : context;
+        return installSnapshot(effective, reloadEntries(effective));
     }
 
     /**
@@ -160,23 +192,25 @@ public class DynamicSubagentsMiddleware implements HarnessRuntimeMiddleware {
             Function<ReasoningInput, Flux<AgentEvent>> next) {
         RuntimeContext rc = ctx != null ? ctx : RuntimeContext.empty();
         List<SubagentEntry> merged = reloadEntries(rc);
-        if (agentManager != null) {
-            agentManager.replaceAgents(merged);
-        }
-        StringBuilder addition = new StringBuilder();
-        if (!merged.isEmpty()) {
-            addition.append(SubagentsMiddleware.renderSubagentSection(merged, false));
-        }
-        String taskSummary = SubagentsMiddleware.buildTaskSummary(taskRepository, rc);
-        if (taskSummary != null) {
-            addition.append(taskSummary);
-        }
-        if (addition.length() == 0) {
-            return next.apply(input);
-        }
-        List<Msg> rebuilt =
-                SubagentsMiddleware.prependToSystemMessage(input.messages(), addition.toString());
-        return next.apply(new ReasoningInput(rebuilt, input.tools(), input.options()));
+        installSnapshot(rc, merged);
+        return SubagentsMiddleware.reasonWithSubagents(
+                agent,
+                rc,
+                input,
+                next,
+                taskRepository,
+                merged,
+                false,
+                taskRepository instanceof WorkspaceTaskRepository);
+    }
+
+    private DefaultAgentManager installSnapshot(RuntimeContext rc, List<SubagentEntry> entries) {
+        DefaultAgentManager snapshot =
+                agentManager == null
+                        ? null
+                        : new DefaultAgentManager(entries, agentManager.getWorkspaceManager());
+        rc.put(AgentSpawnTool.CTX_AGENT_MANAGER, snapshot);
+        return snapshot;
     }
 
     private List<SubagentEntry> reloadEntries(RuntimeContext rc) {

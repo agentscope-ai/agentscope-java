@@ -16,6 +16,8 @@
 package io.agentscope.harness.agent.tool;
 
 import io.agentscope.core.agent.RuntimeContext;
+import io.agentscope.core.message.ToolErrorKind;
+import io.agentscope.core.message.ToolErrorMetadata;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.tool.Tool;
 import io.agentscope.core.tool.ToolParam;
@@ -49,36 +51,46 @@ public class MemorySaveTool {
     @Tool(
             name = "memory_save",
             description =
-                    "Persist one or more facts to long-term memory. Use whenever the user asks you"
-                        + " to remember something, or when you observe important preferences,"
-                        + " decisions, or context worth keeping across conversations. Do NOT use"
-                        + " write_file or edit_file on MEMORY.md — always use this tool instead.")
+                    "Persist durable facts to long-term memory. Use whenever the user asks you to"
+                        + " remember something, or when you observe a preference, decision,"
+                        + " constraint, or ongoing-work fact worth keeping across conversations. Do"
+                        + " NOT use write_file or edit_file on MEMORY.md — always use this tool"
+                        + " instead. Never save secrets, credentials, or transient status.")
     public ToolResultBlock memorySave(
             RuntimeContext runtimeContext,
             @ToolParam(
                             name = "content",
                             description =
-                                    "Markdown bullet list of facts to remember. Each bullet should"
-                                            + " be a concise, self-contained fact. Example:\\n"
-                                            + "- User prefers dark mode\\n"
-                                            + "- Project deadline is 2026-07-01")
+                                    "Markdown bullet list of durable facts. Each bullet must be"
+                                            + " self-contained and carry its provenance: [user]"
+                                            + " when the user stated it, [observed] when it came"
+                                            + " from a tool result or file, [inferred] when you"
+                                            + " inferred it. Add the source and an ISO date when"
+                                            + " the fact can change (owner, status, deadline)."
+                                            + " If a new fact conflicts with existing memory, keep"
+                                            + " both and mark the newer one with its source and"
+                                            + " date instead of silently replacing it. Example:\\n"
+                                            + "- [user] User prefers dark mode (2026-07-01)\\n"
+                                            + "- [observed] Project deadline is 2026-07-01"
+                                            + " (docs/plan.md)")
                     String content) {
         if (content == null || content.isBlank()) {
-            return ToolResultBlock.error("content is required");
+            return ToolResultBlock.error("content is required")
+                    .withMetadata(ToolErrorMetadata.of(ToolErrorKind.INVALID_ARGUMENT));
         }
 
         RuntimeContext rc = runtimeContext != null ? runtimeContext : RuntimeContext.empty();
 
         String section = "\n" + content.strip() + "\n";
 
-        workspaceManager.appendUtf8WorkspaceRelative(rc, WorkspaceConstants.MEMORY_MD, section);
+        workspaceManager.appendMemoryFileUtf8(rc, WorkspaceConstants.MEMORY_MD, section);
 
         String today = LocalDate.now().format(DateTimeFormatter.ISO_LOCAL_DATE);
         String dailyPath = WorkspaceConstants.MEMORY_DIR + "/" + today + ".md";
         String dailyEntry =
                 String.format(
                         "\n## Memory Save — %s\n%s\n", Instant.now().toString(), content.strip());
-        workspaceManager.appendUtf8WorkspaceRelative(rc, dailyPath, dailyEntry);
+        workspaceManager.appendMemoryFileUtf8(rc, dailyPath, dailyEntry);
 
         long count = content.strip().lines().filter(l -> l.stripLeading().startsWith("-")).count();
         if (count == 0) {

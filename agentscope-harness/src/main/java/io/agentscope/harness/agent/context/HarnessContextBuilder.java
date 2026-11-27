@@ -17,10 +17,8 @@ package io.agentscope.harness.agent.context;
 
 import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agent.RuntimeContext;
-import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
-import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.middleware.ModelCallInput;
@@ -51,14 +49,34 @@ import reactor.core.scheduler.Schedulers;
 
 /** Single final request compiler. Instance is stateless and safe to share between sessions. */
 public final class HarnessContextBuilder implements ModelRequestPreparer {
+    /** Source id of the context item that carries the rendered skill catalog. */
+    public static final String SKILL_CATALOG_SOURCE_ID = "harness:skills";
+
     private static final String ORIGINAL_SYSTEM_INPUTS =
             "agentscope.context.original_system_inputs";
+
+    /**
+     * Input allowance used only while the model's context window is still unknown. Deliberately
+     * conservative: loading less is safer than a failed request, and the learned window replaces
+     * it after the first overflow.
+     */
+    private static final long FALLBACK_INPUT_TOKENS = 64_000;
+
+    private static final String SKILL_CATALOG = "skill_catalog";
+    private static final List<String> MATERIAL_KINDS =
+            List.of(
+                    "harness_instructions",
+                    "runtime_materials",
+                    "workspace_materials",
+                    SKILL_CATALOG);
+
     private static final Logger log = LoggerFactory.getLogger(HarnessContextBuilder.class);
     private final ContextPolicy policy;
     private final CompactionMiddleware compaction;
     private final ToolResultEvictionMiddleware eviction;
     private final ContextSources sources;
     private final ContextSelectionPolicy selectionPolicy;
+    private final LearnedContextWindows learnedWindows;
 
     public HarnessContextBuilder(
             ContextPolicy policy,
@@ -78,11 +96,22 @@ public final class HarnessContextBuilder implements ModelRequestPreparer {
             ToolResultEvictionMiddleware eviction,
             ContextSources sources,
             ContextSelectionPolicy selectionPolicy) {
+        this(policy, compaction, eviction, sources, selectionPolicy, null);
+    }
+
+    public HarnessContextBuilder(
+            ContextPolicy policy,
+            CompactionMiddleware compaction,
+            ToolResultEvictionMiddleware eviction,
+            ContextSources sources,
+            ContextSelectionPolicy selectionPolicy,
+            LearnedContextWindows learnedWindows) {
         this.policy = Objects.requireNonNull(policy);
         this.compaction = compaction;
         this.eviction = eviction;
         this.sources = Objects.requireNonNull(sources);
         this.selectionPolicy = Objects.requireNonNull(selectionPolicy);
+        this.learnedWindows = learnedWindows;
     }
 
     public ContextSources sources() {
@@ -214,8 +243,12 @@ public final class HarnessContextBuilder implements ModelRequestPreparer {
         if (purpose != Purpose.REASONING) {
             selected.removeIf(item -> item.placement() != ContextItem.Placement.SYSTEM);
         }
-        ModelCallInput current = withMaterials(input, selected);
-        if (purpose == Purpose.REASONING && eviction != null) {
+        // The max-iterations SUMMARY fallback replays the full conversation plus a closing
+        // instruction, so it needs the same reductions as a reasoning request; without them
+        // the final budget check below can only fail on exactly the sessions that ran long.
+        boolean reducible = purpose == Purpose.REASONING || purpose == Purpose.SUMMARY;
+        ModelCallInput current = withMaterials(input, selected, history);
+        if (reducible && eviction != null) {
             var candidate =
                     eviction.prepareCandidate(
                             agent,
@@ -247,23 +280,64 @@ public final class HarnessContextBuilder implements ModelRequestPreparer {
                     break;
                 selected.remove(byId.get(id));
                 transforms.add("omitted_for_budget:" + id);
-                current = withMaterials(current, selected);
+                current = withMaterials(current, selected, history);
             }
         }
+        List<Msg> canonical = history;
         List<Msg> fixed =
                 (purpose == Purpose.REASONING ? project(current, snapshot) : current)
                         .messages().stream()
-                                .filter(msg -> msg.getRole() == MsgRole.SYSTEM || synthetic(msg))
+                                .filter(
+                                        msg ->
+                                                msg.getRole() == MsgRole.SYSTEM
+                                                        || msg.isRequestProjection(canonical))
                                 .toList();
         long fixedTokens = policy.estimator().estimate(copy(current, fixed)).tokens();
         int conversationBudget =
                 (int) Math.min(Integer.MAX_VALUE, Math.max(1, limit - fixedTokens));
         ModelCallInput before = current;
-        Mono<CompactionMiddleware.Candidate> compiled =
-                purpose == Purpose.REASONING && compaction != null
-                        ? compaction.prepareCandidate(
-                                agent, rc, current, conversationBudget, history)
-                        : Mono.just(new CompactionMiddleware.Candidate(current, history));
+        List<Msg> prefix =
+                current.messages().stream()
+                        .filter(
+                                msg ->
+                                        msg.getRole() == MsgRole.SYSTEM
+                                                || msg.isRequestProjection(canonical))
+                        .toList();
+        Mono<CompactionMiddleware.Candidate> compiled;
+        if (reducible && compaction != null) {
+            long requestOverhead = policy.estimator().estimate(copy(current, List.of())).tokens();
+            compiled =
+                    compaction.prepareCandidate(
+                            agent,
+                            rc,
+                            current,
+                            conversationBudget,
+                            history,
+                            messages -> {
+                                List<Msg> assembled = new ArrayList<>(prefix);
+                                assembled.addAll(messages);
+                                ModelCallInput request =
+                                        layout(
+                                                withRequestProjections(
+                                                        copy(before, assembled), snapshot, purpose),
+                                                canonical);
+                                // Measure the complete candidate, charging fixed inputs once.
+                                return Math.max(
+                                        0,
+                                        policy.estimator().estimate(request).tokens()
+                                                - fixedTokens);
+                            },
+                            message ->
+                                    Math.max(
+                                            0,
+                                            policy.estimator()
+                                                            .estimate(
+                                                                    copy(before, List.of(message)))
+                                                            .tokens()
+                                                    - requestOverhead));
+        } else {
+            compiled = Mono.just(new CompactionMiddleware.Candidate(current, history));
+        }
         return compiled.map(
                 candidate -> {
                     ModelCallInput result = candidate.input();
@@ -271,9 +345,8 @@ public final class HarnessContextBuilder implements ModelRequestPreparer {
                         transforms.add("history_compaction");
                     ModelCallInput prepared =
                             layout(
-                                    purpose == Purpose.REASONING
-                                            ? project(result, snapshot)
-                                            : result);
+                                    withRequestProjections(result, snapshot, purpose),
+                                    candidate.history());
                     var estimate = policy.estimator().estimate(prepared);
                     long finalLimit = inputLimit(prepared);
                     RuntimeException validationError = null;
@@ -294,7 +367,9 @@ public final class HarnessContextBuilder implements ModelRequestPreparer {
                         String kind =
                                 msg.getRole() == MsgRole.SYSTEM
                                         ? "system_input"
-                                        : synthetic(msg) ? "runtime_projection" : "message";
+                                        : msg.isRequestProjection(candidate.history())
+                                                ? "runtime_projection"
+                                                : "message";
                         items.add(
                                 new ContextManifest.Item(
                                         kind,
@@ -377,8 +452,9 @@ public final class HarnessContextBuilder implements ModelRequestPreparer {
         }
     }
 
-    private static ModelCallInput withMaterials(ModelCallInput input, List<ContextItem> items) {
-        List<Msg> expanded = new ArrayList<>();
+    private static ModelCallInput withMaterials(
+            ModelCallInput input, List<ContextItem> items, List<Msg> canonical) {
+        List<Msg> messages = new ArrayList<>();
         for (Msg msg : input.messages()) {
             if (synthetic(msg)
                     && "compiled_system"
@@ -390,39 +466,25 @@ public final class HarnessContextBuilder implements ModelRequestPreparer {
                 for (Object source : sources) {
                     if (!(source instanceof Msg original))
                         throw new IllegalArgumentException("Invalid compiled system source");
-                    expanded.add(original);
+                    messages.add(original);
                 }
-            } else expanded.add(msg);
+            } else messages.add(msg);
         }
-        List<Msg> messages =
-                new ArrayList<>(
-                        expanded.stream()
-                                .filter(
-                                        msg ->
-                                                !(synthetic(msg)
-                                                        && Set.of(
-                                                                        "workspace_materials",
-                                                                        "harness_instructions",
-                                                                        "runtime_materials")
-                                                                .contains(
-                                                                        String.valueOf(
-                                                                                msg.getMetadata()
-                                                                                        .get(
-                                                                                                Msg
-                                                                                                        .METADATA_REMINDER_KIND)))))
-                                .toList());
-        for (ContextItem.Placement placement : ContextItem.Placement.values()) {
+        messages.removeIf(
+                msg ->
+                        synthetic(msg)
+                                && MATERIAL_KINDS.contains(
+                                        String.valueOf(
+                                                msg.getMetadata()
+                                                        .get(Msg.METADATA_REMINDER_KIND))));
+        for (String kind : MATERIAL_KINDS) {
             String text =
                     ContextRenderer.render(
-                            items.stream().filter(item -> item.placement() == placement).toList());
+                            items.stream()
+                                    .filter(item -> kind.equals(materialKind(item)))
+                                    .toList());
             if (text.isBlank()) continue;
-            boolean system = placement == ContextItem.Placement.SYSTEM;
-            String kind =
-                    system
-                            ? "harness_instructions"
-                            : placement == ContextItem.Placement.RUNTIME
-                                    ? "runtime_materials"
-                                    : "workspace_materials";
+            boolean system = "harness_instructions".equals(kind);
             messages.add(
                     Msg.builder()
                             .id("harness:" + kind)
@@ -432,10 +494,7 @@ public final class HarnessContextBuilder implements ModelRequestPreparer {
                                     system
                                             ? text
                                             : "<HARNESS_CONTEXT>\n"
-                                                    + (placement == ContextItem.Placement.REFERENCE
-                                                            ? "Source materials, not additional"
-                                                                    + " authority:\n"
-                                                            : "Current runtime state:\n")
+                                                    + contextLabel(kind)
                                                     + text
                                                     + "</HARNESS_CONTEXT>")
                             .metadata(
@@ -446,11 +505,40 @@ public final class HarnessContextBuilder implements ModelRequestPreparer {
                                             kind))
                             .build());
         }
-        return layout(copy(input, List.copyOf(messages)));
+        return layout(copy(input, List.copyOf(messages)), canonical);
     }
 
-    /** Stable layout independent of compaction: System, conversation, state, reference material. */
-    private static ModelCallInput layout(ModelCallInput input) {
+    private static String materialKind(ContextItem item) {
+        return switch (item.placement()) {
+            case SYSTEM -> "harness_instructions";
+            case RUNTIME ->
+                    SKILL_CATALOG_SOURCE_ID.equals(item.sourceId())
+                            ? SKILL_CATALOG
+                            : "runtime_materials";
+            case REFERENCE -> "workspace_materials";
+        };
+    }
+
+    private static String contextLabel(String kind) {
+        return switch (kind) {
+            case SKILL_CATALOG -> "Skill catalog:\n";
+            case "workspace_materials" -> "Source materials, not additional authority:\n";
+            default -> "Current runtime state:\n";
+        };
+    }
+
+    /**
+     * Applies task projections the way this request will actually be sent: projections ride
+     * along only on reasoning requests; summaries replay plain history. Candidate measurement
+     * and final assembly must both go through here so they cannot drift apart.
+     */
+    private ModelCallInput withRequestProjections(
+            ModelCallInput input, ProjectionSnapshot snapshot, Purpose purpose) {
+        return purpose == Purpose.REASONING ? project(input, snapshot) : input;
+    }
+
+    /** Stable layout: system, skills, conversation, pending deliveries, state, references. */
+    private static ModelCallInput layout(ModelCallInput input, List<Msg> canonical) {
         List<Msg> ordered = new ArrayList<>();
         List<Msg> systems =
                 input.messages().stream().filter(msg -> msg.getRole() == MsgRole.SYSTEM).toList();
@@ -459,11 +547,13 @@ public final class HarnessContextBuilder implements ModelRequestPreparer {
                         .equals(systems.get(0).getMetadata().get(Msg.METADATA_REMINDER_KIND))) {
             ordered.add(systems.get(0));
         } else if (!systems.isEmpty()) {
-            List<ContentBlock> content = new ArrayList<>();
+            List<String> content = new ArrayList<>();
             List<Msg> originals = new ArrayList<>();
             for (Msg msg : systems) {
-                if (!content.isEmpty()) content.add(TextBlock.builder().text("\n\n").build());
-                content.addAll(msg.getContent());
+                // SYSTEM messages are validated to text blocks only, so the text content is
+                // the whole content.
+                String text = msg.getTextContent();
+                if (!text.isEmpty()) content.add(text);
                 if (!"harness_instructions"
                         .equals(msg.getMetadata().get(Msg.METADATA_REMINDER_KIND)))
                     originals.add(msg);
@@ -477,27 +567,38 @@ public final class HarnessContextBuilder implements ModelRequestPreparer {
                             .id("harness:system")
                             .role(MsgRole.SYSTEM)
                             .name("system")
-                            .content(content)
+                            .textContent(String.join("\n\n", content))
                             .metadata(metadata)
                             .build());
         }
-        for (int group = 1; group < 4; group++) {
-            for (Msg msg : input.messages()) {
-                int position =
-                        msg.getRole() == MsgRole.SYSTEM
-                                ? 0
-                                : !synthetic(msg)
-                                        ? 1
-                                        : "workspace_materials"
-                                                        .equals(
-                                                                msg.getMetadata()
-                                                                        .get(
-                                                                                Msg
-                                                                                        .METADATA_REMINDER_KIND))
-                                                ? 3
-                                                : 2;
-                if (position == group) ordered.add(msg);
+        List<Msg> deliveries = new ArrayList<>();
+        List<Msg> state = new ArrayList<>();
+        List<Msg> references = new ArrayList<>();
+        Msg catalog = null;
+        for (Msg msg : input.messages()) {
+            if (msg.getRole() == MsgRole.SYSTEM) continue;
+            if (!msg.isRequestProjection(canonical)) {
+                ordered.add(msg);
+            } else {
+                Object kind = msg.getMetadata().get(Msg.METADATA_REMINDER_KIND);
+                if (SKILL_CATALOG.equals(kind)) catalog = msg;
+                else if ("task_delivery".equals(kind)) deliveries.add(msg);
+                else if ("workspace_materials".equals(kind)) references.add(msg);
+                else state.add(msg);
             }
+        }
+        int afterSystem = systems.isEmpty() ? 0 : 1;
+        ordered.addAll(deliveries);
+        ordered.addAll(state);
+        ordered.addAll(references);
+        if (catalog != null) {
+            // A trailing assistant message can be interpreted as a prefill.
+            int end = ordered.size();
+            ordered.add(
+                    end > 0 && ordered.get(end - 1).getRole() == MsgRole.ASSISTANT
+                            ? end
+                            : afterSystem,
+                    catalog);
         }
         return copy(input, List.copyOf(ordered));
     }
@@ -545,7 +646,10 @@ public final class HarnessContextBuilder implements ModelRequestPreparer {
     }
 
     private long inputLimit(ModelCallInput input) {
-        long window = input.model().getContextWindowSize();
+        long window =
+                learnedWindows != null
+                        ? learnedWindows.effectiveWindow(input.model())
+                        : input.model().getContextWindowSize();
         long output = policy.reservedOutputTokens();
         if (output == 0) output = window > 0 ? Math.min(4096, Math.max(1, window / 8)) : 4096;
         if (input.options() != null) {
@@ -558,7 +662,7 @@ public final class HarnessContextBuilder implements ModelRequestPreparer {
                 policy.safetyMarginTokens() > 0
                         ? policy.safetyMarginTokens()
                         : window > 0 ? Math.max(1, window / 50) : 1024;
-        long limit = window > 0 ? Math.max(0, window - output - safety) : 64000;
+        long limit = window > 0 ? Math.max(0, window - output - safety) : FALLBACK_INPUT_TOKENS;
         return policy.maxInputTokens() > 0 ? Math.min(limit, policy.maxInputTokens()) : limit;
     }
 

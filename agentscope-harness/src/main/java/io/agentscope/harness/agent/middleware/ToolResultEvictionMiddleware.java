@@ -24,15 +24,19 @@ import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.middleware.ReasoningInput;
 import io.agentscope.core.state.AgentState;
+import io.agentscope.core.tool.AgentTool;
+import io.agentscope.core.tool.Toolkit;
 import io.agentscope.harness.agent.filesystem.AbstractFilesystem;
 import io.agentscope.harness.agent.filesystem.model.WriteResult;
 import io.agentscope.harness.agent.memory.compaction.ToolResultEvictionConfig;
+import io.agentscope.harness.agent.memory.compaction.ToolResultPreview;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.EnumSet;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.HexFormat;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -61,8 +65,9 @@ import reactor.core.publisher.Flux;
  *   <li>Marks compacted results in metadata so they are not recursively evicted on later turns.</li>
  * </ol>
  *
- * <p>Tools listed in {@link ToolResultEvictionConfig#getExcludedToolNames()} are never evicted
- * (e.g. {@code readFile} — evicting would cause re-read loops).
+ * <p>Tools that declare {@code @Tool(evictable = false)} are never evicted (e.g. {@code
+ * read_file} — evicting would cause re-read loops), as are tool names listed in {@link
+ * ToolResultEvictionConfig#getExcludedToolNames()}.
  */
 public class ToolResultEvictionMiddleware implements HarnessRuntimeMiddleware {
 
@@ -119,15 +124,18 @@ public class ToolResultEvictionMiddleware implements HarnessRuntimeMiddleware {
             Agent agent, RuntimeContext ctx, ReasoningInput input, List<Msg> history) {
         final RuntimeContext rc = ctx != null ? ctx : RuntimeContext.empty();
         Map<ToolResultFingerprint, String> replacements = new HashMap<>();
+        Set<String> neverEvict = neverEvict(agent);
 
         // PreReasoning hooks run before middleware and may remove or rewrite messages. Evict the
         // canonical state first so hook behavior cannot prevent the original result from being
         // compacted before persistence.
-        EvictionResult canonical = evictMessages(history, agent.getName(), rc, replacements);
+        EvictionResult canonical =
+                evictMessages(history, agent.getName(), rc, replacements, neverEvict);
 
         // Preserve the hook-produced model view, compacting only results that remain (or were
         // newly added) in that view. Reuse canonical replacements to avoid duplicate writes.
-        EvictionResult result = evictMessages(input.messages(), agent.getName(), rc, replacements);
+        EvictionResult result =
+                evictMessages(input.messages(), agent.getName(), rc, replacements, neverEvict);
         if (!result.changed()) {
             return new Candidate(input, canonical.messages());
         }
@@ -137,11 +145,32 @@ public class ToolResultEvictionMiddleware implements HarnessRuntimeMiddleware {
                 canonical.messages());
     }
 
+    /**
+     * Names that must never be evicted: the user-configured exclusions plus every registered
+     * tool declaring {@link AgentTool#isEvictable()} false. Exclusion follows the tool's own
+     * declaration instead of its name, so a custom tool sharing a built-in name is not silently
+     * exempt.
+     */
+    private Set<String> neverEvict(Agent agent) {
+        Set<String> names = new HashSet<>(config.getExcludedToolNames());
+        Toolkit toolkit = agent.getToolkit();
+        if (toolkit != null) {
+            for (String name : toolkit.getToolNames()) {
+                AgentTool tool = toolkit.getTool(name);
+                if (tool != null && !tool.isEvictable()) {
+                    names.add(name);
+                }
+            }
+        }
+        return names;
+    }
+
     private EvictionResult evictMessages(
             List<Msg> messages,
             String agentName,
             RuntimeContext rc,
-            Map<ToolResultFingerprint, String> replacements) {
+            Map<ToolResultFingerprint, String> replacements,
+            Set<String> neverEvict) {
         if (messages == null || messages.isEmpty()) {
             return new EvictionResult(messages, false);
         }
@@ -149,7 +178,7 @@ public class ToolResultEvictionMiddleware implements HarnessRuntimeMiddleware {
         List<Msg> rebuiltMessages = new ArrayList<>(messages.size());
         boolean changed = false;
         for (Msg msg : messages) {
-            Msg rebuilt = evictMessage(msg, agentName, rc, replacements);
+            Msg rebuilt = evictMessage(msg, agentName, rc, replacements, neverEvict);
             rebuiltMessages.add(rebuilt);
             if (rebuilt != msg) {
                 changed = true;
@@ -163,7 +192,8 @@ public class ToolResultEvictionMiddleware implements HarnessRuntimeMiddleware {
             Msg msg,
             String agentName,
             RuntimeContext rc,
-            Map<ToolResultFingerprint, String> replacements) {
+            Map<ToolResultFingerprint, String> replacements,
+            Set<String> neverEvict) {
         if (msg == null) {
             return null;
         }
@@ -182,7 +212,7 @@ public class ToolResultEvictionMiddleware implements HarnessRuntimeMiddleware {
                 ToolResultFingerprint original = fingerprint(tr);
                 String placeholder = replacements.get(original);
                 if (placeholder == null) {
-                    placeholder = maybeEvict(tr, agentName, rc);
+                    placeholder = maybeEvict(tr, agentName, rc, neverEvict);
                     if (placeholder != null) {
                         replacements.put(original, placeholder);
                     }
@@ -212,9 +242,13 @@ public class ToolResultEvictionMiddleware implements HarnessRuntimeMiddleware {
                 .build();
     }
 
-    private String maybeEvict(ToolResultBlock toolResult, String agentName, RuntimeContext rc) {
+    private String maybeEvict(
+            ToolResultBlock toolResult,
+            String agentName,
+            RuntimeContext rc,
+            Set<String> neverEvict) {
         String toolName = toolResult.getName();
-        if (toolName != null && config.getExcludedToolNames().contains(toolName)) {
+        if (toolName != null && neverEvict.contains(toolName)) {
             return null;
         }
         String fullText = extractText(toolResult);
@@ -261,10 +295,15 @@ public class ToolResultEvictionMiddleware implements HarnessRuntimeMiddleware {
     private ToolResultBlock withPlaceholder(ToolResultBlock toolResult, String placeholder) {
         Map<String, Object> metadata = new LinkedHashMap<>(toolResult.getMetadata());
         metadata.put(EVICTED_METADATA_KEY, true);
+        int charsPerEnd =
+                Math.min(
+                        config.getPreviewChars(),
+                        ToolResultPreview.textLength(toolResult.getOutput()) / 2);
         return new ToolResultBlock(
                 toolResult.getId(),
                 toolResult.getName(),
-                List.of(TextBlock.builder().text(placeholder).build()),
+                ToolResultPreview.create(
+                        toolResult.getOutput(), charsPerEnd, placeholder, "\n\n...\n\n"),
                 metadata,
                 toolResult.getState(),
                 toolResult.getExecutionDetails());
@@ -316,10 +355,7 @@ public class ToolResultEvictionMiddleware implements HarnessRuntimeMiddleware {
                         len, evictionPath, evictionPath));
 
         if (pLen > 0) {
-            sb.append(String.format("Preview (first %,d chars):%n", pLen));
-            sb.append(fullText, 0, pLen);
-            sb.append(String.format("%n%n... and last %,d chars:%n", pLen));
-            sb.append(fullText, len - pLen, len);
+            sb.append(String.format("Preview (first and last %,d chars):%n", pLen));
         }
 
         return sb.toString();

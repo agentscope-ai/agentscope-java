@@ -17,6 +17,7 @@ package io.agentscope.core.state;
 
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.annotation.JsonPropertyOrder;
 import java.io.IOException;
@@ -28,6 +29,7 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -43,17 +45,24 @@ import reactor.core.scheduler.Schedulers;
  * evicted on access. All filesystem interaction runs on {@link Schedulers#boundedElastic()} so
  * Reactor's non-blocking schedulers are never blocked.
  *
- * <p>Only configuration fields ({@code maxCacheFiles}, {@code maxCacheBytes},
- * {@code activatedGroups}) participate in JSON serialization. The in-memory LRU cache itself is
- * runtime state and is reconstructed empty on deserialization.
+ * <p>Configuration, activated groups, spawn metadata, and discovered tool names participate in
+ * JSON serialization. The in-memory LRU cache itself is runtime state and is reconstructed empty
+ * on deserialization.
  */
-@JsonPropertyOrder({"max_cache_files", "max_cache_bytes", "activated_groups", "spawn_registry"})
+@JsonPropertyOrder({
+    "max_cache_files",
+    "max_cache_bytes",
+    "activated_groups",
+    "spawn_registry",
+    "discovered_tools"
+})
 public final class ToolContextState {
 
     private final int maxCacheFiles;
     private final double maxCacheBytes;
     private final List<ReadCacheEntry> readFileCache = new ArrayList<>();
     private final List<String> activatedGroups;
+    private final LinkedHashSet<String> discoveredTools = new LinkedHashSet<>();
     private final Map<String, SpawnEntry> spawnRegistry;
 
     private ToolContextState(Builder builder) {
@@ -185,9 +194,38 @@ public final class ToolContextState {
         }
     }
 
+    /** Tools discovered in this session; names are revalidated against each request's catalog. */
+    @JsonProperty("discovered_tools")
+    @JsonInclude(JsonInclude.Include.NON_EMPTY)
+    public synchronized List<String> getDiscoveredTools() {
+        return List.copyOf(discoveredTools);
+    }
+
+    @JsonProperty("discovered_tools")
+    public synchronized void setDiscoveredTools(List<String> tools) {
+        discoveredTools.clear();
+        addDiscoveredTools(tools);
+    }
+
+    /** Atomically accumulate discoveries from concurrent searches. */
+    public synchronized void addDiscoveredTools(List<String> tools) {
+        if (tools != null) {
+            for (String tool : tools) {
+                if (tool != null) discoveredTools.add(tool);
+            }
+        }
+    }
+
+    /** Clear tools discovered in this session. */
+    public synchronized void clearDiscoveredTools() {
+        discoveredTools.clear();
+    }
+
     @JsonProperty("spawn_registry")
     public Map<String, SpawnEntry> getSpawnRegistry() {
-        return Map.copyOf(spawnRegistry);
+        synchronized (spawnRegistry) {
+            return Map.copyOf(spawnRegistry);
+        }
     }
 
     /**
@@ -198,7 +236,9 @@ public final class ToolContextState {
      */
     public void putSpawnEntry(String key, SpawnEntry entry) {
         if (key != null && entry != null) {
-            this.spawnRegistry.put(key, entry);
+            synchronized (spawnRegistry) {
+                this.spawnRegistry.put(key, entry);
+            }
         }
     }
 
@@ -207,7 +247,9 @@ public final class ToolContextState {
      */
     public void removeSpawnEntry(String key) {
         if (key != null) {
-            this.spawnRegistry.remove(key);
+            synchronized (spawnRegistry) {
+                this.spawnRegistry.remove(key);
+            }
         }
     }
 
@@ -221,7 +263,13 @@ public final class ToolContextState {
             @JsonProperty("agent_id") String agentId,
             @JsonProperty("session_id") String sessionId,
             @JsonProperty("label") String label,
-            @JsonProperty("depth") int depth) {
+            @JsonProperty("depth") int depth,
+            @JsonProperty("reusable") boolean reusable) {
+
+        /** Pre-2.x entries had no reusable flag and retained the agent for follow-up sends. */
+        public SpawnEntry(String key, String agentId, String sessionId, String label, int depth) {
+            this(key, agentId, sessionId, label, depth, true);
+        }
 
         @JsonCreator
         public SpawnEntry(
@@ -229,12 +277,9 @@ public final class ToolContextState {
                 @JsonProperty("agent_id") String agentId,
                 @JsonProperty("session_id") String sessionId,
                 @JsonProperty("label") String label,
-                @JsonProperty("depth") int depth) {
-            this.key = key;
-            this.agentId = agentId;
-            this.sessionId = sessionId;
-            this.label = label;
-            this.depth = depth;
+                @JsonProperty("depth") int depth,
+                @JsonProperty("reusable") Boolean reusable) {
+            this(key, agentId, sessionId, label, depth, reusable == null || reusable);
         }
     }
 

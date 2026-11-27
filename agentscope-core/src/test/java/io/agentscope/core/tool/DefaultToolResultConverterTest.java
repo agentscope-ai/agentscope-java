@@ -17,12 +17,18 @@ package io.agentscope.core.tool;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.agentscope.core.message.Base64Source;
+import io.agentscope.core.message.ContentBlock;
+import io.agentscope.core.message.ImageBlock;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
+import io.agentscope.core.message.ToolResultState;
 import io.agentscope.core.tool.test.ToolTestUtils;
+import java.lang.reflect.Type;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.OffsetDateTime;
@@ -61,11 +67,20 @@ class DefaultToolResultConverterTest {
 
     @Test
     void testConvert_VoidType() {
-        ToolResultBlock result = converter.convert("ignored", Void.TYPE);
+        ToolResultBlock result = converter.convert(null, Void.TYPE);
 
         assertNotNull(result);
         assertFalse(ToolTestUtils.isErrorResponse(result));
-        assertEquals("Done", ToolTestUtils.extractContent(result));
+        assertEquals("(completed with no output)", ToolTestUtils.extractContent(result));
+    }
+
+    @Test
+    void testConvert_BoxedVoidType() {
+        ToolResultBlock result = converter.convert(null, Void.class);
+
+        assertNotNull(result);
+        assertFalse(ToolTestUtils.isErrorResponse(result));
+        assertEquals("(completed with no output)", ToolTestUtils.extractContent(result));
     }
 
     @Test
@@ -78,6 +93,103 @@ class DefaultToolResultConverterTest {
         assertNotNull(result);
         assertEquals(original, result);
         assertEquals("test result", ToolTestUtils.extractContent(result));
+    }
+
+    @Test
+    void testConvert_ContentBlockResultIsWrappedUnchanged() {
+        ImageBlock image =
+                ImageBlock.builder().source(new Base64Source("image/png", "iVBORw0KGgo=")).build();
+
+        ToolResultBlock result = converter.convert(image, ImageBlock.class);
+
+        assertNotNull(result);
+        assertFalse(ToolTestUtils.isErrorResponse(result));
+        assertEquals(List.of(image), result.getOutput());
+        assertEquals(ToolResultState.SUCCESS, result.getState());
+    }
+
+    @Test
+    void testConvert_ContentBlockListResultIsWrappedUnchanged() {
+        List<ContentBlock> blocks =
+                List.of(
+                        TextBlock.builder().text("chart ready").build(),
+                        ImageBlock.builder()
+                                .source(new Base64Source("image/png", "iVBORw0KGgo="))
+                                .build());
+
+        ToolResultBlock result = converter.convert(blocks, List.class);
+
+        assertNotNull(result);
+        assertFalse(ToolTestUtils.isErrorResponse(result));
+        assertEquals(blocks, result.getOutput());
+        assertEquals(ToolResultState.SUCCESS, result.getState());
+    }
+
+    @Test
+    void testConvert_ErrorLookingContentBlockIsSuccessful() {
+        TextBlock text = TextBlock.builder().text("[ERROR] upstream payload").build();
+
+        ToolResultBlock result = converter.convert(text, TextBlock.class);
+
+        assertEquals(ToolResultState.SUCCESS, result.getState());
+        assertEquals(List.of(text), result.getOutput());
+    }
+
+    @Test
+    void testConvert_ContentBlockStillReachesCustomSerializeHook() {
+        RecordingConverter customConverter = new RecordingConverter();
+        ImageBlock image =
+                ImageBlock.builder().source(new Base64Source("image/png", "iVBORw0KGgo=")).build();
+        TextBlock text = TextBlock.builder().text("chart ready").build();
+
+        ToolResultBlock single = customConverter.convert(image, ImageBlock.class);
+        assertTrue(customConverter.serializeInvoked);
+        assertEquals(ToolResultState.SUCCESS, single.getState());
+        assertEquals(List.of(image), single.getOutput());
+
+        customConverter.serializeInvoked = false;
+        ToolResultBlock list = customConverter.convert(List.of(text, image), List.class);
+        assertTrue(customConverter.serializeInvoked);
+        assertEquals(ToolResultState.SUCCESS, list.getState());
+        assertEquals(List.of(text, image), list.getOutput());
+    }
+
+    @Test
+    void testConvert_MixedListResultStillSerializesToJson() {
+        List<Object> mixed = List.of(TextBlock.builder().text("text").build(), "plain string");
+
+        ToolResultBlock result = converter.convert(mixed, List.class);
+
+        assertNotNull(result);
+        assertEquals(1, result.getOutput().size());
+        assertInstanceOf(TextBlock.class, result.getOutput().get(0));
+        String content = ToolTestUtils.extractContent(result);
+        assertTrue(content.contains("plain string"));
+    }
+
+    @Test
+    void testConvert_EmptyListResultStillSerializesToJson() {
+        ToolResultBlock result = converter.convert(List.of(), List.class);
+
+        assertNotNull(result);
+        assertEquals(1, result.getOutput().size());
+        assertInstanceOf(TextBlock.class, result.getOutput().get(0));
+        assertEquals("[]", ToolTestUtils.extractContent(result));
+    }
+
+    @Test
+    void testConvert_ListContainingToolResultBlockStillSerializesToJson() {
+        ToolResultBlock nested =
+                ToolResultBlock.of(List.of(TextBlock.builder().text("nested result").build()));
+        List<ContentBlock> list = List.of(TextBlock.builder().text("text").build(), nested);
+
+        ToolResultBlock result = converter.convert(list, List.class);
+
+        assertNotNull(result);
+        assertEquals(1, result.getOutput().size());
+        assertInstanceOf(TextBlock.class, result.getOutput().get(0));
+        String content = ToolTestUtils.extractContent(result);
+        assertTrue(content.contains("nested result"));
     }
 
     @Test
@@ -330,6 +442,16 @@ class DefaultToolResultConverterTest {
         @Override
         public String toString() {
             return "UnserializableObject@" + Integer.toHexString(hashCode());
+        }
+    }
+
+    static final class RecordingConverter extends DefaultToolResultConverter {
+        private boolean serializeInvoked;
+
+        @Override
+        protected ToolResultBlock serialize(Object result, Type returnType) {
+            serializeInvoked = true;
+            return super.serialize(result, returnType);
         }
     }
 }

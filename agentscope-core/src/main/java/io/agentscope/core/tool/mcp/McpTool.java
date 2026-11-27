@@ -24,6 +24,7 @@ import io.modelcontextprotocol.spec.McpSchema;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -51,6 +52,30 @@ import reactor.core.publisher.Mono;
 public class McpTool extends ToolBase {
 
     private static final Logger logger = LoggerFactory.getLogger(McpTool.class);
+
+    /**
+     * Result-block metadata key carrying the map produced by configured
+     * {@link McpToolResultCustomizer}s, as an unmodifiable {@code Map<String, Object>}.
+     *
+     * <p>The framework does not expose a server's raw {@code _meta} map automatically. When at least
+     * one customizer is registered for the connection, the mutable map passed to those customizers
+     * is attached under this key, and the agent runtime copies the block metadata onto the emitted
+     * {@code ToolResultEndEvent}. A customizer can expose selected server entries by reading {@link
+     * McpToolResultContext#resultMeta()} and writing them into the supplied map.
+     */
+    public static final String METADATA_MCP_RESULT_META = "io.agentscope/mcpResultMeta";
+
+    /**
+     * Upper bound for a server-supplied display title, matching the one-line label width already used
+     * for tool names in {@code AgentTraceMiddleware}. A truncated title spends the last three on
+     * {@link #ELLIPSIS}, so a sanitised title never exceeds this many code points.
+     */
+    private static final int MAX_DISPLAY_TITLE_LENGTH = 120;
+
+    private static final String ELLIPSIS = "...";
+
+    private static final int CONTENT_LENGTH_BEFORE_ELLIPSIS =
+            MAX_DISPLAY_TITLE_LENGTH - ELLIPSIS.length();
 
     private final Map<String, Object> outputSchema;
     private final String remoteToolName;
@@ -105,10 +130,44 @@ public class McpTool extends ToolBase {
             Map<String, Object> presetArguments,
             String mcpName,
             boolean readOnly) {
+        this(
+                name,
+                remoteToolName,
+                description,
+                parameters,
+                outputSchema,
+                clientWrapper,
+                presetArguments,
+                mcpName,
+                readOnly,
+                null);
+    }
+
+    /**
+     * As {@link #McpTool(String, String, String, Map, Map, McpClientWrapper, Map, String, boolean)}
+     * additionally carrying the MCP server's human-readable display title, surfaced through
+     * {@link #getTitle()}.
+     *
+     * @param title display name for end users, or {@code null} when the server provides none; the
+     *     value is sanitised for display, so a server cannot inject line breaks or bidi overrides
+     *     into a permission prompt
+     */
+    public McpTool(
+            String name,
+            String remoteToolName,
+            String description,
+            Map<String, Object> parameters,
+            Map<String, Object> outputSchema,
+            McpClientWrapper clientWrapper,
+            Map<String, Object> presetArguments,
+            String mcpName,
+            boolean readOnly,
+            String title) {
         super(
                 ToolBase.builder()
                         .name(Objects.requireNonNull(name, "name cannot be null"))
                         .description(description != null ? description : "")
+                        .title(sanitizeDisplayTitle(title))
                         .inputSchema(parameters != null ? parameters : new HashMap<>())
                         .readOnly(readOnly)
                         .concurrencySafe(false)
@@ -218,6 +277,10 @@ public class McpTool extends ToolBase {
      * connection-level {@link McpClientWrapper#isPropagateMeta()} are {@code true} (logical AND);
      * otherwise the {@code meta} field is omitted from the request entirely.
      *
+     * <p>Response metadata is opt-in: the server's raw {@code _meta} map is available to a
+     * connection's {@link McpToolResultCustomizer}, but is not exposed on the {@link ToolResultBlock}
+     * unless a customizer writes selected values into the supplied result metadata map.
+     *
      * @param param The tool call parameters containing toolUseBlock, input, and agent
      * @return a Mono that emits the tool result when the MCP call completes
      */
@@ -237,7 +300,7 @@ public class McpTool extends ToolBase {
 
         return clientWrapper
                 .callTool(remoteToolName, mergedArgs, metaMap)
-                .map(McpContentConverter::convertCallToolResult)
+                .map(result -> toToolResult(result, param, mergedArgs))
                 .doOnSuccess(
                         result -> logger.debug("MCP tool '{}' completed successfully", getName()))
                 .onErrorResume(
@@ -287,6 +350,18 @@ public class McpTool extends ToolBase {
      */
     public String getClientName() {
         return clientWrapper.getName();
+    }
+
+    /**
+     * Returns whether both tools use the same wrapper instance and remote tool name.
+     *
+     * @param other the incoming MCP tool
+     * @return true when both tools address the same remote target on the same connection
+     */
+    public boolean isFromSameSource(McpTool other) {
+        return other != null
+                && this.clientWrapper == other.clientWrapper
+                && this.remoteToolName.equals(other.remoteToolName);
     }
 
     /**
@@ -357,29 +432,176 @@ public class McpTool extends ToolBase {
     }
 
     /**
-     * Converts MCP JsonSchema to AgentScope parameters format.
+     * Converts an MCP result into a {@link ToolResultBlock} and attaches customizer-produced result
+     * metadata when configured.
      *
-     * @param inputSchema the MCP JsonSchema
+     * @param result the MCP result, never {@code null}
+     * @param param the tool call parameters
+     * @param arguments the arguments actually sent, preset arguments included
+     * @return the converted block, carrying result metadata when there is any
+     */
+    private ToolResultBlock toToolResult(
+            McpSchema.CallToolResult result, ToolCallParam param, Map<String, Object> arguments) {
+        ToolResultBlock converted = McpContentConverter.convertCallToolResult(result);
+        Map<String, Object> metadata = buildResultMetadata(result, param, arguments);
+        if (metadata.isEmpty()) {
+            return converted;
+        }
+        return new ToolResultBlock(
+                converted.getId(),
+                converted.getName(),
+                converted.getOutput(),
+                metadata,
+                converted.getState(),
+                converted.getExecutionDetails());
+    }
+
+    /**
+     * Builds the metadata for one result from the connection's ordered customizers.
+     *
+     * <p>The map supplied to customizers starts empty and becomes the value stored under {@link
+     * #METADATA_MCP_RESULT_META}. When no customizer is configured, no result metadata is exposed,
+     * even if the server returned a non-empty raw {@code _meta} map.
+     *
+     * @return metadata to attach, empty when the connection has no customizers
+     */
+    private Map<String, Object> buildResultMetadata(
+            McpSchema.CallToolResult result, ToolCallParam param, Map<String, Object> arguments) {
+        Map<String, Object> resultMeta = result.meta() != null ? result.meta() : Map.of();
+        List<McpToolResultCustomizer> customizers = clientWrapper.getResultCustomizers();
+        if (customizers.isEmpty()) {
+            return Map.of();
+        }
+
+        Map<String, Object> customizedResultMeta = new LinkedHashMap<>();
+        McpToolResultContext context =
+                new McpToolResultContext(
+                        getName(),
+                        remoteToolName,
+                        param.getToolUseBlock() != null ? param.getToolUseBlock().getId() : null,
+                        arguments,
+                        resultMeta,
+                        result);
+        for (McpToolResultCustomizer customizer : customizers) {
+            try {
+                customizer.customize(context, customizedResultMeta);
+            } catch (Exception e) {
+                logger.warn(
+                        "MCP result customizer failed for tool '{}': {}", getName(), e.toString());
+            }
+        }
+        customizedResultMeta
+                .entrySet()
+                .removeIf(entry -> entry.getKey() == null || entry.getValue() == null);
+
+        Map<String, Object> metadata = new LinkedHashMap<>();
+        metadata.put(
+                METADATA_MCP_RESULT_META,
+                Collections.unmodifiableMap(new LinkedHashMap<>(customizedResultMeta)));
+        return metadata;
+    }
+
+    /**
+     * Resolve the human-readable display title an MCP server provides for a tool.
+     *
+     * <p>The MCP spec keeps {@code Tool.title} for display purposes and allows the same value under
+     * {@code ToolAnnotations.title}; both are optional and neither is the model-facing
+     * {@code description}. Registration uses this so a caller rendering a permission confirmation
+     * can label the operation for an end user instead of showing the programmatic name.
+     *
+     * <p>Both candidates pass through {@link #sanitizeDisplayTitle(String)}: the winner is whatever
+     * the MCP server typed, and it is shown to a human who is about to approve an action.
+     *
+     * @param tool the MCP tool definition, may be {@code null}
+     * @return the first non-blank sanitised title, or {@code null} when the server provides none
+     */
+    public static String resolveDisplayTitle(McpSchema.Tool tool) {
+        if (tool == null) {
+            return null;
+        }
+        String title = sanitizeDisplayTitle(tool.title());
+        if (title != null) {
+            return title;
+        }
+        return sanitizeDisplayTitle(tool.annotations() != null ? tool.annotations().title() : null);
+    }
+
+    /**
+     * Normalise a server-supplied label before it reaches a human.
+     *
+     * <p>Two classes of character are removed rather than escaped, because a prompt cannot escape
+     * its way out of them: zero-width and directional-format characters ({@code Cf}, e.g. U+202E
+     * RIGHT-TO-LEFT OVERRIDE) reorder the rest of the line the reader sees, and C0/C1 controls and
+     * whitespace let the label inject extra lines into a confirmation dialog. Whitespace runs
+     * collapse to one space so the label stays on a single line, and the result is capped at {@link
+     * #MAX_DISPLAY_TITLE_LENGTH} code points (an emoji counts as one), which makes cutting a
+     * surrogate pair in half impossible.
+     *
+     * @param title the raw server value, may be {@code null}
+     * @return the displayable form, or {@code null} when nothing printable survives (so callers fall
+     *     back to {@link #getName()} instead of showing an empty label)
+     */
+    private static String sanitizeDisplayTitle(String title) {
+        if (title == null) {
+            return null;
+        }
+        String cleaned =
+                title.replaceAll("\\p{Cf}", "")
+                        .replaceAll("[\\p{Cc}\\p{Zs}\\p{Zl}\\p{Zp}]+", " ")
+                        .strip();
+        if (cleaned.isEmpty()) {
+            return null;
+        }
+        if (cleaned.codePointCount(0, cleaned.length()) <= MAX_DISPLAY_TITLE_LENGTH) {
+            return cleaned;
+        }
+        logger.debug(
+                "MCP display title exceeds {} code points and was truncated for display",
+                MAX_DISPLAY_TITLE_LENGTH);
+        return cleaned.substring(0, cleaned.offsetByCodePoints(0, CONTENT_LENGTH_BEFORE_ELLIPSIS))
+                + ELLIPSIS;
+    }
+
+    /**
+     * Converts an MCP tool inputSchema map to AgentScope parameters format.
+     * MCP SDK 2.0 represents inputSchema as a raw JSON Schema map, so this method
+     * preserves all schema keywords while normalizing the object keywords used for
+     * preset-parameter filtering.
+     *
+     * @param inputSchema the raw input schema map (JSON Schema)
      * @return parameters map in AgentScope format
      */
     public static Map<String, Object> convertMcpSchemaToParameters(
-            McpSchema.JsonSchema inputSchema, Set<String> excludeParams) {
+            Map<String, Object> inputSchema, Set<String> excludeParams) {
         Map<String, Object> parameters = new HashMap<>();
 
-        if (inputSchema == null) {
+        if (inputSchema == null || inputSchema.isEmpty()) {
             parameters.put("type", "object");
             parameters.put("properties", new HashMap<>());
             parameters.put("required", new ArrayList<>());
             return parameters;
         }
+
+        parameters.putAll(inputSchema);
+
+        Object typeNode = parameters.get("type");
+        Object propertiesNode = parameters.get("properties");
+        Object requiredNode = parameters.get("required");
+
+        @SuppressWarnings("unchecked")
         Map<String, Object> properties =
-                inputSchema.properties() != null
-                        ? new HashMap<>(inputSchema.properties())
+                propertiesNode instanceof Map
+                        ? new HashMap<>((Map<String, Object>) propertiesNode)
                         : new HashMap<>();
-        List<String> required =
-                inputSchema.required() != null
-                        ? new ArrayList<>(inputSchema.required())
-                        : new ArrayList<>();
+
+        List<String> required = new ArrayList<>();
+        if (requiredNode instanceof List<?> list) {
+            for (Object item : list) {
+                if (item instanceof String s) {
+                    required.add(s);
+                }
+            }
+        }
 
         // Exclude preset parameters from the schema
         if (excludeParams != null) {
@@ -387,22 +609,9 @@ public class McpTool extends ToolBase {
             properties.keySet().removeAll(excludeParams);
         }
 
-        parameters.put("type", inputSchema.type() != null ? inputSchema.type() : "object");
+        parameters.put("type", typeNode instanceof String s && !s.isBlank() ? s : "object");
         parameters.put("properties", properties);
         parameters.put("required", required);
-
-        if (inputSchema.additionalProperties() != null) {
-            parameters.put("additionalProperties", inputSchema.additionalProperties());
-        }
-
-        // Preserve $defs and definitions for $ref resolution
-        if (inputSchema.defs() != null && !inputSchema.defs().isEmpty()) {
-            parameters.put("$defs", new HashMap<>(inputSchema.defs()));
-        }
-
-        if (inputSchema.definitions() != null && !inputSchema.definitions().isEmpty()) {
-            parameters.put("definitions", new HashMap<>(inputSchema.definitions()));
-        }
 
         return parameters;
     }

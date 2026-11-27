@@ -21,6 +21,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.embedding.EmbeddingException;
+import io.agentscope.core.embedding.EmbeddingResponse;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.model.ExecutionConfig;
@@ -53,6 +54,15 @@ class DashScopeMultiModalEmbeddingTest {
     private static final String TEST_API_KEY = "test_api_key_12345";
     private static final String TEST_MODEL_NAME = "multimodal-embedding-v1";
     private static final int TEST_DIMENSIONS = 1024;
+
+    /**
+     * The first SDK request in a fork loads the DashScope and OkHttp classes. This class runs
+     * first on windows-latest, where its synchronous test pays that cold start: 1.4-4.2s for the
+     * class even when green, and #4413 (2026-11-25) hit the former 5s latch before the request
+     * arrived (7.29s elapsed). On ubuntu-latest the sibling class runs first and the same test
+     * took 0.07s.
+     */
+    private static final long FIRST_REQUEST_TIMEOUT_SECONDS = 15;
 
     @Test
     @DisplayName("Should create embedding model with builder")
@@ -176,7 +186,7 @@ class DashScopeMultiModalEmbeddingTest {
         Scheduler subscriberScheduler = Schedulers.newSingle("embedding-subscriber");
         CountDownLatch markerRan = new CountDownLatch(1);
         CountDownLatch completed = new CountDownLatch(1);
-        AtomicReference<double[]> embedding = new AtomicReference<>();
+        AtomicReference<EmbeddingResponse> response = new AtomicReference<>();
         AtomicReference<Throwable> error = new AtomicReference<>();
         Disposable subscription = null;
         boolean requestObserved;
@@ -193,14 +203,15 @@ class DashScopeMultiModalEmbeddingTest {
                     model.embed(TextBlock.builder().text("hello").build())
                             .subscribeOn(subscriberScheduler)
                             .subscribe(
-                                    embedding::set,
+                                    response::set,
                                     throwable -> {
                                         error.set(throwable);
                                         completed.countDown();
                                     },
                                     completed::countDown);
 
-            requestObserved = requestReceived.await(5, TimeUnit.SECONDS);
+            requestObserved =
+                    requestReceived.await(FIRST_REQUEST_TIMEOUT_SECONDS, TimeUnit.SECONDS);
             subscriberScheduler.schedule(markerRan::countDown);
             markerObserved = markerRan.await(5, TimeUnit.SECONDS);
         } finally {
@@ -218,7 +229,7 @@ class DashScopeMultiModalEmbeddingTest {
                 markerObserved,
                 "The synchronous DashScope SDK call must not block the subscriber scheduler");
         assertNull(error.get());
-        assertNotNull(embedding.get());
-        assertEquals(0.5, embedding.get()[0]);
+        assertNotNull(response.get());
+        assertEquals(0.5, response.get().getEmbedding()[0]);
     }
 }

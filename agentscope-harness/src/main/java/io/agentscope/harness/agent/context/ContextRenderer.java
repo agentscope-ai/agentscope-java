@@ -22,6 +22,11 @@ import java.util.List;
 public final class ContextRenderer {
     private ContextRenderer() {}
 
+    /**
+     * Renders each item in its own frame. Bodies are kept verbatim — only the renderer's own
+     * closing delimiters are neutralized so a body cannot close its frame early; attribute
+     * values stay escaped.
+     */
     public static String render(List<ContextItem> items) {
         StringBuilder text = new StringBuilder();
         for (ContextItem item :
@@ -32,23 +37,35 @@ public final class ContextRenderer {
                                         .thenComparing(ContextItem::sourceId))
                         .toList()) {
             if (item.content().isBlank()) continue;
-            String tag =
-                    item.placement() == ContextItem.Placement.SYSTEM ? item.kind() : "context_item";
+            boolean outerFrame = item.placement() != ContextItem.Placement.SYSTEM;
+            String tag = outerFrame ? "context_item" : item.kind();
             text.append("<")
                     .append(tag)
                     .append(" kind=\"")
                     .append(escape(item.kind()))
                     .append("\" source=\"")
                     .append(escape(item.sourceId()))
-                    .append("\" revision=\"")
-                    .append(escape(item.revision()))
-                    .append("\">\n")
-                    .append(escape(item.content()))
+                    .append("\"");
+            // Content hashes remain in ContextItem/ContextManifest for change detection.
+            // Only semantic revisions (for example a todo revision) help the model.
+            if (!item.revision().equals(ContextItem.versionOf(item.content()))) {
+                text.append(" revision=\"").append(escape(item.revision())).append("\"");
+            }
+            text.append(">\n")
+                    .append(neutralizeClosingTags(item.content(), tag, outerFrame))
                     .append("\n</")
                     .append(tag)
                     .append(">\n");
         }
         return text.toString();
+    }
+
+    private static String neutralizeClosingTags(String content, String tag, boolean outerFrame) {
+        String neutralized = content.replace("</" + tag + ">", "<\\/" + tag + ">");
+        if (outerFrame) {
+            neutralized = neutralized.replace("</HARNESS_CONTEXT>", "<\\/HARNESS_CONTEXT>");
+        }
+        return neutralized;
     }
 
     public static String escape(String text) {

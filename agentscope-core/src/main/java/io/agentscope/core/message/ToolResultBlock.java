@@ -24,6 +24,7 @@ import java.beans.Transient;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 
 /**
  * Represents the result of a tool execution.
@@ -57,6 +58,24 @@ public final class ToolResultBlock extends ContentBlock {
      * the assistant message rather than produced by local tool execution.
      */
     public static final String METADATA_SERVER_TOOL = ToolUseBlock.METADATA_SERVER_TOOL;
+
+    /**
+     * Metadata key carrying a machine-readable failure classification (String value, see {@link
+     * ToolErrorKind#getValue()}). Set it through {@link ToolErrorMetadata#of}.
+     */
+    public static final String METADATA_ERROR_KIND = "agentscope_error_kind";
+
+    /**
+     * Metadata key carrying a short, stable identifier of the failed object (String value): a
+     * workspace-relative path, host, thread id, skill name, and so on.
+     */
+    public static final String METADATA_ERROR_SCOPE = "agentscope_error_scope";
+
+    /**
+     * Metadata key stating whether repeating the identical call may succeed (Boolean value). It is
+     * a fact for consumers, never an instruction for the framework to retry.
+     */
+    public static final String METADATA_RETRIABLE = "agentscope_retriable";
 
     private final String id;
     private final String name;
@@ -179,6 +198,25 @@ public final class ToolResultBlock extends ContentBlock {
     public ToolResultBlock withState(ToolResultState state) {
         return new ToolResultBlock(
                 this.id, this.name, this.output, this.metadata, state, executionDetails);
+    }
+
+    /**
+     * Returns a copy of this block with additional metadata entries merged in.
+     *
+     * <p>Existing entries are preserved unless {@code additional} contains the same key. An empty
+     * or {@code null} map returns this block unchanged.
+     *
+     * @param additional metadata entries to add or replace
+     * @return a new block, or this block when there is nothing to add
+     */
+    public ToolResultBlock withMetadata(Map<String, Object> additional) {
+        if (additional == null || additional.isEmpty()) {
+            return this;
+        }
+        Map<String, Object> merged = new HashMap<>(this.metadata);
+        merged.putAll(additional);
+        return new ToolResultBlock(
+                this.id, this.name, this.output, Map.copyOf(merged), state, executionDetails);
     }
 
     /**
@@ -440,6 +478,28 @@ public final class ToolResultBlock extends ContentBlock {
      */
     public static Builder builder() {
         return new Builder();
+    }
+
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) {
+            return true;
+        }
+        if (!(o instanceof ToolResultBlock other)) {
+            return false;
+        }
+        return Objects.equals(id, other.id)
+                && Objects.equals(name, other.name)
+                && Objects.equals(output, other.output)
+                && ValueEquality.equal(metadata, other.metadata)
+                && state == other.state
+                && Objects.equals(executionDetails, other.executionDetails);
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hash(
+                id, name, output, ValueEquality.hash(metadata), state, executionDetails);
     }
 
     /**

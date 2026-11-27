@@ -47,7 +47,11 @@ class JevSupervisionTest {
     }
 
     static JevExecution.Options options(JevExecution.Mode mode) {
-        return new JevExecution.Options(mode, Duration.ofSeconds(1), "test-v1", (c, r) -> {});
+        // The budget starts only once an assessment is subscribed on boundedElastic, and a
+        // loaded -T1C runner can stall that thread (GC pause, CPU steal) past 1s before the
+        // judge is invoked, which turned terminal assessments into TIMEOUT errors and flaked
+        // CI. 6s absorbs multi-second stalls while the sub-millisecond happy path is unchanged.
+        return new JevExecution.Options(mode, Duration.ofSeconds(6), "test-v1", (c, r) -> {});
     }
 
     static SupervisionEvidence evidence(String revision, SupervisionEvidence.Verification v) {
@@ -255,7 +259,7 @@ class JevSupervisionTest {
     @Test
     void evidenceTimeoutAndCancellationShareExecutionBudget() {
         StepVerifier.withVirtualTime(() -> supervisor(answers(Map.of())).observe(null, Mono::never))
-                .thenAwait(Duration.ofSeconds(2))
+                .thenAwait(Duration.ofSeconds(7)) // virtual clock past the 6s options() budget
                 .assertNext(d -> assertEquals("TIMEOUT", d.reason()))
                 .verifyComplete();
         List<JevExecution.Record> records = new ArrayList<>();

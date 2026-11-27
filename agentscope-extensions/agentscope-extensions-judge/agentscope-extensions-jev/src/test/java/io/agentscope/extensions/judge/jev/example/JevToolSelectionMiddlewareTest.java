@@ -18,22 +18,30 @@ package io.agentscope.extensions.judge.jev.example;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 import io.agentscope.core.agent.RuntimeContext;
+import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.UserMessage;
 import io.agentscope.core.middleware.ReasoningInput;
 import io.agentscope.core.model.ToolSchema;
 import io.agentscope.extensions.judge.jev.Answer;
 import io.agentscope.extensions.judge.jev.JevExecution;
 import io.agentscope.extensions.judge.jev.NoulAnswer;
+import io.agentscope.extensions.judge.jev.SystemOneRequest;
 import io.agentscope.extensions.judge.jev.SystemOneResult;
+import io.agentscope.extensions.judge.jev.example.JevToolSelectionMiddleware.ContextStrategy;
 import java.time.Duration;
+import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.stream.IntStream;
 import org.junit.jupiter.api.Test;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
@@ -42,7 +50,7 @@ class JevToolSelectionMiddlewareTest {
     private ReasoningInput input(String... names) {
         return new ReasoningInput(
                 List.of(new UserMessage("request")),
-                java.util.Arrays.stream(names)
+                Arrays.stream(names)
                         .map(n -> ToolSchema.builder().name(n).description(n).build())
                         .toList(),
                 null);
@@ -189,11 +197,138 @@ class JevToolSelectionMiddlewareTest {
                         .maxTools(1)
                         .alwaysIncludeTools(Set.of())
                         .build();
-        String[] names =
-                java.util.stream.IntStream.range(0, 130)
-                        .mapToObj(i -> "tool" + i)
-                        .toArray(String[]::new);
+        String[] names = IntStream.range(0, 130).mapToObj(i -> "tool" + i).toArray(String[]::new);
         assertEquals("tool64", run(middleware, input(names)).tools().get(0).getName());
         assertEquals(3, calls.get());
+    }
+
+    @Test
+    void contextStrategiesPreserveIndependentSelection() {
+        for (ContextStrategy strategy : ContextStrategy.values()) {
+            AtomicReference<SystemOneRequest> request = new AtomicReference<>();
+            List<Msg> messages = List.of(new UserMessage("old"), new UserMessage("latest"));
+            var middleware =
+                    JevToolSelectionMiddleware.builder(
+                                    r -> {
+                                        request.set(r);
+                                        return Mono.just(
+                                                new SystemOneResult(
+                                                        "fake",
+                                                        Map.of("tool_0", new NoulAnswer(0.9)),
+                                                        null));
+                                    })
+                            .execution(options(JevExecution.Mode.ENFORCE))
+                            .contextStrategy(strategy)
+                            .maxContextMessages(1)
+                            .maxContextChars(3)
+                            .build();
+            var input = new ReasoningInput(messages, input("refund").tools(), null);
+            assertEquals(1, run(middleware, input).tools().size());
+            Object expected =
+                    switch (strategy) {
+                        case RECENT_WINDOW ->
+                                Map.of("messages", List.of(Map.of("role", "user", "text", "lat")));
+                        case LATEST_USER_MESSAGE -> Map.of("userRequest", "latest");
+                        case FULL_CONVERSATION -> Map.of("messages", messages);
+                    };
+            assertEquals(expected, request.get().state());
+        }
+    }
+
+    @Test
+    void defaultWindowIsBoundedAcrossEveryBatch() {
+        AtomicInteger calls = new AtomicInteger();
+        List<Msg> messages =
+                IntStream.range(0, 10)
+                        .mapToObj(i -> (Msg) new UserMessage("x".repeat(1100)))
+                        .toList();
+        var middleware =
+                JevToolSelectionMiddleware.builder(
+                                r -> {
+                                    calls.incrementAndGet();
+                                    assertEquals(
+                                            JevSelectionSupport.recentWindowState(
+                                                    messages, 8, 8000),
+                                            r.state());
+                                    Map<String, Answer> answers = new LinkedHashMap<>();
+                                    r.questions()
+                                            .keySet()
+                                            .forEach(id -> answers.put(id, new NoulAnswer(0.9)));
+                                    return Mono.just(new SystemOneResult("fake", answers, null));
+                                })
+                        .execution(options(JevExecution.Mode.ENFORCE))
+                        .build();
+        String[] names = IntStream.range(0, 130).mapToObj(i -> "tool" + i).toArray(String[]::new);
+        assertEquals(
+                3,
+                run(middleware, new ReasoningInput(messages, input(names).tools(), null))
+                        .tools()
+                        .size());
+        assertEquals(3, calls.get());
+    }
+
+    @Test
+    void contextFailureIsObservedAndRestoresInput() {
+        Msg poison = mock(Msg.class);
+        when(poison.getTextContent()).thenReturn("bad");
+        AtomicReference<JevExecution.Record> record = new AtomicReference<>();
+        var middleware =
+                JevToolSelectionMiddleware.builder(
+                                r -> {
+                                    throw new AssertionError(
+                                            "invalid context must not reach backend");
+                                })
+                        .execution(
+                                new JevExecution.Options(
+                                        JevExecution.Mode.ENFORCE,
+                                        Duration.ofSeconds(2),
+                                        "test",
+                                        (ctx, value) -> record.set(value)))
+                        .build();
+        var input =
+                new ReasoningInput(
+                        List.of(poison, new UserMessage("request")), input("refund").tools(), null);
+        assertSame(input, run(middleware, input));
+        assertEquals(JevExecution.Status.ERROR, record.get().status());
+    }
+
+    @Test
+    void disabledSkipsContextConstruction() {
+        Msg poison = mock(Msg.class);
+        when(poison.getTextContent()).thenThrow(new IllegalStateException());
+        var middleware =
+                JevToolSelectionMiddleware.builder(
+                                r -> {
+                                    throw new AssertionError();
+                                })
+                        .build();
+        var input =
+                new ReasoningInput(
+                        List.of(poison, new UserMessage("request")), input("refund").tools(), null);
+        assertSame(input, run(middleware, input));
+    }
+
+    @Test
+    void invalidContextConfigurationRejected() {
+        assertThrows(
+                NullPointerException.class,
+                () ->
+                        JevToolSelectionMiddleware.builder(r -> Mono.empty())
+                                .contextStrategy(null)
+                                .build());
+        for (int value : new int[] {0, -1}) {
+            assertThrows(
+                    IllegalArgumentException.class,
+                    () ->
+                            JevToolSelectionMiddleware.builder(r -> Mono.empty())
+                                    .maxContextMessages(value)
+                                    .build());
+            assertThrows(
+                    IllegalArgumentException.class,
+                    () ->
+                            JevToolSelectionMiddleware.builder(r -> Mono.empty())
+                                    .maxContextChars(value)
+                                    .build());
+        }
     }
 }

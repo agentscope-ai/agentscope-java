@@ -74,9 +74,10 @@ class JdkHttpTransportTest {
 
         HttpTransportConfig config =
                 HttpTransportConfig.builder()
-                        .connectTimeout(Duration.ofSeconds(5))
-                        .readTimeout(Duration.ofSeconds(2)) // Global timeout for sync calls
-                        .responseTimeout(Duration.ofSeconds(2)) // First emitted chunk for streaming
+                        .connectTimeout(Duration.ofSeconds(15))
+                        .readTimeout(Duration.ofSeconds(10)) // Global timeout for sync calls
+                        .responseTimeout(
+                                Duration.ofSeconds(10)) // First emitted chunk for streaming
                         .streamIdleTimeout(Duration.ofSeconds(1)) // Inter-token gap for streaming
                         .build();
         transport = new JdkHttpTransport(config);
@@ -273,7 +274,10 @@ class JdkHttpTransportTest {
                 .expectErrorMatches(
                         e ->
                                 e instanceof HttpTransportException
-                                        && ((HttpTransportException) e).getStatusCode() == 500)
+                                        && Integer.valueOf(500)
+                                                .equals(
+                                                        ((HttpTransportException) e)
+                                                                .getStatusCode()))
                 .verify();
     }
 
@@ -712,7 +716,10 @@ class JdkHttpTransportTest {
                 .expectErrorMatches(
                         e ->
                                 e instanceof HttpTransportException
-                                        && ((HttpTransportException) e).getStatusCode() == 401
+                                        && Integer.valueOf(401)
+                                                .equals(
+                                                        ((HttpTransportException) e)
+                                                                .getStatusCode())
                                         && ((HttpTransportException) e)
                                                 .getResponseBody()
                                                 .contains("unauthorized"))
@@ -735,7 +742,10 @@ class JdkHttpTransportTest {
                 .expectErrorMatches(
                         e ->
                                 e instanceof HttpTransportException
-                                        && ((HttpTransportException) e).getStatusCode() == 429)
+                                        && Integer.valueOf(429)
+                                                .equals(
+                                                        ((HttpTransportException) e)
+                                                                .getStatusCode()))
                 .verify();
     }
 
@@ -881,7 +891,10 @@ class JdkHttpTransportTest {
                 .expectErrorMatches(
                         e ->
                                 e instanceof HttpTransportException
-                                        && ((HttpTransportException) e).getStatusCode() == 400
+                                        && Integer.valueOf(400)
+                                                .equals(
+                                                        ((HttpTransportException) e)
+                                                                .getStatusCode())
                                         && ((HttpTransportException) e)
                                                 .getResponseBody()
                                                 .contains("detailed error message")
@@ -910,7 +923,10 @@ class JdkHttpTransportTest {
                 .expectErrorMatches(
                         e ->
                                 e instanceof HttpTransportException
-                                        && ((HttpTransportException) e).getStatusCode() == 403
+                                        && Integer.valueOf(403)
+                                                .equals(
+                                                        ((HttpTransportException) e)
+                                                                .getStatusCode())
                                         && ((HttpTransportException) e)
                                                 .getResponseBody()
                                                 .contains("forbidden"))
@@ -933,7 +949,10 @@ class JdkHttpTransportTest {
                 .expectErrorMatches(
                         e ->
                                 e instanceof HttpTransportException
-                                        && ((HttpTransportException) e).getStatusCode() == 502
+                                        && Integer.valueOf(502)
+                                                .equals(
+                                                        ((HttpTransportException) e)
+                                                                .getStatusCode())
                                         && ((HttpTransportException) e)
                                                 .getResponseBody()
                                                 .contains("bad gateway"))
@@ -956,7 +975,10 @@ class JdkHttpTransportTest {
                 .expectErrorMatches(
                         e ->
                                 e instanceof HttpTransportException
-                                        && ((HttpTransportException) e).getStatusCode() == 503
+                                        && Integer.valueOf(503)
+                                                .equals(
+                                                        ((HttpTransportException) e)
+                                                                .getStatusCode())
                                         && ((HttpTransportException) e)
                                                 .getResponseBody()
                                                 .contains("service unavailable"))
@@ -978,7 +1000,10 @@ class JdkHttpTransportTest {
                 .expectErrorMatches(
                         e ->
                                 e instanceof HttpTransportException
-                                        && ((HttpTransportException) e).getStatusCode() == 500)
+                                        && Integer.valueOf(500)
+                                                .equals(
+                                                        ((HttpTransportException) e)
+                                                                .getStatusCode()))
                 .verify();
     }
 
@@ -1240,26 +1265,34 @@ class JdkHttpTransportTest {
     void testStreamResponseTimeout() {
         // Test Timeout Strategy 1:
         // Delay headers by 3 seconds, which exceeds the configured responseTimeout (2 seconds).
-        mockServer.enqueue(
-                new MockResponse()
-                        .setResponseCode(200)
-                        .setBody("data: {\"id\":\"1\"}\n\ndata: [DONE]\n\n")
-                        .setHeader("Content-Type", "text/event-stream")
-                        .setHeadersDelay(3, TimeUnit.SECONDS));
+        HttpTransportConfig customConfig =
+                HttpTransportConfig.builder().responseTimeout(Duration.ofSeconds(2)).build();
+        JdkHttpTransport customTransport = new JdkHttpTransport(customConfig);
 
-        HttpRequest request =
-                HttpRequest.builder()
-                        .url(mockServer.url("/ttft-timeout").toString())
-                        .method("POST")
-                        .body("{}")
-                        .build();
+        try {
+            mockServer.enqueue(
+                    new MockResponse()
+                            .setResponseCode(200)
+                            .setBody("data: {\"id\":\"1\"}\n\ndata: [DONE]\n\n")
+                            .setHeader("Content-Type", "text/event-stream")
+                            .setHeadersDelay(3, TimeUnit.SECONDS));
 
-        StepVerifier.create(transport.stream(request))
-                .expectErrorMatches(
-                        e ->
-                                e instanceof HttpTransportException
-                                        && e.getMessage().contains("Stream timeout"))
-                .verify(Duration.ofSeconds(5));
+            HttpRequest request =
+                    HttpRequest.builder()
+                            .url(mockServer.url("/ttft-timeout").toString())
+                            .method("POST")
+                            .body("{}")
+                            .build();
+
+            StepVerifier.create(customTransport.stream(request))
+                    .expectErrorMatches(
+                            e ->
+                                    e instanceof HttpTransportException
+                                            && e.getMessage().contains("Stream timeout"))
+                    .verify(Duration.ofSeconds(5));
+        } finally {
+            customTransport.close();
+        }
     }
 
     @Test
@@ -1291,17 +1324,15 @@ class JdkHttpTransportTest {
     }
 
     @Test
-    void testStreamTimeoutClosesBodyWhenFutureCompletesAfterCancellation() {
+    void testStreamTimeoutClosesBodyReturnedAfterCancellation() throws Exception {
         HttpTransportConfig customConfig =
                 HttpTransportConfig.builder()
-                        .responseTimeout(Duration.ofMillis(100))
+                        .responseTimeout(Duration.ofMillis(200))
                         .streamIdleTimeout(Duration.ofSeconds(1))
                         .build();
         BlockingInputStream body = new BlockingInputStream();
-        AtomicReference<CompletableFuture<java.net.http.HttpResponse<InputStream>>> futureRef =
-                new AtomicReference<>();
-        JdkHttpTransport customTransport =
-                new JdkHttpTransport(new DeferredBodyHttpClient(futureRef, body), customConfig);
+        DeferredBodyHttpClient client = new DeferredBodyHttpClient(body);
+        JdkHttpTransport customTransport = new JdkHttpTransport(client, customConfig);
 
         try {
             HttpRequest request =
@@ -1318,13 +1349,14 @@ class JdkHttpTransportTest {
                                             && e.getMessage().contains("Stream timeout"))
                     .verify(Duration.ofSeconds(2));
 
-            CompletableFuture<java.net.http.HttpResponse<InputStream>> future = futureRef.get();
-            assertNotNull(future);
-            assertTrue(future.isCancelled(), "Timeout should cancel the pending async request");
-
-            future.complete(new TestHttpResponse(200, body));
+            assertEquals(0, client.started.getCount(), "Send should have started");
+            assertTrue(
+                    client.interrupted.await(1, TimeUnit.SECONDS),
+                    "Timeout should interrupt the pending send");
+            client.release.countDown();
             assertTrue(body.awaitClosed(), "Response body must be closed after late completion");
         } finally {
+            client.release.countDown();
             customTransport.close();
         }
     }
@@ -1332,34 +1364,45 @@ class JdkHttpTransportTest {
     @Test
     void testStreamSurvivesGlobalReadTimeout() {
         // Verify that streaming requests are NOT killed by the global readTimeout.
-        // readTimeout is 2s, but we will make the stream take roughly 3s overall.
-        // We throttle 10 bytes every 500ms. Inter-token gap is < 1s, so streamIdleTimeout is
-        // respected.
-        String sseBody =
-                "data: 1\n\n"
-                        + "data: 2\n\n"
-                        + "data: 3\n\n"
-                        + "data: 4\n\n"
-                        + "data: 5\n\n"
-                        + "data: [DONE]\n\n";
-
-        mockServer.enqueue(
-                new MockResponse()
-                        .setResponseCode(200)
-                        .setHeader("Content-Type", "text/event-stream")
-                        .setBody(sseBody)
-                        .throttleBody(10, 500, TimeUnit.MILLISECONDS));
-
-        HttpRequest request =
-                HttpRequest.builder()
-                        .url(mockServer.url("/survive-timeout").toString())
-                        .method("POST")
-                        .body("{}")
+        // The custom config keeps readTimeout at 2s, but we will make the stream take roughly
+        // 3s overall. We throttle 10 bytes every 500ms. Inter-token gap is < 1s, so
+        // streamIdleTimeout is respected.
+        HttpTransportConfig customConfig =
+                HttpTransportConfig.builder()
+                        .readTimeout(Duration.ofSeconds(2))
+                        .streamIdleTimeout(Duration.ofSeconds(1))
                         .build();
+        JdkHttpTransport customTransport = new JdkHttpTransport(customConfig);
 
-        StepVerifier.create(transport.stream(request))
-                .expectNextCount(5) // Should successfully receive all 5 data chunks
-                .verifyComplete();
+        try {
+            String sseBody =
+                    "data: 1\n\n"
+                            + "data: 2\n\n"
+                            + "data: 3\n\n"
+                            + "data: 4\n\n"
+                            + "data: 5\n\n"
+                            + "data: [DONE]\n\n";
+
+            mockServer.enqueue(
+                    new MockResponse()
+                            .setResponseCode(200)
+                            .setHeader("Content-Type", "text/event-stream")
+                            .setBody(sseBody)
+                            .throttleBody(10, 500, TimeUnit.MILLISECONDS));
+
+            HttpRequest request =
+                    HttpRequest.builder()
+                            .url(mockServer.url("/survive-timeout").toString())
+                            .method("POST")
+                            .body("{}")
+                            .build();
+
+            StepVerifier.create(customTransport.stream(request))
+                    .expectNextCount(5) // Should successfully receive all 5 data chunks
+                    .verifyComplete();
+        } finally {
+            customTransport.close();
+        }
     }
 
     /** Records the built JDK request for assertions. */
@@ -1481,15 +1524,12 @@ class JdkHttpTransportTest {
     }
 
     private static class DeferredBodyHttpClient extends HttpClient {
-        private final AtomicReference<CompletableFuture<java.net.http.HttpResponse<InputStream>>>
-                futureRef;
         private final InputStream body;
+        private final CountDownLatch started = new CountDownLatch(1);
+        private final CountDownLatch interrupted = new CountDownLatch(1);
+        private final CountDownLatch release = new CountDownLatch(1);
 
-        DeferredBodyHttpClient(
-                AtomicReference<CompletableFuture<java.net.http.HttpResponse<InputStream>>>
-                        futureRef,
-                InputStream body) {
-            this.futureRef = futureRef;
+        DeferredBodyHttpClient(InputStream body) {
             this.body = body;
         }
 
@@ -1539,22 +1579,29 @@ class JdkHttpTransportTest {
         }
 
         @Override
+        @SuppressWarnings("unchecked")
         public <T> java.net.http.HttpResponse<T> send(
                 java.net.http.HttpRequest request,
                 java.net.http.HttpResponse.BodyHandler<T> responseBodyHandler) {
-            throw new UnsupportedOperationException("send is not used in this test");
+            started.countDown();
+            // Simulate a client that returns a body even after send has been interrupted.
+            boolean done = false;
+            while (!done) {
+                try {
+                    done = release.await(5, TimeUnit.SECONDS);
+                    if (!done) throw new AssertionError("Timed out waiting to release response");
+                } catch (InterruptedException e) {
+                    interrupted.countDown();
+                }
+            }
+            return (java.net.http.HttpResponse<T>) new TestHttpResponse(200, body);
         }
 
         @Override
-        @SuppressWarnings("unchecked")
         public <T> CompletableFuture<java.net.http.HttpResponse<T>> sendAsync(
                 java.net.http.HttpRequest request,
                 java.net.http.HttpResponse.BodyHandler<T> responseBodyHandler) {
-            CompletableFuture<java.net.http.HttpResponse<T>> future = new LateCompletableFuture<>();
-            futureRef.set(
-                    (CompletableFuture<java.net.http.HttpResponse<InputStream>>)
-                            (CompletableFuture<?>) future);
-            return future;
+            throw new AssertionError("Streaming must not depend on sendAsync completion");
         }
 
         @Override
@@ -1563,21 +1610,6 @@ class JdkHttpTransportTest {
                 java.net.http.HttpResponse.BodyHandler<T> responseBodyHandler,
                 java.net.http.HttpResponse.PushPromiseHandler<T> pushPromiseHandler) {
             return sendAsync(request, responseBodyHandler);
-        }
-    }
-
-    private static class LateCompletableFuture<T> extends CompletableFuture<T> {
-        private final AtomicBoolean cancelled = new AtomicBoolean(false);
-
-        @Override
-        public boolean cancel(boolean mayInterruptIfRunning) {
-            cancelled.set(true);
-            return true;
-        }
-
-        @Override
-        public boolean isCancelled() {
-            return cancelled.get();
         }
     }
 

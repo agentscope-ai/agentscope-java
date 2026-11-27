@@ -89,8 +89,15 @@ public @interface Tool {
     /**
      * Whether to enable strict schema mode for this tool.
      *
-     * <p>When enabled, compatible model providers can enforce stronger adherence to the declared
-     * JSON schema for tool arguments.
+     * <p>When enabled, the framework recursively injects {@code additionalProperties: false}
+     * into all object types in the generated schema, so that tool-argument validation rejects
+     * parameters not declared in the schema on any model provider, and the schema satisfies
+     * OpenAI's strict mode (which rejects schemas without it with 400 Bad Request). Compatible
+     * model providers additionally enforce stronger adherence to the declared JSON schema for
+     * tool arguments.
+     *
+     * <p>For finer-grained, per-node control of the {@code additionalProperties} keyword, provide
+     * a hand-written schema via {@link SchemaOnlyTool} or a custom {@link AgentTool} instead.
      *
      * @return true to enable strict mode for this tool
      */
@@ -129,6 +136,41 @@ public @interface Tool {
     boolean concurrencySafe() default true;
 
     /**
+     * Whether large-tool-result eviction may offload this tool's results to a workspace file,
+     * leaving a head+tail preview in the conversation.
+     *
+     * <p>This is an intrinsic declaration of how the tool's output degrades, read by
+     * context-management consumers — not a decision to be made by matching tool names. Declare
+     * {@code false}
+     * when the result is the requested content itself and a file pointer would defeat the call
+     * (e.g. tools whose results are already paginated); leave {@code true} for incidental or
+     * verbose output. Configured exclusion lists are user overrides on top of declarations.
+     *
+     * @return true if this tool's results may be offloaded by eviction
+     */
+    boolean evictable() default true;
+
+    /**
+     * Whether aggregate tool-result pruning may replace this tool's older results with a
+     * head+tail preview.
+     *
+     * <p>Same intrinsic-declaration contract as {@link #evictable()}, for the pruning pass:
+     * declare {@code false} when a preview is not enough to reconstruct the tool's value and the
+     * full text must survive in the conversation (retrieval tools whose matches are the content).
+     *
+     * @return true if this tool's results may be pruned to a preview
+     */
+    boolean prunable() default true;
+
+    /**
+     * Whether the tool manages its own timeout instead of the ordinary tool execution timeout.
+     * Parent cancellation still propagates to the tool.
+     *
+     * @return true if the tool owns its timeout budget
+     */
+    boolean timeoutManaged() default false;
+
+    /**
      * Whether the tool is executed outside the framework.
      *
      * <p>External tools never run their {@code callAsync} body through Toolkit execution. The
@@ -137,6 +179,13 @@ public @interface Tool {
      * @return true if this tool should be surfaced as a suspended call
      */
     boolean externalTool() default false;
+
+    /**
+     * Whether this tool is a system capability exempt from grant-layer trimming.
+     * Only mark framework/infrastructure tools; business tools marked system bypass
+     * per-user capability trimming entirely.
+     */
+    boolean system() default false;
 
     /**
      * Whether the tool requires the agent state to be injected at call time.

@@ -17,12 +17,19 @@ package io.agentscope.harness.agent.skill.runtime;
 
 import io.agentscope.core.skill.AgentSkill;
 import io.agentscope.core.skill.SkillFilter;
+import io.agentscope.core.util.JsonUtils;
 import java.util.Collection;
+import java.util.List;
 import java.util.Map;
 import java.util.regex.Pattern;
 
 /**
  * Renders the harness {@code <available_skills>} system-prompt block from a {@link SkillCatalog}.
+ *
+ * <p>By default the catalog renders the slim view: one {@code <skill>} element per entry with
+ * {@code <name>}, {@code <description>}, {@code <skill-id>} and, when present, {@code
+ * <files-root>}. The full frontmatter view (all YAML metadata rendered as XML) remains available
+ * by constructing the builder with {@code exposeAllMetadata=true}.
  *
  * <p>Differences from the legacy {@code AgentSkillPromptProvider}:
  *
@@ -41,6 +48,8 @@ import java.util.regex.Pattern;
 @SuppressWarnings("deprecation")
 public final class SkillPromptBuilder {
 
+    public static final int INDEX_CHARS = 12_000;
+
     private static final String INDENT = "  ";
     private static final Pattern XML_TAG_NAME = Pattern.compile("[A-Za-z_][A-Za-z0-9_.-]*");
 
@@ -49,24 +58,12 @@ public final class SkillPromptBuilder {
             ## Available Skills
 
             <usage>
-            Skills provide specialized capabilities and domain knowledge. Use them when they match your current task.
+            These entries are summaries, not skill instructions. If the user names an available skill or your task clearly matches its description, load its SKILL.md before taking task actions.
 
-            How to use skills:
-            - Load skill: load_skill_through_path(skillId="<skill-id>", path="SKILL.md")
-            - The skill will be activated and its documentation loaded with detailed instructions
-            - Additional resources (scripts, assets, references) can be loaded with the same tool and other paths
-
-            Example:
-            1. User asks to analyze data -> find a matching skill below (e.g. <skill-id>data-analysis_workspace</skill-id>)
-            2. Load it: load_skill_through_path(skillId="data-analysis_workspace", path="SKILL.md")
-            3. Follow the instructions returned by the skill
-
-            Metadata is rendered as XML under each <skill> element:
-            - scalar metadata becomes a simple child element
-            - nested maps become nested XML elements
-            - lists become repeated <item> elements
-            - <skill-id> is always appended for tool loading
-            - <files-root>, when present, gives the absolute path for shell-executing this skill's scripts
+            How to use a skill:
+            - Load: load_skill_through_path(skillId="<skill-id>", path="SKILL.md"); use the exact <skill-id> listed below
+            - Follow the loaded instructions. Reuse them while the full content remains in the conversation; reload when it is missing or needs refreshing
+            - Load referenced scripts, assets, and references with the same tool only as needed for the task
             </usage>
 
             <available_skills>
@@ -79,15 +76,10 @@ public final class SkillPromptBuilder {
             ## Code Execution
 
             <code_execution>
-            You have access to the execute tool. Each skill in <available_skills>
-            includes a <files-root> element giving the absolute path to that skill's files.
-
-            Workflow:
-            1. After loading a skill, look at its <files-root> in <available_skills>
-            2. List its files:    ls <files-root>/
-            3. Run scripts:       python3 <files-root>/scripts/<script-name>
-            4. Always use absolute paths derived from <files-root>; never invent paths
-            5. If a script exists for the task, run it directly — do not rewrite its logic inline
+            You have access to the execute tool.
+            - For skills that include <files-root>, resolve script paths against that absolute root in the execution environment. Host and sandbox paths can differ. Quote paths using that environment's shell syntax.
+            - Run provided scripts according to the loaded skill, using an interpreter available in the execution environment. Check required runtimes there when unknown.
+            - For skills without <files-root>, load resources with load_skill_through_path; a shell path is not provided.
             </code_execution>
             """;
 
@@ -96,7 +88,7 @@ public final class SkillPromptBuilder {
     private final boolean exposeAllMetadata;
 
     public SkillPromptBuilder() {
-        this(null, null, true);
+        this(null, null, false);
     }
 
     public SkillPromptBuilder(
@@ -114,10 +106,15 @@ public final class SkillPromptBuilder {
      * caller can no-op concatenation.
      *
      * @param catalog the per-call snapshot (non-null)
-     * @param filter  visibility filter applied per skillId (non-null; use {@link SkillFilter#all()})
+     * @param filter  visibility filter applied per skill name (non-null; use {@link SkillFilter#all()})
      * @return prompt text, or empty string when nothing is visible
      */
     public String render(SkillCatalog catalog, SkillFilter filter) {
+        return render(catalog, filter, true);
+    }
+
+    /** Keeps the complete slim catalog when this call cannot use the discovery tool. */
+    public String render(SkillCatalog catalog, SkillFilter filter, boolean allowIndex) {
         if (catalog == null || catalog.isEmpty()) {
             return "";
         }
@@ -154,6 +151,63 @@ public final class SkillPromptBuilder {
             sb.append(codeExecutionInstruction);
         }
 
+        if (allowIndex && !exposeAllMetadata && sb.length() > INDEX_CHARS) {
+            return renderIndex(
+                    catalog.all().stream()
+                            .filter(e -> effective.isAllowed(e.skill().getName()))
+                            .toList(),
+                    0,
+                    "");
+        }
+        return sb.toString();
+    }
+
+    /** Compact, deterministic catalog page; omitted entries remain discoverable via the loader. */
+    public String renderIndex(List<HarnessSkillEntry> entries, int offset, String query) {
+        StringBuilder sb = new StringBuilder(header);
+        String execution =
+                entries.stream().anyMatch(e -> e.filesRoot() != null && !e.filesRoot().isBlank())
+                        ? codeExecutionInstruction
+                        : "";
+        int shown = 0;
+        int start = Math.min(offset, entries.size());
+        for (int i = start; i < entries.size(); i++) {
+            AgentSkill skill = entries.get(i).skill();
+            String description = skill.getDescription() == null ? "" : skill.getDescription();
+            if (description.length() > 160) {
+                int end = Character.isHighSurrogate(description.charAt(159)) ? 159 : 160;
+                description = description.substring(0, end) + "…";
+            }
+            StringBuilder item = new StringBuilder("<skill>\n");
+            appendXmlNode(item, "name", skill.getName(), 1);
+            appendXmlNode(item, "skill-id", skill.getSkillId(), 1);
+            appendXmlNode(item, "description", description, 1);
+            item.append("</skill>\n");
+            if (sb.length() + item.length() + execution.length() + 512 > INDEX_CHARS && shown > 0)
+                break;
+            sb.append(item);
+            shown++;
+        }
+        sb.append("</available_skills>\n");
+        sb.append("Catalog entries ")
+                .append(start)
+                .append("..")
+                .append(start + shown)
+                .append(" of ")
+                .append(entries.size())
+                .append(
+                        " (end exclusive). Descriptions may be shortened; load SKILL.md for full"
+                                + " instructions and files root.\n");
+        if (start + shown < entries.size())
+            sb.append("Next: load_skill_through_path(query=")
+                    .append(JsonUtils.getJsonCodec().toJson(query))
+                    .append(", offset=")
+                    .append(start + shown)
+                    .append(").\n");
+        sb.append(
+                "Search all visible entries by name, ID or description:"
+                        + " load_skill_through_path(query=\"keywords\").\n");
+        sb.append(execution);
         return sb.toString();
     }
 

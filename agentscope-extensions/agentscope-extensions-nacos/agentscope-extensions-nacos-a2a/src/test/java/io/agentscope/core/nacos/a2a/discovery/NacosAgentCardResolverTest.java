@@ -16,7 +16,6 @@
 
 package io.agentscope.core.nacos.a2a.discovery;
 
-import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -24,7 +23,6 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.mockStatic;
@@ -38,16 +36,17 @@ import com.alibaba.nacos.api.ai.listener.AbstractNacosAgentCardListener;
 import com.alibaba.nacos.api.ai.listener.NacosAgentCardEvent;
 import com.alibaba.nacos.api.ai.model.a2a.AgentCardDetailInfo;
 import com.alibaba.nacos.api.exception.NacosException;
-import io.a2a.spec.AgentCard;
 import io.agentscope.core.nacos.a2a.utils.AgentCardConverterUtil;
-import java.lang.reflect.Field;
-import java.util.Map;
 import java.util.Properties;
 import java.util.concurrent.atomic.AtomicReference;
+import org.a2aproject.sdk.spec.AgentCard;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.api.parallel.ResourceLock;
+import org.junit.jupiter.api.parallel.Resources;
 import org.mockito.Mock;
 import org.mockito.MockedStatic;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -56,15 +55,19 @@ import org.mockito.stubbing.Answer;
 /**
  * Unit tests for {@link NacosAgentCardResolver}.
  */
+@ResourceLock(Resources.SYSTEM_PROPERTIES)
 @ExtendWith(MockitoExtension.class)
 class NacosAgentCardResolverTest {
 
     @Mock private AiService aiService;
 
     private NacosAgentCardResolver resolver;
+    private String previousMode;
 
     @BeforeEach
     void setUp() {
+        previousMode = System.getProperty("agentscope.nacos.a2a.discovery.mode");
+        System.setProperty("agentscope.nacos.a2a.discovery.mode", "a2a");
         resolver = new NacosAgentCardResolver(aiService);
     }
 
@@ -75,36 +78,24 @@ class NacosAgentCardResolverTest {
         Properties properties = new Properties();
         properties.put("serverAddr", "localhost:8848");
 
-        // When & Then - We can't easily test this without mocking AiFactory
-        // So we just test that it doesn't throw an exception in normal cases
-        assertDoesNotThrow(
-                () -> {
-                    NacosAgentCardResolver resolver = new NacosAgentCardResolver(properties);
-                    assertNotNull(resolver);
-                });
+        try (var factory = mockStatic(com.alibaba.nacos.api.ai.AiFactory.class)) {
+            factory.when(() -> com.alibaba.nacos.api.ai.AiFactory.createAiService(properties))
+                    .thenReturn(aiService);
+            try (NacosAgentCardResolver owned = new NacosAgentCardResolver(properties)) {
+                assertNotNull(owned);
+            }
+            verify(aiService).shutdown();
+        }
     }
 
-    @Test
-    @DisplayName("Should return AgentCard when agent card exists in cache")
-    void testGetAgentCardWhenInCache() throws Exception {
-        // Given
-        String agentName = "test-agent";
-        AgentCard cachedAgentCard = mock(AgentCard.class);
-
-        // Use reflection to put value in cache
-        Field cacheField = NacosAgentCardResolver.class.getDeclaredField("agentCardCaches");
-        cacheField.setAccessible(true);
-        @SuppressWarnings("unchecked")
-        Map<String, AgentCard> agentCardCaches = (Map<String, AgentCard>) cacheField.get(resolver);
-        agentCardCaches.put(agentName, cachedAgentCard);
-
-        // When
-        AgentCard result = resolver.getAgentCard(agentName);
-
-        // Then
-        assertEquals(cachedAgentCard, result);
-        verify(aiService, never())
-                .subscribeAgentCard(anyString(), any()); // Should not call aiService if cached
+    @AfterEach
+    void tearDown() throws NacosException {
+        try {
+            resolver.close();
+        } finally {
+            if (previousMode == null) System.clearProperty("agentscope.nacos.a2a.discovery.mode");
+            else System.setProperty("agentscope.nacos.a2a.discovery.mode", previousMode);
+        }
     }
 
     @Test
@@ -218,35 +209,11 @@ class NacosAgentCardResolverTest {
     }
 
     @Test
-    @DisplayName("Should handle null AgentCardDetailInfo from service")
+    @DisplayName("Should retain a subscription when the initial Card is absent")
     void testGetAgentCardHandlesNullResult() throws NacosException {
-        // Given
-        String agentName = "test-agent";
-        when(aiService.subscribeAgentCard(eq(agentName), any())).thenReturn(null);
-
-        try (MockedStatic<AgentCardConverterUtil> mockedConverter =
-                mockStatic(AgentCardConverterUtil.class)) {
-            mockedConverter
-                    .when(
-                            () ->
-                                    AgentCardConverterUtil.convertToA2aAgentCard(
-                                            eq((AgentCardDetailInfo) null)))
-                    .thenReturn(null);
-
-            // When
-            AgentCard result = resolver.getAgentCard(agentName);
-
-            // Then
-            // The behavior depends on AgentCardConverterUtil.convertToA2aAgentCard's handling of
-            // null
-            // This will likely return null, which is acceptable
-            assertNull(result);
-            mockedConverter.verify(
-                    () ->
-                            AgentCardConverterUtil.convertToA2aAgentCard(
-                                    eq((AgentCardDetailInfo) null)),
-                    times(1));
-        }
+        assertNull(resolver.getAgentCard("test-agent"));
+        assertNull(resolver.getAgentCard("test-agent"));
+        verify(aiService).subscribeAgentCard(eq("test-agent"), any());
     }
 
     @Test
@@ -265,13 +232,6 @@ class NacosAgentCardResolverTest {
                                 });
         try (MockedStatic<AgentCardConverterUtil> mockedConverter =
                 mockStatic(AgentCardConverterUtil.class)) {
-            // First time mock return null
-            mockedConverter
-                    .when(
-                            () ->
-                                    AgentCardConverterUtil.convertToA2aAgentCard(
-                                            eq((AgentCardDetailInfo) null)))
-                    .thenReturn(null);
             AgentCard result = resolver.getAgentCard(agentName);
             assertNull(result);
 
@@ -288,5 +248,69 @@ class NacosAgentCardResolverTest {
             result = resolver.getAgentCard(agentName);
             assertSame(expectedAgentCard, result);
         }
+    }
+
+    @Test
+    void ignoresEmptyLegacyEventAndAcceptsNextCardWithoutResubscribing() throws Exception {
+        AtomicReference<AbstractNacosAgentCardListener> callback = new AtomicReference<>();
+        AgentCardDetailInfo original = mock(AgentCardDetailInfo.class);
+        AgentCard converted = mock(AgentCard.class);
+        when(aiService.subscribeAgentCard(eq("deleted"), any()))
+                .thenAnswer(
+                        call -> {
+                            callback.set(call.getArgument(1));
+                            return original;
+                        });
+        try (MockedStatic<AgentCardConverterUtil> converter =
+                mockStatic(AgentCardConverterUtil.class)) {
+            converter
+                    .when(() -> AgentCardConverterUtil.convertToA2aAgentCard(original))
+                    .thenReturn(converted);
+            assertSame(converted, resolver.getAgentCard("deleted"));
+            NacosAgentCardEvent emptyEvent = mock(NacosAgentCardEvent.class);
+            when(emptyEvent.getAgentName()).thenReturn("deleted");
+            callback.get().onEvent(emptyEvent);
+            assertSame(converted, resolver.getAgentCard("deleted"));
+            NacosAgentCardEvent recreation = mock(NacosAgentCardEvent.class);
+            when(recreation.getAgentName()).thenReturn("deleted");
+            when(recreation.getAgentCard()).thenReturn(original);
+            callback.get().onEvent(recreation);
+            assertSame(converted, resolver.getAgentCard("deleted"));
+            verify(aiService).subscribeAgentCard(eq("deleted"), any());
+        }
+    }
+
+    @Test
+    void callbackUpdateTakesPrecedenceOverInitialResponse() throws Exception {
+        AgentCardDetailInfo initial = mock(AgentCardDetailInfo.class);
+        AgentCardDetailInfo updated = mock(AgentCardDetailInfo.class);
+        when(updated.getName()).thenReturn("updated");
+        AgentCard latest = mock(AgentCard.class);
+        when(aiService.subscribeAgentCard(eq("updated"), any()))
+                .thenAnswer(
+                        call -> {
+                            AbstractNacosAgentCardListener listener = call.getArgument(1);
+                            listener.onEvent(new NacosAgentCardEvent(updated));
+                            return initial;
+                        });
+        try (MockedStatic<AgentCardConverterUtil> converter =
+                mockStatic(AgentCardConverterUtil.class)) {
+            converter
+                    .when(() -> AgentCardConverterUtil.convertToA2aAgentCard(updated))
+                    .thenReturn(latest);
+            assertSame(latest, resolver.getAgentCard("updated"));
+            converter.verify(() -> AgentCardConverterUtil.convertToA2aAgentCard(initial), never());
+        }
+    }
+
+    @Test
+    void closesOnlyLegacySubscriptionAndKeepsBorrowedClientOpen() throws Exception {
+        assertNull(resolver.getAgentCard("legacy"));
+        resolver.close();
+        resolver.close();
+        verify(aiService).unsubscribeAgentCard(eq("legacy"), any());
+        verify(aiService, never()).agent();
+        verify(aiService, never()).shutdown();
+        assertThrows(IllegalStateException.class, () -> resolver.getAgentCard("legacy"));
     }
 }

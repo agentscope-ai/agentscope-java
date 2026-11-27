@@ -25,19 +25,31 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.test.MockModel;
 import io.agentscope.core.agent.test.TestConstants;
+import io.agentscope.core.event.AgentEvent;
+import io.agentscope.core.event.AgentEventEmitter;
+import io.agentscope.core.event.ToolResultEndEvent;
 import io.agentscope.core.hook.Hook;
 import io.agentscope.core.hook.HookEvent;
 import io.agentscope.core.hook.PostReasoningEvent;
 import io.agentscope.core.memory.InMemoryMemory;
 import io.agentscope.core.memory.Memory;
+import io.agentscope.core.message.MessageMetadataKeys;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ThinkingBlock;
+import io.agentscope.core.message.ToolErrorKind;
+import io.agentscope.core.message.ToolErrorMetadata;
+import io.agentscope.core.message.ToolResultBlock;
+import io.agentscope.core.message.ToolResultState;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.ChatUsage;
+import io.agentscope.core.model.GenerateOptions;
+import io.agentscope.core.model.Model;
+import io.agentscope.core.model.ModelRegistry;
 import io.agentscope.core.model.ToolChoice;
+import io.agentscope.core.model.ToolSchema;
 import io.agentscope.core.tool.Tool;
 import io.agentscope.core.tool.ToolParam;
 import io.agentscope.core.tool.Toolkit;
@@ -52,6 +64,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.RepeatedTest;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIfSystemProperty;
+import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
 
@@ -75,6 +88,84 @@ class ReActAgentStructuredOutputTest {
     @BeforeEach
     void setUp() {
         toolkit = new Toolkit();
+    }
+
+    @Test
+    void invalidStructuredToolArgumentsCarryClassificationInResultAndEvent() {
+        AtomicInteger calls = new AtomicInteger();
+        List<ToolResultBlock> observedResults = new CopyOnWriteArrayList<>();
+        MockModel model =
+                new MockModel(
+                        messages -> {
+                            messages.forEach(
+                                    m ->
+                                            observedResults.addAll(
+                                                    m.getContentBlocks(ToolResultBlock.class)));
+                            boolean invalid = calls.getAndIncrement() == 0;
+                            Map<String, Object> input =
+                                    invalid
+                                            ? Map.of("response", "not-an-object")
+                                            : Map.of(
+                                                    "response",
+                                                    Map.of(
+                                                            "location", "London",
+                                                            "temperature", "15°C",
+                                                            "condition", "Sunny"));
+                            return List.of(
+                                    ChatResponse.builder()
+                                            .content(
+                                                    List.of(
+                                                            ToolUseBlock.builder()
+                                                                    .id(
+                                                                            invalid
+                                                                                    ? "invalid"
+                                                                                    : "valid")
+                                                                    .name("generate_response")
+                                                                    .input(input)
+                                                                    .content(
+                                                                            JsonUtils.getJsonCodec()
+                                                                                    .toJson(input))
+                                                                    .build()))
+                                            .build());
+                        });
+        List<AgentEvent> events = new CopyOnWriteArrayList<>();
+        try (ReActAgent agent =
+                ReActAgent.builder().name("weather-agent").model(model).toolkit(toolkit).build()) {
+            Msg response =
+                    agent.call("weather", WeatherResponse.class)
+                            .contextWrite(
+                                    ctx ->
+                                            ctx.put(
+                                                    AgentEventEmitter.FORWARDING_CONTEXT_KEY,
+                                                    (AgentEventEmitter) events::add))
+                            .block(Duration.ofSeconds(10));
+            assertNotNull(response);
+            assertEquals(2, model.getCallCount());
+        }
+        ToolResultBlock result =
+                observedResults.stream()
+                        .filter(r -> "invalid".equals(r.getId()))
+                        .findFirst()
+                        .orElseThrow();
+        assertEquals(ToolResultState.ERROR, result.getState());
+        assertTrue(
+                ((TextBlock) result.getOutput().get(0))
+                        .getText()
+                        .startsWith(
+                                "[ERROR] Parameter validation failed for tool"
+                                        + " 'generate_response':"));
+        assertEquals(
+                ToolErrorMetadata.of(ToolErrorKind.INVALID_ARGUMENT, "generate_response"),
+                result.getMetadata());
+        ToolResultEndEvent end =
+                events.stream()
+                        .filter(ToolResultEndEvent.class::isInstance)
+                        .map(ToolResultEndEvent.class::cast)
+                        .filter(e -> "invalid".equals(e.getToolCallId()))
+                        .findFirst()
+                        .orElseThrow();
+        assertEquals(ToolResultState.ERROR, end.getState());
+        assertEquals(result.getMetadata(), end.getMetadata());
     }
 
     @Test
@@ -609,6 +700,48 @@ class ReActAgentStructuredOutputTest {
                 ((ToolChoice.Specific) mockModel.getLastOptions().getToolChoice()).toolName());
     }
 
+    /** Same forced-retry flow, but the agent holds a lazy string reference instead of the instance. */
+    @Test
+    @DisplayName("Forces generate_response via tool_choice when the model is a string reference")
+    void testStructuredOutputForcesToolChoiceWithModelRef() {
+        Map<String, Object> toolInput = weatherToolInput();
+        AtomicInteger calls = new AtomicInteger();
+
+        MockModel mockModel =
+                new MockModel(
+                        msgs -> {
+                            int n = calls.getAndIncrement();
+                            if (n < 2) {
+                                return List.of(textResponse("msg_" + n, "Plain text answer."));
+                            }
+                            return List.of(structuredToolResponse("msg_" + n, toolInput));
+                        });
+
+        ModelRegistry.register("so:ref-model", mockModel);
+        try {
+            ReActAgent agent =
+                    ReActAgent.builder()
+                            .name("weather-agent")
+                            .sysPrompt("You are a weather assistant")
+                            .model("so:ref-model")
+                            .toolkit(new Toolkit())
+                            .build();
+
+            Msg responseMsg = agent.call(weatherInput(), WeatherResponse.class).block();
+
+            assertNotNull(responseMsg);
+            WeatherResponse result = responseMsg.getStructuredData(WeatherResponse.class);
+            assertNotNull(result);
+            assertEquals("San Francisco", result.location);
+            assertEquals(3, mockModel.getCallCount());
+            assertTrue(
+                    mockModel.getLastOptions().getToolChoice() instanceof ToolChoice.Specific,
+                    "Expected a ToolChoice.Specific on the forced round");
+        } finally {
+            ModelRegistry.reset();
+        }
+    }
+
     /** Gives up after 3 forced retries when the model never calls {@code generate_response}. */
     @Test
     @DisplayName("Gives up after 3 forced retries when the model never calls generate_response")
@@ -849,6 +982,7 @@ class ReActAgentStructuredOutputTest {
         assertEquals(MsgRole.TOOL, requestMessages.get(requestMessages.size() - 2).getRole());
         Msg reminderMessage = requestMessages.get(requestMessages.size() - 1);
         assertEquals(MsgRole.USER, reminderMessage.getRole());
+        assertTrue(reminderMessage.getMetadata().isEmpty());
         assertTrue(
                 reminderMessage.getTextContent().contains("You MUST call the `generate_response`"));
         assertEquals(
@@ -862,14 +996,175 @@ class ReActAgentStructuredOutputTest {
                         "You MUST call the `generate_response` tool"));
     }
 
+    @Test
+    @DisplayName("Valid native structured output is accepted without fallback")
+    void testNativeStructuredOutputIsValidated() {
+        AtomicInteger calls = new AtomicInteger();
+        List<GenerateOptions> seenOptions = new CopyOnWriteArrayList<>();
+
+        Model model =
+                new Model() {
+                    @Override
+                    public Flux<ChatResponse> stream(
+                            List<Msg> messages, List<ToolSchema> tools, GenerateOptions options) {
+                        calls.incrementAndGet();
+                        seenOptions.add(options);
+                        return Flux.just(
+                                textResponse(
+                                        "native_valid",
+                                        """
+                                        {"location":"San Francisco","temperature":"72°F","condition":"Sunny"}
+                                        """));
+                    }
+
+                    @Override
+                    public String getModelName() {
+                        return "native-mock";
+                    }
+
+                    @Override
+                    public boolean supportsNativeStructuredOutput() {
+                        return true;
+                    }
+                };
+
+        ReActAgent agent = buildWeatherAgent(model);
+        Msg responseMsg = agent.call(weatherInput(), WeatherResponse.class).block();
+
+        assertNotNull(responseMsg);
+        WeatherResponse result = responseMsg.getStructuredData(WeatherResponse.class);
+        assertNotNull(result);
+        assertEquals("San Francisco", result.location);
+        assertEquals(
+                Map.of("location", "San Francisco", "temperature", "72°F", "condition", "Sunny"),
+                responseMsg.getMetadata().get(MessageMetadataKeys.STRUCTURED_OUTPUT));
+        assertEquals(1, calls.get());
+        assertNotNull(seenOptions.get(0).getResponseFormat());
+        assertNotNull(seenOptions.get(0).getResponseFormat().getJsonSchema());
+    }
+
+    @Test
+    @DisplayName("Invalid native structured output falls back to the generate_response tool")
+    void testInvalidNativeStructuredOutputFallsBackToTool() {
+        AtomicInteger calls = new AtomicInteger();
+        List<GenerateOptions> seenOptions = new CopyOnWriteArrayList<>();
+        List<List<ToolSchema>> seenTools = new CopyOnWriteArrayList<>();
+        Map<String, Object> toolInput = weatherToolInput();
+
+        Model model =
+                new Model() {
+                    @Override
+                    public Flux<ChatResponse> stream(
+                            List<Msg> messages, List<ToolSchema> tools, GenerateOptions options) {
+                        int call = calls.getAndIncrement();
+                        seenOptions.add(options);
+                        seenTools.add(tools);
+                        if (call == 0) {
+                            return Flux.just(
+                                    textResponse(
+                                            "native_invalid",
+                                            "{\"location\":\"San Francisco\","
+                                                    + "\"temperature\":\"72°F\","
+                                                    + "\"condition\":null}"));
+                        }
+                        if (call == 1) {
+                            return Flux.just(structuredToolResponse("fallback_tool", toolInput));
+                        }
+                        throw new AssertionError("Unexpected model call: " + call);
+                    }
+
+                    @Override
+                    public String getModelName() {
+                        return "native-mock";
+                    }
+
+                    @Override
+                    public boolean supportsNativeStructuredOutput() {
+                        return true;
+                    }
+                };
+
+        ReActAgent agent = buildWeatherAgent(model);
+        Msg responseMsg = agent.call(weatherInput(), WeatherResponse.class).block();
+
+        assertNotNull(responseMsg);
+        WeatherResponse result = responseMsg.getStructuredData(WeatherResponse.class);
+        assertNotNull(result);
+        assertEquals("San Francisco", result.location);
+        assertEquals(2, calls.get());
+        assertNotNull(seenOptions.get(0).getResponseFormat());
+        assertNull(seenOptions.get(1).getResponseFormat());
+        assertTrue(
+                seenTools.get(1).stream()
+                        .anyMatch(tool -> "generate_response".equals(tool.getName())));
+        assertEquals(
+                0,
+                countTextOccurrences(
+                        agent.getAgentState().getContext(),
+                        "{\"location\":\"San Francisco\",\"temperature\":\"72°F\","
+                                + "\"condition\":null}"));
+    }
+
+    @Test
+    @DisplayName("Native structured-output validation can be explicitly disabled")
+    void testNativeStructuredOutputValidationCanBeDisabled() {
+        AtomicInteger calls = new AtomicInteger();
+        List<GenerateOptions> seenOptions = new CopyOnWriteArrayList<>();
+
+        Model model =
+                new Model() {
+                    @Override
+                    public Flux<ChatResponse> stream(
+                            List<Msg> messages, List<ToolSchema> tools, GenerateOptions options) {
+                        calls.incrementAndGet();
+                        seenOptions.add(options);
+                        return Flux.just(
+                                textResponse(
+                                        "native_schema_invalid",
+                                        "{\"location\":\"San Francisco\","
+                                                + "\"temperature\":\"72°F\","
+                                                + "\"condition\":null}"));
+                    }
+
+                    @Override
+                    public String getModelName() {
+                        return "native-mock";
+                    }
+
+                    @Override
+                    public boolean supportsNativeStructuredOutput() {
+                        return true;
+                    }
+                };
+
+        ReActAgent agent =
+                ReActAgent.builder()
+                        .name("weather-agent")
+                        .sysPrompt("You are a weather assistant")
+                        .model(model)
+                        .toolkit(new Toolkit())
+                        .validateStructuredOutput(false)
+                        .build();
+        Msg responseMsg = agent.call(weatherInput(), WeatherResponse.class).block();
+
+        assertNotNull(responseMsg);
+        assertTrue(responseMsg.hasStructuredData());
+        WeatherResponse result = responseMsg.getStructuredData(WeatherResponse.class);
+        assertNotNull(result);
+        assertEquals("San Francisco", result.location);
+        assertNull(result.condition);
+        assertEquals(1, calls.get());
+        assertNotNull(seenOptions.get(0).getResponseFormat());
+    }
+
     // ==================== Helpers ====================
 
     /** Builds a weather agent bound to the given mock model. */
-    private static ReActAgent buildWeatherAgent(MockModel mockModel) {
+    private static ReActAgent buildWeatherAgent(Model model) {
         return ReActAgent.builder()
                 .name("weather-agent")
                 .sysPrompt("You are a weather assistant")
-                .model(mockModel)
+                .model(model)
                 .toolkit(new Toolkit())
                 .build();
     }
