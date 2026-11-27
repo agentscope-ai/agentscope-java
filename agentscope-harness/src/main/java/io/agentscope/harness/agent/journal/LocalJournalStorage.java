@@ -43,7 +43,14 @@ public final class LocalJournalStorage implements AtomicJournalStorage {
     private static final String TEMP_SUFFIX = ".tmp";
 
     private static final String LOCK_SUFFIX = ".lock";
-    private static final ConcurrentHashMap<Path, ReentrantLock> LOCKS = new ConcurrentHashMap<>();
+    private static final ConcurrentHashMap<Path, LockEntry> LOCKS = new ConcurrentHashMap<>();
+
+    private static final class LockEntry {
+        private final ReentrantLock lock = new ReentrantLock();
+        // Accessed only inside LOCKS.compute for this entry's path; includes queued callers.
+        private int references;
+    }
+
     private final Path root;
     private final AtomicJournalStorage transactionalStorage;
 
@@ -139,8 +146,15 @@ public final class LocalJournalStorage implements AtomicJournalStorage {
         if (transactionalStorage != null)
             return transactionalStorage.compareAndSet(key, expected, bytes);
         Path lockPath = target.resolveSibling(target.getFileName() + LOCK_SUFFIX);
-        ReentrantLock local = LOCKS.computeIfAbsent(lockPath, ignored -> new ReentrantLock());
-        local.lock();
+        LockEntry local =
+                LOCKS.compute(
+                        lockPath,
+                        (ignored, current) -> {
+                            if (current == null) current = new LockEntry();
+                            current.references++;
+                            return current;
+                        });
+        local.lock.lock();
         try {
             var missing = new ArrayList<Path>();
             for (Path parent = target.getParent();
@@ -191,7 +205,10 @@ public final class LocalJournalStorage implements AtomicJournalStorage {
         } catch (IOException e) {
             throw new JournalException("Journal CAS failed: " + target, e);
         } finally {
-            local.unlock();
+            local.lock.unlock();
+            // A waiter registers before locking, so removal cannot strand it on an old lock.
+            LOCKS.compute(
+                    lockPath, (ignored, current) -> --current.references == 0 ? null : current);
         }
     }
 }
