@@ -43,7 +43,8 @@ import java.util.List;
  * HarnessAgent (with messageBus)
  *     → SubagentsMiddleware wires TaskCompletionCallback
  *     → Subagent completes → signal readiness in the inbox + enqueue wakeup
- *     → WakeupDispatcher polls wakeup queue → gateway.runWakeup(sessionId)
+ *     → WakeupDispatcher polls wakeup queue
+ *     → gateway.runWakeup(userId, sessionId, agentId) resumes the owning agent
  *     → Harness delivers the task repository result in the next model request
  * </pre>
  *

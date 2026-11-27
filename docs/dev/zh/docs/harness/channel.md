@@ -262,6 +262,8 @@ chat.send(SendOptions.userId("user-1"), "有什么产品？").block();
 chat.send(SendOptions.userId("user-1").withAgentId("support"), "账单问题").block();
 ```
 
+通过 `WakeupDispatcher` 投递的后台完成通知，会让所属 agent 在同一用户会话中继续处理，即使该 agent 在 gateway 中使用了不同的注册别名。唤醒消息中的 `agentId` 用于选择该 agent；未提供时，gateway 使用默认 agent。
+
 ### GatewayBootstrap 下暴露子 Agent
 
 要在 GatewayBootstrap 模式下启用 `expose_to_user`，需要把 gateway bridge 接到每个 agent 的子 agent 中间件上：

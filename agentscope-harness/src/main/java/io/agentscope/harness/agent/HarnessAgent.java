@@ -209,6 +209,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
     }
 
     private final ReActAgent delegate;
+    private final String namespaceAgentId;
     private final WorkspaceManager workspaceManager;
     private final BiFunction<String, String, WorkspaceManager> workspaceFactory;
     private final WorkspaceIndex ownedWorkspaceIndex;
@@ -245,6 +246,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
 
     private HarnessAgent(
             ReActAgent delegate,
+            String namespaceAgentId,
             WorkspaceManager workspaceManager,
             BiFunction<String, String, WorkspaceManager> workspaceFactory,
             WorkspaceIndex ownedWorkspaceIndex,
@@ -263,6 +265,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
             WorkspacePathNormalizer pathNormalizer,
             Toolkit ownedMcpToolkit) {
         this.delegate = delegate;
+        this.namespaceAgentId = namespaceAgentId;
         this.ownedMcpToolkit = ownedMcpToolkit;
         this.workspaceManager = workspaceManager;
         this.workspaceFactory = workspaceFactory;
@@ -660,6 +663,16 @@ public class HarnessAgent implements Agent, AutoCloseable {
     @Override
     public String getAgentId() {
         return delegate.getAgentId();
+    }
+
+    /**
+     * Returns the resolved agent id used by Harness storage and background wakeups.
+     *
+     * <p>This is the configured {@link Builder#agentId(String)}, or the agent name when unset. It
+     * can differ from {@link #getAgentId()}, which may be a generated UUID.
+     */
+    public String getNamespaceAgentId() {
+        return namespaceAgentId;
     }
 
     @Override
@@ -3490,6 +3503,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
 
             return new HarnessAgent(
                     delegate,
+                    resolvedAgentId,
                     wsManager,
                     workspaceFactoryFn,
                     workspaceIndex,

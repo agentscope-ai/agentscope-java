@@ -562,6 +562,19 @@ public final class HarnessGateway implements Gateway, WakeupDispatcher.WakeupTar
         return defaultAgentId != null ? agentRegistry.get(defaultAgentId) : null;
     }
 
+    private HarnessAgent resolveWakeupAgent(String agentId) {
+        if (agentId == null || agentId.isBlank()) {
+            return resolveAgent(null);
+        }
+        // Completion callbacks carry the Harness namespace id, not its registration alias.
+        for (HarnessAgent agent : agentRegistry.values()) {
+            if (agentId.equals(agent.getNamespaceAgentId())) {
+                return agent;
+            }
+        }
+        return resolveAgent(agentId);
+    }
+
     private static String resolveAgentId(HarnessAgent ha) {
         String id = ha != null ? ha.getAgentId() : null;
         return (id != null && !id.isBlank()) ? id : "main";
@@ -662,6 +675,9 @@ public final class HarnessGateway implements Gateway, WakeupDispatcher.WakeupTar
      * io.agentscope.harness.agent.middleware.InboxMiddleware} drains the inbox and injects the
      * pending results as context.
      *
+     * <p>This overload uses the default agent. Use {@link #runWakeup(String, String, String)} to
+     * resume a specific owning agent.
+     *
      * <p>When {@code userId} is non-blank it is set on the {@link RuntimeContext}, so the agent
      * loads state from the same {@code (userId, sessionId)} slot as the original user-driven run
      * — matching {@code runStream}. A blank or null user id preserves the legacy anonymous
@@ -673,12 +689,29 @@ public final class HarnessGateway implements Gateway, WakeupDispatcher.WakeupTar
      */
     @Override
     public Mono<Msg> runWakeup(String userId, String sessionId) {
+        return runWakeup(userId, sessionId, null);
+    }
+
+    /**
+     * Triggers a wakeup-driven run on the owning agent, preserving the user's session and route.
+     *
+     * <p>The owning id (the configured agent id, or the name when unset) is resolved even when the
+     * agent was registered under a different gateway alias. A registered alias is also accepted.
+     * Missing or unknown ids use the default agent, matching the gateway's normal fallback behavior.
+     *
+     * @param userId the owning user id carried by the wakeup entry; may be null or blank
+     * @param sessionId the session to wake up
+     * @param agentId the owning agent id; null or blank selects the default agent
+     * @return the agent's response, or {@link Mono#empty()} if the session is unknown
+     */
+    @Override
+    public Mono<Msg> runWakeup(String userId, String sessionId, String agentId) {
         String gateKey = resolveSessionGateKey(sessionId);
         if (gateKey == null) {
             log.debug("runWakeup: unknown sessionId={}, skipping", sessionId);
             return Mono.empty();
         }
-        HarnessAgent ha = resolveAgent(null);
+        HarnessAgent ha = resolveWakeupAgent(agentId);
         if (ha == null) {
             return Mono.empty();
         }
