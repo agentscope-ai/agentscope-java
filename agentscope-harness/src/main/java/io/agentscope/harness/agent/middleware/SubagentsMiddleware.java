@@ -47,7 +47,6 @@ import java.nio.file.Path;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
-import java.util.Collection;
 import java.util.EnumSet;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -789,15 +788,15 @@ public class SubagentsMiddleware implements HarnessRuntimeMiddleware {
             return null;
         }
         String sessionId = ctx != null ? ctx.getSessionId() : null;
-        Collection<BackgroundTask> tasks = repo.listTasks(ctx, sessionId, null);
+        List<TaskRepository.TaskSummaryEntry> tasks = repo.listTaskSummary(ctx, sessionId);
         if (tasks.isEmpty()) {
             return null;
         }
 
         List<BackgroundTask> visible = new ArrayList<>();
-        for (BackgroundTask task : tasks) {
-            if (repo.isDelivered(ctx, sessionId, task.getTaskId())) continue;
-            visible.add(task);
+        for (TaskRepository.TaskSummaryEntry entry : tasks) {
+            if (entry.delivered()) continue;
+            visible.add(entry.task());
         }
         if (visible.isEmpty()) {
             return null;

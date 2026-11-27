@@ -16,6 +16,7 @@
 package io.agentscope.harness.agent.subagent.task;
 
 import io.agentscope.core.agent.RuntimeContext;
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
 
@@ -124,6 +125,32 @@ public interface TaskRepository {
     default boolean isDelivered(RuntimeContext rc, String sessionId, String taskId) {
         return false;
     }
+
+    /**
+     * Returns the session's tasks paired with their delivery status for summary rendering.
+     *
+     * <p>Rendering the summary through this method lets a storage-backed repository derive the
+     * task list and delivery flags from a single consistent snapshot instead of re-reading the
+     * backing store once per task via {@link #isDelivered}. The snapshot is not cached: the next
+     * call reads the latest state.
+     *
+     * <p>The default implementation preserves the per-task behaviour for repositories without a
+     * bulk read.
+     *
+     * @param rc the current call's runtime context; may be {@link RuntimeContext#empty()}
+     * @param sessionId the parent session scope
+     */
+    default List<TaskSummaryEntry> listTaskSummary(RuntimeContext rc, String sessionId) {
+        Collection<BackgroundTask> tasks = listTasks(rc, sessionId, null);
+        List<TaskSummaryEntry> entries = new ArrayList<>(tasks.size());
+        for (BackgroundTask task : tasks) {
+            entries.add(new TaskSummaryEntry(task, isDelivered(rc, sessionId, task.getTaskId())));
+        }
+        return entries;
+    }
+
+    /** A task paired with whether its result has already been delivered to the parent agent. */
+    record TaskSummaryEntry(BackgroundTask task, boolean delivered) {}
 
     /**
      * Registers a callback invoked when any task reaches a terminal state (COMPLETED or FAILED).

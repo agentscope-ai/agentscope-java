@@ -55,13 +55,15 @@ class DynamicSubagentsMiddlewareIsolationTest {
     @Test
     void terminalSummaryRequiresActualOutput() {
         var repository = mock(TaskRepository.class);
-        when(repository.listTasks(any(), any(), any()))
+        when(repository.listTaskSummary(any(), any()))
                 .thenReturn(
                         List.of(
-                                new BackgroundTask(
-                                        "done",
-                                        "worker",
-                                        CompletableFuture.completedFuture("result"))));
+                                new TaskRepository.TaskSummaryEntry(
+                                        new BackgroundTask(
+                                                "done",
+                                                "worker",
+                                                CompletableFuture.completedFuture("result")),
+                                        false)));
         var middleware =
                 new DynamicSubagentsMiddleware(
                         List.of(),
