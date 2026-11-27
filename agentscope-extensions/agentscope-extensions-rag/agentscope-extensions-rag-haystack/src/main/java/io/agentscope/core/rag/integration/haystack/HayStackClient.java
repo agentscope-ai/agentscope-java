@@ -287,19 +287,20 @@ public class HayStackClient {
         public @NonNull Response intercept(Chain chain) throws IOException {
             Request request = chain.request();
             Response response = null;
-            IOException lastException = null;
+            boolean responseReturned = false;
 
             try {
                 for (int attempt = 0; attempt <= maxRetries; attempt++) {
                     try {
                         if (response != null) {
                             response.close();
+                            response = null;
                         }
                         response = chain.proceed(request);
 
                         // Don't retry on successful responses or client errors (4xx)
                         if (response.isSuccessful() || response.code() < 500) {
-                            lastException = null;
+                            responseReturned = true;
                             return response;
                         }
 
@@ -310,7 +311,6 @@ public class HayStackClient {
                                 maxRetries + 1);
 
                     } catch (IOException e) {
-                        lastException = e;
                         logger.warn(
                                 "HayStack request failed with exception, attempt {}/{}: {}",
                                 attempt + 1,
@@ -334,14 +334,11 @@ public class HayStackClient {
                     }
                 }
 
-                if (lastException != null) {
-                    throw lastException;
-                }
-
+                responseReturned = true;
                 return response;
             } finally {
-                // Ensure response is closed if we're not returning it successfully
-                if (response != null && (lastException != null || !response.isSuccessful())) {
+                // The caller owns returned responses, including final HTTP errors.
+                if (response != null && !responseReturned) {
                     response.close();
                 }
             }
