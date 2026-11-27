@@ -36,6 +36,9 @@ final class AgentRunDataPlaneHttp {
 
     private static final MediaType JSON = MediaType.get("application/json; charset=utf-8");
 
+    /** AgentRun 数据面响应的信封字段名，真实接口会把业务内容包在该字段内。 */
+    private static final String DATA_ENVELOPE_FIELD = "data";
+
     private final OkHttpClient http;
     private final ObjectMapper json = new ObjectMapper();
     private final AgentRunSandboxClientOptions opt;
@@ -161,6 +164,12 @@ final class AgentRunDataPlaneHttp {
         JsonNode state = s.get("state");
         if (state != null && state.isTextual()) {
             return state.asText();
+        }
+        // 真实接口把业务内容包在 data 信封内：根节点读不到状态时回退到信封内读取，
+        // 同时保持对不带信封响应的兼容；不改写 getJson/postJson 的返回值，避免误伤其他字段
+        JsonNode envelope = s.get(DATA_ENVELOPE_FIELD);
+        if (envelope != null && envelope.isObject()) {
+            return textStatus(envelope);
         }
         return null;
     }
