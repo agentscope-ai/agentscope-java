@@ -36,6 +36,10 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 import org.junit.jupiter.api.BeforeEach;
@@ -463,6 +467,88 @@ class JdkWebSocketConnectionTest {
             Flux.merge(sends).blockLast(Duration.ofSeconds(10));
 
             verify(mockWebSocket, times(100)).sendText(anyString(), eq(true));
+        }
+
+        /**
+         * A {@code CompletableFuture} returned by {@code sendText} completes exceptionally with
+         * {@code IllegalStateException} while an earlier text or binary send is still pending, so
+         * the fake keeps each send unfinished until the test releases it and rejects any
+         * initiation that happens on top of a pending one.
+         */
+        @Test
+        @DisplayName("Should start a send only after the pending one has completed")
+        void shouldStartSendOnlyAfterPendingSendCompleted() throws InterruptedException {
+            textConnection.setWebSocket(mockWebSocket);
+
+            AtomicBoolean pending = new AtomicBoolean();
+            List<CompletableFuture<WebSocket>> startedSends = new ArrayList<>();
+            when(mockWebSocket.sendText(anyString(), anyBoolean()))
+                    .thenAnswer(
+                            invocation -> {
+                                if (pending.getAndSet(true)) {
+                                    return CompletableFuture.failedFuture(
+                                            new IllegalStateException("pending send"));
+                                }
+                                CompletableFuture<WebSocket> send = new CompletableFuture<>();
+                                startedSends.add(send);
+                                return send;
+                            });
+
+            AtomicReference<Throwable> failure = new AtomicReference<>();
+            CountDownLatch terminated = new CountDownLatch(1);
+            Mono.when(textConnection.send("first"), textConnection.send("second"))
+                    .doOnError(failure::set)
+                    .doFinally(signal -> terminated.countDown())
+                    .subscribe();
+
+            assertEquals(
+                    1,
+                    startedSends.size(),
+                    "the second send must not be started while the first one is pending");
+            verify(mockWebSocket, times(1)).sendText(anyString(), eq(true));
+
+            release(startedSends, pending);
+            assertEquals(
+                    1,
+                    startedSends.size(),
+                    "the queued send should start once the previous one has completed");
+
+            release(startedSends, pending);
+            assertTrue(startedSends.isEmpty(), "both sends should have been started");
+
+            assertTrue(terminated.await(5, TimeUnit.SECONDS), "both sends should complete");
+            assertNull(failure.get(), "the queued send must not fail: " + failure.get());
+            verify(mockWebSocket, times(2)).sendText(anyString(), eq(true));
+        }
+
+        private void release(
+                List<CompletableFuture<WebSocket>> startedSends, AtomicBoolean pending) {
+            CompletableFuture<WebSocket> send = startedSends.remove(0);
+            pending.set(false);
+            send.complete(mockWebSocket);
+        }
+
+        @Test
+        @DisplayName("Should keep sending after a queued send is cancelled")
+        void shouldKeepSendingAfterQueuedSendIsCancelled() {
+            textConnection.setWebSocket(mockWebSocket);
+
+            CompletableFuture<WebSocket> pendingSend = new CompletableFuture<>();
+            when(mockWebSocket.sendText(anyString(), anyBoolean()))
+                    .thenReturn(pendingSend)
+                    .thenReturn(CompletableFuture.completedFuture(mockWebSocket));
+
+            // The caller gives up on the first send while its frame is still pending.
+            StepVerifier.create(textConnection.send("first")).thenCancel().verify();
+
+            pendingSend.complete(mockWebSocket);
+
+            // The abandoned send must not leave the sequence blocked.
+            StepVerifier.create(textConnection.send("second"))
+                    .expectComplete()
+                    .verify(Duration.ofSeconds(5));
+
+            verify(mockWebSocket, times(2)).sendText(anyString(), eq(true));
         }
     }
 

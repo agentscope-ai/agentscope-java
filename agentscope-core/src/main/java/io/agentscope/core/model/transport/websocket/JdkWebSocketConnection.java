@@ -21,7 +21,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionStage;
 import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.locks.ReentrantLock;
+import java.util.concurrent.atomic.AtomicReference;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Flux;
@@ -52,8 +52,12 @@ public class JdkWebSocketConnection<T> implements WebSocketConnection<T> {
     private final StringBuilder textBuffer = new StringBuilder();
     private ByteBuffer binaryBuffer;
 
-    // Send lock (JDK WebSocket is not thread-safe for sending)
-    private final ReentrantLock sendLock = new ReentrantLock();
+    // Tail of the send sequence. A CompletableFuture returned by a send method completes
+    // exceptionally while an earlier send is still pending, so the next send may only be
+    // initiated once the previous one has terminated. Tracking the future rather than the Mono
+    // keeps the sequence alive when a subscriber cancels its send.
+    private final AtomicReference<CompletableFuture<WebSocket>> pendingSend =
+            new AtomicReference<>(CompletableFuture.<WebSocket>completedFuture(null));
 
     // JDK WebSocket.Listener implementation
     private final WebSocket.Listener listener =
@@ -175,50 +179,14 @@ public class JdkWebSocketConnection<T> implements WebSocketConnection<T> {
 
     @Override
     public Mono<Void> send(T data) {
-        return Mono.<Void>create(
-                        sink -> {
-                            if (webSocket == null || closed.get()) {
-                                sink.error(
-                                        new WebSocketTransportException(
-                                                "Connection is not open",
-                                                null,
-                                                url,
-                                                closed.get() ? "CLOSED" : "NOT_CONNECTED"));
-                                return;
-                            }
-
-                            sendLock.lock();
-                            try {
-                                CompletableFuture<WebSocket> future;
-                                if (data instanceof String text) {
-                                    future = webSocket.sendText(text, true);
-                                } else if (data instanceof byte[] bytes) {
-                                    future = webSocket.sendBinary(ByteBuffer.wrap(bytes), true);
-                                } else {
-                                    sink.error(
-                                            new IllegalArgumentException(
-                                                    "Unsupported message type: "
-                                                            + data.getClass().getName()));
-                                    return;
-                                }
-
-                                future.whenComplete(
-                                        (ws, error) -> {
-                                            if (error != null) {
-                                                log.error("Failed to send message: {}", url, error);
-                                                sink.error(
-                                                        new WebSocketTransportException(
-                                                                "Failed to send message",
-                                                                error,
-                                                                url,
-                                                                "OPEN"));
-                                            } else {
-                                                sink.success();
-                                            }
-                                        });
-                            } finally {
-                                sendLock.unlock();
-                            }
+        return Mono.defer(
+                        () -> {
+                            CompletableFuture<WebSocket> current = new CompletableFuture<>();
+                            CompletableFuture<WebSocket> previous = pendingSend.getAndSet(current);
+                            previous.whenComplete((ws, error) -> initiateSend(data, current));
+                            return Mono.fromFuture(current)
+                                    .doOnCancel(() -> current.cancel(false))
+                                    .then();
                         })
                 .onErrorMap(
                         e ->
@@ -226,6 +194,46 @@ public class JdkWebSocketConnection<T> implements WebSocketConnection<T> {
                                         ? e
                                         : new WebSocketTransportException(
                                                 "Send failed", e, url, "OPEN"));
+    }
+
+    private void initiateSend(T data, CompletableFuture<WebSocket> send) {
+        if (send.isDone()) {
+            // The subscriber cancelled while this send was still queued.
+            return;
+        }
+        if (webSocket == null || closed.get()) {
+            send.completeExceptionally(
+                    new WebSocketTransportException(
+                            "Connection is not open",
+                            null,
+                            url,
+                            closed.get() ? "CLOSED" : "NOT_CONNECTED"));
+            return;
+        }
+
+        CompletableFuture<WebSocket> future;
+        if (data instanceof String text) {
+            future = webSocket.sendText(text, true);
+        } else if (data instanceof byte[] bytes) {
+            future = webSocket.sendBinary(ByteBuffer.wrap(bytes), true);
+        } else {
+            send.completeExceptionally(
+                    new IllegalArgumentException(
+                            "Unsupported message type: " + data.getClass().getName()));
+            return;
+        }
+
+        future.whenComplete(
+                (ws, error) -> {
+                    if (error != null) {
+                        log.error("Failed to send message: {}", url, error);
+                        send.completeExceptionally(
+                                new WebSocketTransportException(
+                                        "Failed to send message", error, url, "OPEN"));
+                    } else {
+                        send.complete(ws);
+                    }
+                });
     }
 
     @Override
