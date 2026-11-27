@@ -65,6 +65,8 @@ The sandbox snapshots its workspace at each `call()` end and restores at the nex
 - Container gone → reboot from snapshot, restore workspace
 - No snapshot → full init from `WorkspaceSpec` (cold start)
 
+Docker archive hydration reports an input-stream or stdin transfer failure as `WORKSPACE_ARCHIVE_READ_ERROR`, even if the container's `tar` process exits successfully. The original transfer error remains available as the cause. A failed extraction may already have written files; hydration does not roll those writes back, so callers must handle the failure before using the restored workspace.
+
 Where snapshots land is decided by `snapshotSpec`:
 
 | Option | When |

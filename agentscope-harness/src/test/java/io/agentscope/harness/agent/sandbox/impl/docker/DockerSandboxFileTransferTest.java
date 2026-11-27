@@ -19,10 +19,23 @@ import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
+import io.agentscope.harness.agent.sandbox.SandboxErrorCode;
+import io.agentscope.harness.agent.sandbox.SandboxException;
 import io.agentscope.harness.agent.sandbox.WorkspaceSpec;
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -31,6 +44,68 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 class DockerSandboxFileTransferTest {
+
+    @Test
+    void hydrateReportsInputFailureAndCleansUpLiveProcess() throws Exception {
+        Process process = mock(Process.class);
+        when(process.getOutputStream()).thenReturn(new ByteArrayOutputStream());
+        when(process.getErrorStream()).thenReturn(InputStream.nullInputStream());
+        when(process.isAlive()).thenReturn(true);
+        IOException failure = new IOException("archive fixture failure");
+        InputStream archive =
+                new InputStream() {
+                    @Override
+                    public int read() throws IOException {
+                        throw failure;
+                    }
+                };
+
+        SandboxException.SandboxRuntimeException error =
+                assertThrows(
+                        SandboxException.SandboxRuntimeException.class,
+                        () -> sandbox.hydrateWorkspace(process, archive));
+
+        assertEquals(SandboxErrorCode.WORKSPACE_ARCHIVE_READ_ERROR, error.getErrorCode());
+        assertSame(failure, error.getCause());
+        verify(process).destroyForcibly();
+        verify(process, never()).waitFor(anyLong(), any());
+    }
+
+    @Test
+    void hydrateTransfersValidInputAndAcceptsSuccessfulProcess() throws Exception {
+        Process process = mock(Process.class);
+        ByteArrayOutputStream stdin = new ByteArrayOutputStream();
+        when(process.getOutputStream()).thenReturn(stdin);
+        when(process.getErrorStream()).thenReturn(InputStream.nullInputStream());
+        when(process.waitFor(anyLong(), any())).thenReturn(true);
+        byte[] archive = new byte[] {1, 2, 3};
+
+        sandbox.hydrateWorkspace(process, new ByteArrayInputStream(archive));
+
+        assertArrayEquals(archive, stdin.toByteArray());
+        verify(process, never()).destroyForcibly();
+    }
+
+    @Test
+    void hydrateRetainsTarFailureDiagnostic() throws Exception {
+        Process process = mock(Process.class);
+        when(process.getOutputStream()).thenReturn(new ByteArrayOutputStream());
+        when(process.getErrorStream())
+                .thenReturn(
+                        new ByteArrayInputStream(
+                                "invalid tar".getBytes(java.nio.charset.StandardCharsets.UTF_8)));
+        when(process.waitFor(anyLong(), any())).thenReturn(true);
+        when(process.exitValue()).thenReturn(2);
+
+        SandboxException.SandboxRuntimeException error =
+                assertThrows(
+                        SandboxException.SandboxRuntimeException.class,
+                        () -> sandbox.hydrateWorkspace(process, InputStream.nullInputStream()));
+
+        assertEquals(SandboxErrorCode.WORKSPACE_ARCHIVE_READ_ERROR, error.getErrorCode());
+        assertTrue(error.getMessage().contains("exit=2"));
+        assertTrue(error.getMessage().contains("invalid tar"));
+    }
 
     private DockerSandbox sandbox;
 
