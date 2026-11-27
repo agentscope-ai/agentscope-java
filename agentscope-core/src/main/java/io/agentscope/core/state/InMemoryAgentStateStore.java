@@ -162,6 +162,7 @@ public class InMemoryAgentStateStore implements AgentStateStore {
         SessionData data = lookup(userId, sessionId);
         if (data != null) {
             data.removeSingleState(key);
+            data.removeListState(key);
         }
     }
 
@@ -254,6 +255,10 @@ public class InMemoryAgentStateStore implements AgentStateStore {
 
         void removeSingleState(String key) {
             singleStates.remove(key);
+        }
+
+        void removeListState(String key) {
+            listStates.remove(key);
         }
 
         void setListState(String key, List<? extends State> values) {
