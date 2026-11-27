@@ -49,6 +49,7 @@ public class SandboxClient implements AutoCloseable {
     private final boolean ownsClient;
     private final Duration requestTimeout;
     private final Duration perAttemptTimeout;
+    private final Duration commandTimeout;
     private final Map<String, Sandbox> activeSandboxes = new LinkedHashMap<>();
 
     public SandboxClient() {
@@ -69,6 +70,23 @@ public class SandboxClient implements AutoCloseable {
             KubernetesClient kubernetesClient,
             Duration requestTimeout,
             Duration perAttemptTimeout) {
+        this(connectionConfig, kubernetesClient, requestTimeout, perAttemptTimeout, null);
+    }
+
+    /**
+     * @param connectionConfig connection strategy
+     * @param kubernetesClient optional Kubernetes client; null creates and owns one
+     * @param requestTimeout HTTP request timeout; null uses the connector default
+     * @param perAttemptTimeout per-attempt HTTP timeout; null uses the connector default
+     * @param commandTimeout default command timeout for {@link CommandExecutor#run(String)}; null
+     *     uses 60 seconds
+     */
+    public SandboxClient(
+            SandboxConnectionConfig connectionConfig,
+            KubernetesClient kubernetesClient,
+            Duration requestTimeout,
+            Duration perAttemptTimeout,
+            Duration commandTimeout) {
         this.connectionConfig =
                 connectionConfig != null ? connectionConfig : new LocalTunnelConnectionConfig();
         if (kubernetesClient != null) {
@@ -80,6 +98,7 @@ public class SandboxClient implements AutoCloseable {
         }
         this.requestTimeout = requestTimeout;
         this.perAttemptTimeout = perAttemptTimeout;
+        this.commandTimeout = commandTimeout;
     }
 
     /**
@@ -132,7 +151,8 @@ public class SandboxClient implements AutoCloseable {
                             connectionConfig,
                             k8sHelper,
                             requestTimeout,
-                            perAttemptTimeout);
+                            perAttemptTimeout,
+                            commandTimeout);
             sandbox.getConnector().connect();
             activeSandboxes.put(key(namespace, claimName), sandbox);
             return sandbox;
@@ -240,7 +260,8 @@ public class SandboxClient implements AutoCloseable {
                             connectionConfig,
                             k8sHelper,
                             requestTimeout,
-                            perAttemptTimeout);
+                            perAttemptTimeout,
+                            commandTimeout);
             handle.getConnector().connect();
             activeSandboxes.put(key, handle);
             return handle;

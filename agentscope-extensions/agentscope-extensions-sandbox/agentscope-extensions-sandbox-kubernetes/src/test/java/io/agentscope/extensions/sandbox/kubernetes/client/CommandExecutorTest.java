@@ -115,6 +115,10 @@ class CommandExecutorTest {
     }
 
     private CommandExecutor executor(Duration networkBudget) {
+        return executor(networkBudget, null);
+    }
+
+    private CommandExecutor executor(Duration networkBudget, Duration commandTimeout) {
         String url = "http://127.0.0.1:" + server.getAddress().getPort();
         SandboxConnector connector =
                 new SandboxConnector(
@@ -125,7 +129,7 @@ class CommandExecutorTest {
                         null,
                         networkBudget,
                         networkBudget);
-        return new CommandExecutor(connector);
+        return new CommandExecutor(connector, commandTimeout);
     }
 
     @Test
@@ -252,6 +256,25 @@ class CommandExecutorTest {
     void nullTimeoutUsesDefaultAndIsExplicitOnWire() {
         assertEquals(0, executor(Duration.ofSeconds(2)).run("echo default", null).getExitCode());
         assertEquals(60, payload.get().path("timeout_seconds").asInt());
+    }
+
+    @Test
+    void configuredDefaultTimeoutIsUsedWhenNoTimeoutIsGiven() {
+        assertEquals(
+                0,
+                executor(Duration.ofSeconds(2), Duration.ofSeconds(600))
+                        .run("tar -cf archive.tar .")
+                        .getExitCode());
+        assertEquals(600, payload.get().path("timeout_seconds").asInt());
+    }
+
+    @Test
+    void configuredDefaultTimeoutAppliesToNullTimeoutButExplicitTimeoutWins() {
+        CommandExecutor executor = executor(Duration.ofSeconds(2), Duration.ofSeconds(600));
+        assertEquals(0, executor.run("echo default", null).getExitCode());
+        assertEquals(600, payload.get().path("timeout_seconds").asInt());
+        assertEquals(0, executor.run("echo explicit", Duration.ofSeconds(30)).getExitCode());
+        assertEquals(30, payload.get().path("timeout_seconds").asInt());
     }
 
     @Test
