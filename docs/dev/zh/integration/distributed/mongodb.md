@@ -74,6 +74,7 @@ BaseStore store = new MongoBaseStore(mongoClient.getDatabase("agentscope"), "age
 ```
 
 - 命名空间路径使用 `\u001F`（ASCII Unit Separator）作为段分隔符，带 trailing separator 实现前缀匹配。
+- `search` 会包含指定命名空间及其所有后代，包括含有 emoji 等补充平面 Unicode 字符的路径段。传入空命名空间元组时会搜索所有命名空间；结果仍先按条目 key 排序，再应用 offset 和 limit，已有命名空间编码无需迁移。
 - `put` / `putIfVersion` 通过 `version` 字段支持乐观并发。
 
 ### 3. MongoSnapshotSpec

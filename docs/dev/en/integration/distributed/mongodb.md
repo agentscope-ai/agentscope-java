@@ -74,6 +74,7 @@ BaseStore store = new MongoBaseStore(mongoClient.getDatabase("agentscope"), "age
 ```
 
 - Namespace paths use `\u001F` (ASCII Unit Separator) as the segment delimiter, with a trailing separator enabling prefix matching.
+- `search` includes the selected namespace and its descendants, including segments containing supplementary Unicode characters such as emoji. An empty namespace tuple searches all namespaces; results remain ordered by item key before offset and limit are applied. Existing stored namespace encodings do not need migration.
 - `put` / `putIfVersion` support optimistic concurrency via a `version` field.
 
 ### 3. MongoSnapshotSpec

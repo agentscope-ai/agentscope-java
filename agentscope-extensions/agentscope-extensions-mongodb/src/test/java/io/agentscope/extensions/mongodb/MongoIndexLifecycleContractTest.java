@@ -181,6 +181,45 @@ class MongoIndexLifecycleContractTest {
         assertNotNull(compound, "Compound index (namespace, key) must exist");
     }
 
+    @Test
+    void baseStoreSearchIncludesSupplementaryNamespaceSegments() {
+        MongoBaseStore store = new MongoBaseStore(client.getDatabase(dbName), "unicode_search");
+        store.put(List.of("tenant"), "a-exact", Map.of("kind", "exact"));
+        store.put(List.of("tenant", "😀"), "b-child", Map.of("kind", "child"));
+        store.put(List.of("tenant", "😀", "深层"), "c-nested", Map.of("kind", "nested"));
+        store.put(List.of("tenant", "\ufffftail"), "d-bmp", Map.of("kind", "bmp"));
+        store.put(List.of("tenant-other", "😀"), "e-sibling", Map.of());
+        store.put(List.of("tenant ", "child"), "f-upper-bound", Map.of());
+        store.put(List.of("tenant", "😀-other"), "g-child-sibling", Map.of());
+
+        assertEquals("child", store.get(List.of("tenant", "😀"), "b-child").value().get("kind"));
+        assertEquals(
+                List.of("a-exact", "b-child", "c-nested", "d-bmp", "g-child-sibling"),
+                store.search(List.of("tenant"), 20, 0).stream().map(item -> item.key()).toList());
+        assertEquals(
+                List.of("b-child", "c-nested"),
+                store.search(List.of("tenant", "😀"), 20, 0).stream()
+                        .map(item -> item.key())
+                        .toList());
+        assertEquals(
+                List.of("b-child", "c-nested"),
+                store.search(List.of("tenant"), 2, 1).stream().map(item -> item.key()).toList());
+    }
+
+    @Test
+    void baseStoreRootSearchIncludesAllNamespaceSegments() {
+        MongoBaseStore store =
+                new MongoBaseStore(client.getDatabase(dbName), "unicode_root_search");
+        store.put(List.of(), "a-root", Map.of());
+        store.put(List.of("😀"), "b-unicode", Map.of());
+        store.put(List.of("\ufffftail"), "c-bmp", Map.of());
+        store.put(List.of("tenant", "child"), "d-ascii", Map.of());
+
+        assertEquals(
+                List.of("a-root", "b-unicode", "c-bmp", "d-ascii"),
+                store.search(List.of(), 20, 0).stream().map(item -> item.key()).toList());
+    }
+
     // ────────────────── SandboxExecutionGuard indexes ──────────────────
 
     @Test

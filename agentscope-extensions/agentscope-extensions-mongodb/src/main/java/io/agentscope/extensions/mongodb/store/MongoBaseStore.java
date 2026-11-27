@@ -203,15 +203,9 @@ public class MongoBaseStore implements BaseStore {
      * Searches for items within a namespace, including child namespaces (prefix matching).
      *
      * <p>The namespace path is encoded with a trailing separator so that a range query
-     * {@code gte(nsPrefix)} / {@code lt(nsPrefix + \uFFFF)} matches both the exact namespace
-     * and all descendant sub-namespaces, consistent with {@code InMemoryStore},
-     * {@code PostgresBaseStore}, and {@code JdbcStore}.
-     *
-     * <p><b>Note:</b> the upper bound uses {@code Character.MAX_VALUE} ({@code \uFFFF}), which
-     * does not match namespace segments containing Unicode supplementary characters (code points
-     * above {@code U+FFFF}, such as emoji). This is a theoretical limitation — supplementary
-     * characters are unlikely in namespace segments — and the range query preserves full B-tree
-     * index utilisation, which a {@code $regex} prefix match would not.
+     * {@code gte(nsPrefix)} and an exclusive upper bound obtained by incrementing its trailing
+     * separator match both the exact namespace and all descendant sub-namespaces, including
+     * supplementary Unicode characters. An empty namespace tuple searches all namespaces.
      */
     @Override
     public List<StoreItem> search(List<String> namespace, int limit, int offset) {
@@ -219,13 +213,18 @@ public class MongoBaseStore implements BaseStore {
             return List.of();
         }
         String nsPrefix = namespacePath(namespace);
+        Bson filter =
+                namespace.isEmpty()
+                        ? new Document()
+                        : Filters.and(
+                                Filters.gte(FIELD_NAMESPACE, nsPrefix),
+                                Filters.lt(
+                                        FIELD_NAMESPACE,
+                                        nsPrefix.substring(0, nsPrefix.length() - 1)
+                                                + (char) (NS_SEPARATOR + 1)));
         List<Document> docs =
                 collection
-                        .find(
-                                Filters.and(
-                                        Filters.gte(FIELD_NAMESPACE, nsPrefix),
-                                        Filters.lt(
-                                                FIELD_NAMESPACE, nsPrefix + Character.MAX_VALUE)))
+                        .find(filter)
                         .sort(Sorts.ascending(FIELD_KEY))
                         .skip(Math.max(offset, 0))
                         .limit(limit)
