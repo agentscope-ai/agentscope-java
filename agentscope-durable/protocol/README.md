@@ -90,7 +90,7 @@ head Turn blocks later work in the same Thread.
 
 Sessions and Threads are `OPEN` or `CLOSED`. Nonterminal work prevents closure.
 Closing does not erase history, and retrying creation does not reopen a closed
-resource. Turn terminal states are `SUCCEEDED`, `FAILED`, and `CANCELLED`.
+resource. Turn terminal states are `SUCCEEDED`, `FAILED`, `CANCELLED`, and `CONVERTED`.
 Recovery preserves `turnId` while creating new Run/Step identities.
 
 ## Envelopes and validation
@@ -304,8 +304,8 @@ AgentScope declares `TOOL_BOUNDARY` recovery and `DELTA` event delivery.
 Recovery operates on native journal boundaries, not on a serialized Java stack.
 Private Frames and native checkpoints never appear in public snapshots.
 
-The current Java transactional Session layout is format **14**. The Worker
-ledger and queued transport layouts are format **3**. These are internal storage
+The current Java transactional Session layout is format **21**. The Worker
+ledger uses format **3** and the Brain queued transport uses format **4**. These are internal storage
 formats, distinct from the `durable.v1` wire version; old unreleased layouts are
 rejected rather than silently upgraded.
 
@@ -391,10 +391,18 @@ resolved secrets.
 
 ### Queued execution
 
-`executionCommand` and `executionEvent` define broker-neutral Brain–Hands
-messages. `ExecutionMessages` validates their schema, canonical identity, and
-request digest. Commands carry `EXECUTE`, `CANCEL`, or `QUERY` and the original
-request. Command IDs derive from request digest, command kind, and replay position.
+`executionBatch`, `executionCommand`, and `executionEvent` define the Brain–Hands
+messages. For RocketMQ, the command Topic carries an `executionBatch` with all
+approved calls from the same action going to the same Hands route. Its `batchId`
+is the canonical hash of the request array. Each child keeps its original request
+and execution identity. Hands validates and authorizes the whole envelope, then
+admits each child to its ledger before acknowledging the message. Redelivery
+reuses admitted children. When preparing the envelope for publication, Brain
+omits children with a staged cancellation and sends their individual `CANCEL` commands.
+
+The control Topic carries individual `CANCEL` and `QUERY` commands.
+`ExecutionMessages` validates schema, canonical identity, and request digest.
+Individual command IDs derive from request digest, command kind, and replay position.
 
 Events carry a positive safe-integer source sequence and either output or an
 execution result. Event IDs derive from request digest and sequence. Events are

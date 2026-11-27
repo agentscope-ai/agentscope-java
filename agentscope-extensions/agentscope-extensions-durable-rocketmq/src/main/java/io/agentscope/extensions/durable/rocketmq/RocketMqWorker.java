@@ -15,26 +15,32 @@
  */
 package io.agentscope.extensions.durable.rocketmq;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import io.agentscope.durable.DurableException;
 import io.agentscope.durable.DurableJson;
 import io.agentscope.durable.DurableProtocol;
 import io.agentscope.durable.DurableTypes.ExecutionRequest;
 import io.agentscope.durable.ExecutionMessages;
 import io.agentscope.durable.ExecutionMessages.Command;
+import io.agentscope.durable.ExecutionMessages.ExecuteBatch;
+import io.agentscope.durable.ExecutionMessages.Kind;
 import io.agentscope.durable.Executor;
 import io.agentscope.durable.store.ObjectStore;
 import io.agentscope.durable.store.RecordStore;
 import io.agentscope.durable.worker.ExecutionStore;
 import io.agentscope.durable.worker.TransactionalExecutionStore;
+import io.agentscope.durable.worker.TransactionalExecutionStore.Received;
 import io.agentscope.durable.worker.WorkerRuntime;
+import io.agentscope.extensions.durable.rocketmq.RocketMqLoop.Subscription;
 import java.time.Duration;
+import java.util.List;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.function.Consumer;
 import java.util.function.Function;
 import org.apache.rocketmq.client.apis.ClientConfiguration;
 import org.apache.rocketmq.client.apis.ClientServiceProvider;
-import org.apache.rocketmq.client.apis.consumer.FilterExpression;
-import org.apache.rocketmq.client.apis.consumer.SimpleConsumer;
+import org.apache.rocketmq.client.apis.message.MessageView;
 import org.apache.rocketmq.client.apis.producer.Producer;
 
 /** Hands-side MQ host for the same WorkerRuntime used by embedded and HTTP deployments. */
@@ -48,8 +54,6 @@ public final class RocketMqWorker implements AutoCloseable {
     private final RocketMqLoop loop;
     private final RocketMqLoop controls;
     private final Producer producer;
-    private final SimpleConsumer consumer;
-    private final SimpleConsumer controlConsumer;
     private final boolean ownsClients;
 
     private RocketMqWorker(Builder builder) {
@@ -57,44 +61,21 @@ public final class RocketMqWorker implements AutoCloseable {
         var topology = RocketMqExecutionTopology.route(builder.namespace, name);
         updatesTopic = topology.updates();
         authorizer = builder.authorizer;
-        interval = builder.interval;
-        store = new TransactionalExecutionStore(builder.records, name);
+        interval = builder.publicationRepairInterval;
         ClientServiceProvider provider = builder.provider;
         Producer configuredProducer;
-        SimpleConsumer configuredConsumer;
-        SimpleConsumer configuredControlConsumer;
+        Subscription configuredConsumer;
+        Subscription configuredControlConsumer;
         boolean ownsConfiguredClients;
         if (builder.producer == null) {
             Producer createdProducer = null;
-            SimpleConsumer createdConsumer = null;
-            SimpleConsumer createdControlConsumer = null;
             try {
                 createdProducer =
                         provider.newProducerBuilder()
                                 .setClientConfiguration(builder.clientConfiguration)
                                 .setTopics(topology.updates())
                                 .build();
-                createdConsumer =
-                        provider.newSimpleConsumerBuilder()
-                                .setClientConfiguration(builder.clientConfiguration)
-                                .setConsumerGroup(topology.workerConsumerGroup())
-                                .setAwaitDuration(Duration.ofSeconds(10))
-                                .setSubscriptionExpressions(
-                                        java.util.Map.of(
-                                                topology.commands(), FilterExpression.SUB_ALL))
-                                .build();
-                createdControlConsumer =
-                        provider.newSimpleConsumerBuilder()
-                                .setClientConfiguration(builder.clientConfiguration)
-                                .setConsumerGroup(topology.controlConsumerGroup())
-                                .setAwaitDuration(Duration.ofSeconds(10))
-                                .setSubscriptionExpressions(
-                                        java.util.Map.of(
-                                                topology.controls(), FilterExpression.SUB_ALL))
-                                .build();
             } catch (Exception error) {
-                close(createdControlConsumer);
-                close(createdConsumer);
                 close(createdProducer);
                 throw new DurableException(
                         DurableException.Code.UNAVAILABLE,
@@ -102,8 +83,22 @@ public final class RocketMqWorker implements AutoCloseable {
                         error);
             }
             configuredProducer = createdProducer;
-            configuredConsumer = createdConsumer;
-            configuredControlConsumer = createdControlConsumer;
+            configuredConsumer =
+                    RocketMqLoop.subscription(
+                            provider,
+                            builder.clientConfiguration,
+                            topology.commands(),
+                            topology.workerConsumerGroup(),
+                            builder.receiveBatchSize);
+            configuredControlConsumer =
+                    RocketMqLoop.subscription(
+                            provider,
+                            builder.clientConfiguration,
+                            topology.controls(),
+                            topology.controlConsumerGroup(),
+                            builder.controlCacheSize == 0
+                                    ? builder.receiveBatchSize
+                                    : builder.controlCacheSize);
             ownsConfiguredClients = true;
         } else {
             configuredProducer = builder.producer;
@@ -112,35 +107,36 @@ public final class RocketMqWorker implements AutoCloseable {
             ownsConfiguredClients = false;
         }
         producer = configuredProducer;
-        consumer = configuredConsumer;
-        controlConsumer = configuredControlConsumer;
         ownsClients = ownsConfiguredClients;
         loop =
                 new RocketMqLoop(
                         provider,
                         producer,
-                        consumer,
+                        configuredConsumer,
                         topology.commands(),
                         builder.errors,
                         builder.objects,
-                        builder.records,
-                        builder.receiveBatchSize);
+                        builder.records);
         controls =
                 new RocketMqLoop(
                         provider,
                         producer,
-                        controlConsumer,
+                        configuredControlConsumer,
                         topology.controls(),
                         builder.errors,
                         builder.objects,
-                        builder.records,
-                        builder.receiveBatchSize);
+                        builder.records);
+        store =
+                new TransactionalExecutionStore(
+                        builder.records, name, key -> loop.wake(key, () -> publishPending(key)));
         worker =
                 WorkerRuntime.builder()
                         .executionStore(store)
                         .resolver(builder.resolver)
+                        .authorizeStart(builder.authorizeStart)
                         .leaseDuration(builder.lease)
-                        .pollInterval(interval)
+                        .discoveryInterval(builder.discoveryInterval)
+                        .pollInterval(builder.providerPollInterval)
                         .parallelism(builder.parallelism)
                         .recoveryParallelism(builder.recoveryParallelism)
                         .retryMaximum(builder.retryMaximum)
@@ -155,37 +151,83 @@ public final class RocketMqWorker implements AutoCloseable {
     /** Starts the complete Hands host, including MQ delivery and the WorkerRuntime engine. */
     public void start() {
         loop.ensureOpen();
-        loop.start(this::receive, this::publishPending, interval);
-        controls.start(this::receive, () -> {}, interval);
         worker.start();
+        try {
+            loop.start(this::receiveBatch, this::publishPending, interval);
+            controls.start(this::receiveControl, null, interval);
+        } catch (RuntimeException failure) {
+            close();
+            throw failure;
+        }
     }
 
-    private void receive(String body) {
-        var value = DurableJson.parse(body);
+    private void receiveBatch(JsonNode value, MessageView message) {
+        DurableProtocol.validate("executionBatch", value);
+        var batch = DurableJson.convert(value, ExecuteBatch.class);
+        ExecutionMessages.validate(batch);
+        RocketMqLiteRouting.require(
+                message,
+                RocketMqLiteRouting.session(batch.requests().get(0).session()),
+                batch.batchId());
+        var commands =
+                batch.requests().stream()
+                        .map(request -> ExecutionMessages.command(Kind.EXECUTE, request))
+                        .toList();
+        commands.forEach(this::authorize);
+        // Broker acknowledgement follows admission of the last child. Replays reuse each ledger.
+        List<Received> admissions = commands.stream().map(store::receive).toList();
+        admissions.forEach(this::offer);
+    }
+
+    private void receiveControl(JsonNode value, MessageView message) {
         DurableProtocol.validate("executionCommand", value);
         var command = DurableJson.convert(value, Command.class);
         ExecutionMessages.validate(command);
+        if (command.kind() == Kind.EXECUTE)
+            throw new IllegalArgumentException("Execution command is on the wrong parent Topic");
+        RocketMqLiteRouting.require(
+                message,
+                RocketMqLiteRouting.session(command.request().session()),
+                command.commandId());
+        authorize(command);
+        var received = store.receive(command);
+        if (command.kind() == Kind.CANCEL) worker.wakeCancellation(received.key());
+        offer(received);
+    }
+
+    private void authorize(Command command) {
         if (!name.equals(command.request().call().executor()))
             throw new DurableException(DurableException.Code.INCOMPATIBLE, "Worker route differs");
         authorizer.accept(command);
-        store.receive(command);
+    }
+
+    private void offer(Received received) {
+        if (received.runnable()) worker.offer(received.key(), received.recovery());
     }
 
     private void publishPending() {
-        var keys = store.pendingPublications(100);
-        for (var key : keys) {
+        for (var key : store.pendingPublications(100)) {
             try {
-                for (int i = 0; i < 100; i++) {
-                    var pending = store.pendingEvent(key);
-                    if (pending.isEmpty()) break;
-                    var event = pending.get();
-                    loop.send(updatesTopic, event.eventId(), event);
-                    store.published(event);
-                }
+                publishPending(key);
             } catch (RuntimeException error) {
                 loop.report(error);
             }
         }
+    }
+
+    private void publishPending(String key) {
+        for (int i = 0; i < 100; i++) {
+            var pending = store.pendingEvent(key);
+            if (pending.isEmpty()) return;
+            var event = pending.get();
+            loop.send(
+                    updatesTopic,
+                    RocketMqLiteRouting.execution(event.request()),
+                    event.eventId(),
+                    event);
+            store.published(event);
+        }
+        loop.wake(key, () -> publishPending(key));
     }
 
     public WorkerRuntime.Status status() {
@@ -222,11 +264,7 @@ public final class RocketMqWorker implements AutoCloseable {
         worker.close();
         controls.close();
         loop.close();
-        if (ownsClients) {
-            close(controlConsumer);
-            close(consumer);
-            close(producer);
-        }
+        if (ownsClients) close(producer);
     }
 
     private static void close(AutoCloseable value) {
@@ -248,11 +286,16 @@ public final class RocketMqWorker implements AutoCloseable {
         private ClientServiceProvider provider = ClientServiceProvider.loadService();
         private ClientConfiguration clientConfiguration;
         private Producer producer;
-        private SimpleConsumer consumer;
-        private SimpleConsumer controlConsumer;
+        private Subscription consumer;
+        private Subscription controlConsumer;
         private Consumer<Command> authorizer;
+        private Function<ExecutionRequest, Optional<String>> authorizeStart =
+                request -> Optional.empty();
         private int receiveBatchSize = 16;
-        private Duration interval = Duration.ofMillis(100);
+        private int controlCacheSize;
+        private Duration discoveryInterval = Duration.ofSeconds(2);
+        private Duration publicationRepairInterval = Duration.ofSeconds(2);
+        private Duration providerPollInterval = Duration.ofMillis(100);
         private Duration lease = Duration.ofSeconds(30);
         private int parallelism = 4;
         private int recoveryParallelism = 2;
@@ -306,8 +349,8 @@ public final class RocketMqWorker implements AutoCloseable {
         Builder clients(
                 ClientServiceProvider factory,
                 Producer publisher,
-                SimpleConsumer commandsConsumer,
-                SimpleConsumer controlsConsumer) {
+                Subscription commandsConsumer,
+                Subscription controlsConsumer) {
             provider = Objects.requireNonNull(factory);
             producer = Objects.requireNonNull(publisher);
             consumer = Objects.requireNonNull(commandsConsumer);
@@ -315,9 +358,15 @@ public final class RocketMqWorker implements AutoCloseable {
             return this;
         }
 
-        /** Called for every command before any ledger access; throw to reject unauthorized work. */
+        /** Validates command intake and scope before ledger access. */
         public Builder authorize(Consumer<Command> value) {
             authorizer = Objects.requireNonNull(value);
+            return this;
+        }
+
+        /** Checks current business permission for each admitted call before its first start. */
+        public Builder authorizeStart(Function<ExecutionRequest, Optional<String>> value) {
+            authorizeStart = Objects.requireNonNull(value);
             return this;
         }
 
@@ -329,10 +378,37 @@ public final class RocketMqWorker implements AutoCloseable {
             return this;
         }
 
+        /** Pending-message limit for the independent CANCEL and QUERY consumer. */
+        public Builder controlCacheSize(int value) {
+            if (value < 1 || value > 1024)
+                throw new IllegalArgumentException("Control cache size must be 1..1024");
+            controlCacheSize = value;
+            return this;
+        }
+
+        /** Sets both periodic discovery and publication repair intervals. */
         public Builder pollInterval(Duration value) {
+            return discoveryInterval(value).publicationRepairInterval(value);
+        }
+
+        public Builder discoveryInterval(Duration value) {
             if (value.toMillis() < 1)
                 throw new IllegalArgumentException("Interval must be positive");
-            interval = value;
+            discoveryInterval = value;
+            return this;
+        }
+
+        public Builder publicationRepairInterval(Duration value) {
+            if (value.toMillis() < 1)
+                throw new IllegalArgumentException("Interval must be positive");
+            publicationRepairInterval = value;
+            return this;
+        }
+
+        public Builder providerPollInterval(Duration value) {
+            if (value.toMillis() < 1)
+                throw new IllegalArgumentException("Interval must be positive");
+            providerPollInterval = value;
             return this;
         }
 

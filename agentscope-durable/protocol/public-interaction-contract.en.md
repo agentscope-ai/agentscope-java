@@ -22,7 +22,7 @@ but operation scope, state conditions, identities, idempotency, events and error
 - requestId identifies admission/control. turnId/runId/stepId/messageId/eventId/interactionId/executionId
   have distinct scopes and are not interchangeable.
 - Session idle is derived from queue/Turn state. QUEUED/RUNNING/WAITING/PAUSING/PAUSED/CANCELLING are nonterminal;
-  SUCCEEDED/FAILED/CANCELLED are terminal. TurnView.output is public JSON; AgentScope returns Message.
+  SUCCEEDED/FAILED/CANCELLED/CONVERTED are terminal. TurnView.output is public JSON; AgentScope returns Message.
 - DurableRuntime is Java's sole assembly, business-operation and lifecycle entry. It creates, gets
   and lists Sessions directly. Session/Thread/Turn handles retain rehydratable identities.
 - API-only Runtime needs no Agent/model/Executor, scans or claims. Explicit start with execution
@@ -58,13 +58,18 @@ entries can appear on subsequent pages.
 | listTurns / history | session, threadId, cursor, limit | TurnPage / HistoryPage, Thread admission order / first-message order |
 | submit | session, threadId, requestId, input | TurnReceipt(thread, requestId, turnId) |
 | getTurn | session, threadId, turnId | TurnView |
+| getTurnProgress | session, threadId, turnId | TurnProgress with a consistent cursor, blockers and retained verification facts |
 | getRun / listRuns | session, threadId, turnId, runId / cursor, limit | RunView / RunPage; read-only invocation history |
 | getStep / listSteps | session, threadId, turnId, runId, stepId / cursor, limit | StepView / StepPage scoped to the Run |
 | getModelCall / listModelCalls | session, threadId, turnId, runId, modelCallId / nullable stepId, cursor, limit | ModelCallView / ModelCallPage; read-only request provenance and usage |
-| control | session, threadId, command | CommandReceipt(requestId, turnId, operation, status, cursor) |
+| control | session, threadId, command | CommandReceipt including requestId, turnId, operation, status, cursor, and acceptedAt for accepted commands |
+| cancelActiveTurns | session, requestId, optional threadId | ActiveTurnCancellation with the selected started Turn identities and acceptance time |
 | interactions | session, threadId, turnId | Pending Interactions for that Turn |
 | snapshot | session, optional filter | Scoped Snapshot consistent with sequence/cursor |
-| events | session, cursor, limit, optional filter | EventPage(events, cursor, highWatermark) |
+| events | session, cursor, limit, optional filter | EventPage with events, cursor, highWatermark, scannedSequence, and highWatermarkSequence |
+| eventsBefore | session, cursor, limit | EventPage newest first, strictly before the cursor. A null cursor starts at the latest retained event |
+| toolOutput | session, threadId, turnId, executionId, offset | Accepted output page at a byte boundary |
+| getToolExecution | session, threadId, turnId, and exactly one of callId or executionId | Committed tool execution view |
 | checkpoints | session, threadId, after, limit | CheckpointMetadata list; after is a Thread checkpoint position, not event cursor |
 | restore | session, threadId, position, expectedPosition, requestId | CommitReceipt |
 | fork | session, threadId, position, target (ThreadKey), requestId | ThreadView; another Thread in the same namespace, inheriting the source binding |
@@ -102,7 +107,8 @@ neither raw model input nor private reasoning.
 ## 3. Typed controls and state conditions
 
 ControlCommand contains turnId, requestId, kind, target, value, expectedRevision.
-Unused target/value are null; expectedRevision is 0 except RESUME. Java methods hide
+Unused target/value are null. expectedRevision is the Turn revision for RESUME, the
+input revision for EDIT_QUEUED and STEER_QUEUED, and zero for other controls. Java methods hide
 these placeholders. Deduplicate Session + requestId using the target Thread and entire command
 digest. Identical retries return the original receipt; changed content is CONFLICT.
 Validation, signal, public input and receipt commit in one authoritative transaction.
@@ -110,6 +116,8 @@ Validation, signal, public input and receipt commit in one authoritative transac
 | kind / Java method | target / value | Condition and effect |
 | --- | --- | --- |
 | STEER / `turn.steer(requestId, Input)` | null / Input | Active nonterminal Turn; instructions at the next native reasoning boundary |
+| EDIT_QUEUED / `thread.editQueuedInput(requestId, turnId, expectedInputRevision, input)` | null / Input | Updates an unstarted user Turn at the observed input revision and preserves message identity and position |
+| STEER_QUEUED / `thread.convertQueuedToSteer(requestId, sourceTurnId, targetTurnId, expectedInputRevision)` | Source Turn ID / null | Moves the observed queued input to the active Turn in the same Thread. The source becomes CONVERTED |
 | INJECT / `turn.inject(requestId, Input)` | null / Input | Same condition, context input; no system elevation or immediate model interruption |
 | WITHDRAW / `turn.withdraw(requestId, signalId)` | Original control requestId / null | Existing unapplied signal; atomic race with apply, already applied is CONFLICT |
 | CANCEL / `turn.cancel(requestId)` | null / null | QUEUED cancels immediately; active cancellation verifies outcome; terminal result stays unchanged |
@@ -125,6 +133,8 @@ signal keys: Control.requestId is signalId; Interaction.id is the response targe
 Interaction.requestId identifies the native request.
 
 Receipt status=accepted acknowledges admission, with the Session cursor after that transaction.
+The public `editQueuedInput` and `convertQueuedToSteer` operations return `messageId` and
+`inputRevision`. Conversion also returns `sourceTurnId` alongside the target `turnId`.
 Model reply controls in the reserved `x.model:` namespace return status=ignored for superseded generations, sealed calls, and completed or cancelling Turns. Consumers acknowledge these deliveries. Model generation begin commands receive a transactionally assigned epoch, and collectors seal the current epoch atomically before dispatching tools.
 signal.applied/withdrawn, interaction.resolved and Turn terminal events report subsequent facts.
 A SUCCEEDED commit requires accepted steer/inject input to be applied or withdrawn. Input admission and success compete at the same transaction boundary: input admitted first cannot be discarded when an invocation returns normally, and a Turn completed first rejects new controls. AgentScope retains turnId and uses a new Run when more input needs processing.
@@ -138,25 +148,30 @@ waiting conditions again. Pause and completion compete transactionally; cancella
 
 Input is `{schemaVersion, content[]}`; Message is `{schemaVersion, messageId, role, content[]}`.
 Content supports text/image/audio/video with URL/base64 sources; a URL does not promise upload/access.
-PublicEvent has schemaVersion/eventId/session/threadId/turnId/runId/stepId/sequence/cursor/type/data.
+PublicEvent has schemaVersion/eventId/session/threadId/turnId/runId/stepId/sequence/cursor/occurredAt/type/data.
+occurredAt is the storage transaction timestamp in Unix milliseconds and stays the same during replay.
 runId/stepId are null when inapplicable; task admission does not invent invocation identity, and Step events identify their Run. sequence is a decimal
 string; cursor is opaque and Session-bound. Checkpoint positions, output byte offsets and Hands
 sequences are separate. Public views never expose native checkpoints or reasoning state.
 
 | Operation/fact | Public messages and events |
 | --- | --- |
-| submit | Atomic turn.queued + user message.completed, then started/waits/results/terminal outcome |
+| submit | Atomic turn.queued + user message.completed. AgentScope emits input.applied with the original Message identity when native input enters a checkpoint |
 | steer / inject | signal.accepted + user message.completed; later applied or withdrawn |
-| respond | Same, with interactionId in message data; later interaction.resolved |
+| convert queued to steer | signal.accepted + turn.converted in one transaction; turn.converted is visible to both Turns and carries the relocated message with its original ID |
+| respond | Same, with interactionId in message data; emits confirmation.applied on committed approval consumption and later interaction.resolved |
 | cancel | turn.cancel_requested; queued cancelled in the same transaction, active cancellation verifies real outcome |
+| cancelActiveTurns | turns.cancel_requested records the selected set, then turns.cancel_applied when all selected Turns settle |
+| Session activity | session.activity_changed records running, idle, exhausted recovery, or the outstanding manual interaction IDs |
 | pause / resume | turn.pause_requested, turn.paused, turn.resumed; no user chat message |
 | extension signal | signal.accepted; execution advances only after its waiting condition is satisfied |
 | restore / fork | checkpoint.restored after settled/idle/version/expectedPosition validation |
 
 Public input message ID is `input:` + hash([turnId, requestId, inputKind]) using the current
 DurableJson canonical digest. inputKind is submit/steer/inject/respond and requires requestId
-and Message; respond requires interactionId. Text responses retain their text; other JSON responses
-are represented as JSON text in history. These messages mean admitted: withdrawal retains history,
+and Message; respond requires interactionId. A structured manual tool response
+`{type:"tool_response",error,content[]}` retains its content and reports `toolError` in history.
+Other JSON responses are represented as JSON text. These messages record admission. Withdrawal retains history,
 with signal.withdrawn marking non-application. History reads the backend's public projection,
 not republished native user logs. Event pruning preserves projected messages.
 
@@ -210,6 +225,11 @@ Core event families: session.created/closed; thread.created/closed; turn.*; run.
 signal.accepted/applied/withdrawn; interaction.requested/resolved;
 message.delta/completed; tool.call.arguments/updated/progress; tool.requested/dispatching/progress/result.accepted/result.applied;
 tool.output/output.gap; artifact.published; checkpoint.restored; turn.recovery.
+
+Committed output events report sealed byte ranges or gaps. Clients can read accepted
+pages by calling `toolOutput` with the scoped execution ID, starting at zero and
+following `nextOffset`. Opted-in live `tool.output.delta` preview frames carry Base64
+bytes, call identity, attempt, revision, and offsets. Live frames have no event cursor.
 Application extensions use `x.<namespace>.<name>` and cannot replace core lifecycle facts.
 
 Session/Thread creation and closure emit events within the resource transaction. Creating a Session
@@ -236,8 +256,10 @@ Session authorization. Java uses EventFilter; Thread/Turn shortcuts delegate to 
 operation, with identical local and HTTP behavior.
 
 limit bounds scanned Session events, not matching events. Even an empty selection advances the
-original cursor; highWatermark remains the Session watermark. An empty list is not end-of-stream:
-this page has caught up only when cursor equals highWatermark. Snapshots retain Session sequence/cursor
+original cursor. `scannedSequence` and `highWatermarkSequence` are decimal strings for the
+scanned position and the Session watermark. Replay reaches a captured watermark when the
+scanned sequence reaches or passes it, including on pages empty after filtering.
+Snapshots retain Session sequence/cursor
 and select the matching projection. Turn snapshots exclude sibling Turns. Run snapshots retain their
 Turn's logical state and projection records currently associated with that Run; they are not complete
 historical task snapshots. Select messages, tools, artifacts and interactions by explicit associations
@@ -356,3 +378,11 @@ queues and dependency cycles formed by unfinished delegations.
 The actual child result still enters the parent through Executor query/result handoff and commits its
 application with the parent's checkpoint. Queries reconstruct the relationship from a child's parent or a
 parent tool's child, without process-local handles or platform databases.
+
+`DelegationTarget.detached=true` admits a detached Job on the dedicated child Thread derived
+from the parent execution ID. That execution ID also identifies the Job. The privileged
+Backend operations `job` and `awaitJob` scope reads to the originating Thread. A wait is tied
+to an admitted `await_job` execution and its frozen arguments.
+The storage clock fixes the deadline on the first registration. The child's terminal
+transaction records the wait outcome and the originating Thread's scheduling work together.
+Timeout ends the wait. The child Turn owns the lifecycle of an admitted Job.

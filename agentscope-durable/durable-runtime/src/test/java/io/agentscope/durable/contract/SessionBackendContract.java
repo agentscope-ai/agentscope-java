@@ -26,6 +26,7 @@ import static org.junit.jupiter.api.Assertions.fail;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import io.agentscope.durable.DelegatedJobExecutor;
 import io.agentscope.durable.DelegationExecutor;
 import io.agentscope.durable.DurableException;
 import io.agentscope.durable.DurableJson;
@@ -33,6 +34,7 @@ import io.agentscope.durable.DurableMessages;
 import io.agentscope.durable.DurableProtocol;
 import io.agentscope.durable.DurableRuntime;
 import io.agentscope.durable.DurableTypes.AppliedResult;
+import io.agentscope.durable.DurableTypes.BlockerKind;
 import io.agentscope.durable.DurableTypes.Commit;
 import io.agentscope.durable.DurableTypes.CommitReceipt;
 import io.agentscope.durable.DurableTypes.ControlCommand;
@@ -70,6 +72,9 @@ import io.agentscope.durable.DurableTypes.ThreadSpec;
 import io.agentscope.durable.DurableTypes.TokenUsage;
 import io.agentscope.durable.DurableTypes.ToolCall;
 import io.agentscope.durable.DurableTypes.ToolExecution;
+import io.agentscope.durable.DurableTypes.ToolExecutionStatus;
+import io.agentscope.durable.DurableTypes.ToolOutputView;
+import io.agentscope.durable.DurableTypes.TurnBlocker;
 import io.agentscope.durable.DurableTypes.TurnReceipt;
 import io.agentscope.durable.DurableTypes.TurnStatus;
 import io.agentscope.durable.DurableTypes.WaitCondition;
@@ -79,6 +84,7 @@ import io.agentscope.durable.Executor;
 import io.agentscope.durable.HarnessAdapter;
 import io.agentscope.durable.HarnessContext;
 import io.agentscope.durable.SessionBackend;
+import io.agentscope.durable.SessionBackend.ClaimStatus;
 import io.agentscope.durable.SessionEventClient;
 import io.agentscope.durable.SessionResources;
 import io.agentscope.durable.SessionResources.Operation;
@@ -100,7 +106,9 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Function;
+import java.util.stream.Collectors;
 import java.util.stream.IntStream;
+import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -176,6 +184,10 @@ public abstract class SessionBackendContract {
                                         return store.ready(queue, limit);
                                     }
 
+                                    public List<Work> ready(String queue, String scope, int limit) {
+                                        return store.ready(queue, scope, limit);
+                                    }
+
                                     public List<String> keys(
                                             String prefix, String after, int limit) {
                                         return store.keys(prefix, after, limit);
@@ -184,6 +196,22 @@ public abstract class SessionBackendContract {
         backend.create(
                 new SessionSpec(
                         key, new ThreadBinding("test", "v1", "1"), DurableJson.value(null)));
+    }
+
+    @Test
+    void priorSessionLayoutIsRejectedWithoutChangingStoredData() {
+        String scope = key.storageKey();
+        store.transaction(
+                scope,
+                tx -> {
+                    var data = (ObjectNode) tx.get("");
+                    data.put("format", 15);
+                    tx.put("", data);
+                    return null;
+                });
+        code(DurableException.Code.INCOMPATIBLE, () -> backend.session(key));
+        int format = store.transaction(scope, tx -> tx.get("").path("format").asInt());
+        assertEquals(15, format);
     }
 
     @Test
@@ -1259,6 +1287,17 @@ public abstract class SessionBackendContract {
         var all = backend.ready(List.of(HarnessSelector.all("test"), selected), 100);
         assertEquals(13, all.size());
         assertEquals(13, all.stream().distinct().count());
+        assertEquals(
+                List.of(new ThreadKey(key, "main")),
+                backend.ready(key, List.of(HarnessSelector.all("test")), 1).stream()
+                        .map(ThreadSpec::key)
+                        .toList());
+        assertTrue(
+                backend.ready(
+                                new SessionKey(key.namespace(), "missing"),
+                                List.of(HarnessSelector.all("test")),
+                                1)
+                        .isEmpty());
     }
 
     @Test
@@ -1466,6 +1505,36 @@ public abstract class SessionBackendContract {
 
     private TurnReceipt submit() {
         return backend.submit(new ThreadKey(key, "main"), "request", DurableJson.value("hello"));
+    }
+
+    @Test
+    void leaseRenewalsKeepTheRecoveryDispatchIdentityAndMoveItsDeadline() {
+        Assumptions.assumeTrue(backend.localStorage().isPresent());
+        var thread = new ThreadKey(key, "main");
+        var turn = submit();
+        var dispatch = backend.pendingDispatch(thread).orElseThrow();
+        var duration = Duration.ofSeconds(1);
+        var lease = backend.claim(dispatch, "first", duration).orElseThrow();
+        clock.addAndGet(500);
+        backend.renew(lease, duration);
+        backend.frame(lease);
+
+        clock.set(2000);
+        assertTrue(backend.pendingDispatch(thread).isEmpty());
+        clock.set(2500);
+        var recovered = backend.pendingDispatch(thread).orElseThrow();
+        assertEquals(turn.turnId(), recovered.turnId());
+        assertEquals(dispatch.generation() + 1, recovered.generation());
+        assertEquals(
+                ClaimStatus.STALE_DISPATCH,
+                backend.claimOutcome(dispatch, "second", duration).status());
+        var takeover = backend.claim(recovered, "second", duration).orElseThrow();
+        assertEquals(lease.epoch() + 1, takeover.epoch());
+        assertEquals(
+                1,
+                backend.events(key, null, 100).events().stream()
+                        .filter(event -> event.type().equals("turn.started"))
+                        .count());
     }
 
     @Test
@@ -1679,6 +1748,10 @@ public abstract class SessionBackendContract {
 
     @Test
     protected void claimRetryRecoversSameLeaseAndReadyIndexTracksWaits() {
+        var thread = new ThreadKey(key, "main");
+        var duration = Duration.ofSeconds(30);
+        assertEquals(
+                ClaimStatus.NO_WORK, backend.claimOutcome(thread, "runner", duration).status());
         submit();
         assertEquals(
                 List.of(new ThreadKey(key, "main")),
@@ -1686,14 +1759,25 @@ public abstract class SessionBackendContract {
                         .map(ThreadSpec::key)
                         .toList());
         assertTrue(backend.ready(List.of(HarnessSelector.all("unserved")), 10).isEmpty());
-        var lease = claim();
+        clock.addAndGet(12);
+        var initial = backend.claimOutcome(thread, "runner", duration);
+        assertEquals(ClaimStatus.ACQUIRED, initial.status());
+        assertEquals(12L, initial.discoveryDelayMillis());
+        var retry = backend.claimOutcome(thread, "runner", duration);
+        assertEquals(ClaimStatus.REUSED, retry.status());
+        assertEquals(initial.lease(), retry.lease());
+        assertNull(retry.discoveryDelayMillis());
         assertEquals(
-                lease,
-                backend.claim(new ThreadKey(key, "main"), lease.owner(), Duration.ofSeconds(30))
-                        .orElseThrow());
-        assertTrue(
-                backend.claim(new ThreadKey(key, "main"), "competitor", Duration.ofSeconds(30))
-                        .isEmpty());
+                ClaimStatus.LEASE_HELD,
+                backend.claimOutcome(thread, "competitor", duration).status());
+        backend.release(initial.lease(), Duration.ofMillis(30));
+        assertEquals(
+                ClaimStatus.NOT_DUE, backend.claimOutcome(thread, "runner", duration).status());
+        clock.addAndGet(37);
+        var next = backend.claimOutcome(thread, "runner", duration);
+        assertEquals(ClaimStatus.ACQUIRED, next.status());
+        assertEquals(7L, next.discoveryDelayMillis());
+        var lease = next.ownership().orElseThrow();
         var frame = backend.frame(lease);
         backend.commit(
                 lease,
@@ -1710,10 +1794,18 @@ public abstract class SessionBackendContract {
                         null,
                         null));
         assertTrue(backend.ready(List.of(HarnessSelector.all("test")), 10).isEmpty());
+        assertEquals(
+                ClaimStatus.WAITING, backend.claimOutcome(thread, "runner", duration).status());
+        var progress = backend.turnProgress(thread, lease.turnId());
+        assertFalse(progress.leaseHeld());
+        assertEquals(
+                List.of(new TurnBlocker(BlockerKind.SIGNAL, "approval", null)),
+                progress.blockers());
         backend.signal(
                 new ThreadKey(key, "main"),
                 lease.turnId(),
                 new Signal("a", "approval", DurableJson.value(true)));
+        assertTrue(backend.turnProgress(thread, lease.turnId()).blockers().isEmpty());
         assertEquals(1, backend.ready(List.of(HarnessSelector.all("test")), 10).size());
     }
 
@@ -2012,9 +2104,29 @@ public abstract class SessionBackendContract {
                 backend.events(key, null, 1000).events().stream()
                         .filter(event -> event.type().startsWith("tool.output"))
                         .toList();
-        assertEquals(2, output.size());
-        assertEquals("tool.output.gap", output.get(1).type());
+        assertEquals(1, output.size());
+        assertEquals("tool.output.gap", output.get(0).type());
         output.forEach(event -> DurableProtocol.validate("event", event));
+        assertFalse(output.get(0).data().path("output").has("data"));
+        backend.pruneEvents(key, backend.snapshot(key).cursor());
+        var view =
+                backend.toolExecution(
+                        execution.thread(), execution.turnId(), null, execution.executionId());
+        assertEquals(ToolExecutionStatus.SUCCEEDED, view.status());
+        assertEquals(new ToolOutputView(10, true, true), view.output());
+        assertFalse(view.applied());
+        assertEquals(
+                view,
+                backend.toolExecution(
+                        execution.thread(), execution.turnId(), execution.call().callId(), null));
+        assertEquals(
+                second.output(),
+                backend.toolOutput(
+                        execution.thread(), execution.turnId(), execution.executionId(), 0));
+        assertEquals(
+                gap.output(),
+                backend.toolOutput(
+                        execution.thread(), execution.turnId(), execution.executionId(), 3));
     }
 
     private Commit commit(
@@ -2116,6 +2228,124 @@ public abstract class SessionBackendContract {
         var request = backend.frame(lease).tools().get(0).request();
         backend.beginDispatch(lease, request.executionId());
         return new ParentExecution(lease, request);
+    }
+
+    @Test
+    protected void detachedJobsRetainTheirReceiptAndBoundWaitsByTheOriginalDeadline() {
+        var owner = new ThreadKey(key, "main");
+        var jobs =
+                new DelegatedJobExecutor(
+                        backend,
+                        request ->
+                                new DelegationTarget(
+                                        new ThreadSpec(
+                                                DelegationExecutor.childThread(request),
+                                                new ThreadBinding("child", "v1", "1")),
+                                        DurableJson.value("child input")));
+        backend.submit(owner, "detach-job", DurableJson.value("parent input"));
+        var starting = backend.claim(owner, "first", Duration.ofSeconds(10)).orElseThrow();
+        backend.commit(
+                starting,
+                commit(
+                        backend.frame(starting),
+                        "start-intent",
+                        TurnStatus.RUNNING,
+                        List.of(
+                                new ToolCall(
+                                        "start",
+                                        "jobs",
+                                        DelegatedJobExecutor.START,
+                                        DurableJson.value(Map.of()))),
+                        List.of(),
+                        List.of()));
+        var start = backend.frame(starting).tools().get(0).request();
+        backend.beginDispatch(starting, start.executionId());
+        var receipt = jobs.startExecution(start);
+        assertEquals(ExecutionState.SUCCEEDED, receipt.state());
+        String jobId = receipt.result().required("jobId").asText();
+        var started = backend.job(owner, jobId);
+        assertEquals(TurnStatus.QUEUED, started.status());
+        var replacement =
+                new DelegatedJobExecutor(
+                        backend,
+                        request -> {
+                            throw new AssertionError("Job recovery must reuse the admitted child");
+                        });
+        assertEquals(receipt, replacement.startExecution(start));
+        backend.cancel(owner, starting.turnId(), "cancel-parent");
+        assertEquals(receipt, replacement.cancel(start, jobId));
+        backend.acceptResult(owner, start.executionId(), receipt);
+        backend.commit(
+                starting,
+                commit(
+                        backend.frame(starting),
+                        "cancelled-parent",
+                        TurnStatus.CANCELLED,
+                        List.of(),
+                        List.of(start.executionId()),
+                        List.of()));
+        assertEquals(TurnStatus.QUEUED, backend.job(owner, jobId).status());
+        code(DurableException.Code.NOT_FOUND, () -> backend.job(started.child().thread(), jobId));
+
+        backend.submit(owner, "wait-on-job", DurableJson.value("join"));
+        var waiting = backend.claim(owner, "second", Duration.ofSeconds(10)).orElseThrow();
+        backend.commit(
+                waiting,
+                commit(
+                        backend.frame(waiting),
+                        "wait-intents",
+                        TurnStatus.RUNNING,
+                        List.of(
+                                new ToolCall(
+                                        "short",
+                                        "jobs",
+                                        DelegatedJobExecutor.AWAIT,
+                                        DurableJson.value(
+                                                Map.of("jobId", jobId, "timeoutMillis", 50))),
+                                new ToolCall(
+                                        "long",
+                                        "jobs",
+                                        DelegatedJobExecutor.AWAIT,
+                                        DurableJson.value(
+                                                Map.of("jobId", jobId, "timeoutMillis", 200)))),
+                        List.of(),
+                        List.of()));
+        var waits =
+                backend.frame(waiting).tools().stream()
+                        .map(ToolExecution::request)
+                        .collect(
+                                Collectors.toMap(
+                                        request -> request.call().callId(), request -> request));
+        var shortWait = waits.get("short");
+        var longWait = waits.get("long");
+        for (var wait : waits.values()) {
+            backend.beginDispatch(waiting, wait.executionId());
+            var pending = jobs.startExecution(wait);
+            assertEquals(ExecutionState.RUNNING, pending.state());
+            backend.acceptResult(owner, wait.executionId(), pending);
+        }
+        backend.release(waiting, Duration.ZERO);
+        assertTrue(backend.claim(owner, "before-deadline", Duration.ofSeconds(10)).isEmpty());
+        clock.set(1049);
+        assertTrue(backend.claim(owner, "too-early", Duration.ofSeconds(10)).isEmpty());
+        assertEquals(ExecutionState.RUNNING, replacement.query(shortWait, jobId).state());
+        clock.set(1050);
+        waiting = backend.claim(owner, "due", Duration.ofSeconds(10)).orElseThrow();
+        var timeout = replacement.query(shortWait, jobId);
+        assertEquals(ExecutionState.FAILED, timeout.state());
+        assertEquals("Job wait timed out", timeout.error());
+        backend.acceptResult(owner, shortWait.executionId(), timeout);
+        backend.release(waiting, Duration.ZERO);
+        assertTrue(backend.claim(owner, "while-job-runs", Duration.ofSeconds(10)).isEmpty());
+        assertEquals(TurnStatus.QUEUED, backend.job(owner, jobId).status());
+        clock.set(1199);
+        backend.cancel(started.child().thread(), started.child().turnId(), "cancel-child");
+        var woken = backend.claim(owner, "child-completed", Duration.ofSeconds(10)).orElseThrow();
+        backend.release(woken, Duration.ZERO);
+        clock.set(1300);
+        assertEquals(ExecutionState.CANCELLED, replacement.query(longWait, jobId).state());
+        assertEquals(timeout, replacement.query(shortWait, jobId));
+        assertEquals(receipt, replacement.query(start, jobId));
     }
 
     @Test
@@ -2518,6 +2748,53 @@ public abstract class SessionBackendContract {
         assertEquals(
                 TurnStatus.SUCCEEDED,
                 backend.turn(new ThreadKey(key, "main"), turn.turnId()).status());
+    }
+
+    @Test
+    protected void cancellationAndCompletionPreserveTheOutcomeOfTheWinningDecision() {
+        var thread = new ThreadKey(key, "main");
+        var first = submit();
+        var owner = claim();
+        backend.cancel(thread, first.turnId(), "cancel-first");
+        var late =
+                commit(
+                        backend.frame(owner),
+                        "late-completion",
+                        TurnStatus.SUCCEEDED,
+                        List.of(),
+                        List.of(),
+                        List.of());
+        var receipt = backend.commit(owner, late);
+        assertEquals(receipt, backend.commit(owner, late));
+        var cancelled = backend.turn(thread, first.turnId());
+        assertEquals(TurnStatus.CANCELLED, cancelled.status());
+        assertTrue(cancelled.output().isNull());
+        assertEquals(
+                List.of("turn.cancelled"),
+                backend.events(key, null, 100).events().stream()
+                        .filter(event -> first.turnId().equals(event.turnId()))
+                        .map(PublicEvent::type)
+                        .filter(
+                                type ->
+                                        type.equals("turn.cancelled")
+                                                || type.equals("turn.succeeded"))
+                        .toList());
+
+        var second = backend.submit(thread, "second", DurableJson.value("next"));
+        var next = claim();
+        backend.commit(
+                next,
+                commit(
+                        backend.frame(next),
+                        "first-completion",
+                        TurnStatus.SUCCEEDED,
+                        List.of(),
+                        List.of(),
+                        List.of()));
+        backend.cancel(thread, second.turnId(), "late-cancel");
+        var completed = backend.turn(thread, second.turnId());
+        assertEquals(TurnStatus.SUCCEEDED, completed.status());
+        assertEquals("done", completed.output().asText());
     }
 
     @Test
@@ -3159,6 +3436,84 @@ public abstract class SessionBackendContract {
         assertEquals(1, types.stream().filter("tool.result.accepted"::equals).count());
         assertEquals(1, types.stream().filter("tool.result.applied"::equals).count());
         assertTrue(types.indexOf("tool.result.accepted") < types.indexOf("tool.result.applied"));
+    }
+
+    @Test
+    protected void nativeToolReconciliationIsHostOnlyAndRejectionIsFenced() {
+        var thread = new ThreadKey(key, "main");
+        var turn = submit();
+        var waitingKey = WaitCondition.NATIVE_TOOL_RECONCILIATION;
+        var proof = new Signal("proof", waitingKey, DurableJson.value("verified"));
+        code(DurableException.Code.CONFLICT, () -> backend.signal(thread, turn.turnId(), proof));
+        var initial = claim();
+        var frame = backend.frame(initial);
+        backend.commit(
+                initial,
+                new Commit(
+                        "await-proof",
+                        frame.turn().revision(),
+                        frame.checkpoint(),
+                        List.of(),
+                        List.of(),
+                        List.of(),
+                        List.of(),
+                        TurnStatus.WAITING,
+                        new WaitCondition(waitingKey, 0),
+                        null,
+                        null));
+        code(
+                DurableException.Code.INVALID,
+                () ->
+                        backend.control(
+                                thread,
+                                new ControlCommand(
+                                        turn.turnId(),
+                                        "user-proof",
+                                        ControlKind.SIGNAL,
+                                        waitingKey,
+                                        proof.value(),
+                                        0)));
+        backend.signal(thread, turn.turnId(), proof);
+        backend.signal(thread, turn.turnId(), proof);
+        code(
+                DurableException.Code.CONFLICT,
+                () ->
+                        backend.signal(
+                                thread,
+                                turn.turnId(),
+                                new Signal("other-proof", waitingKey, proof.value())));
+        code(
+                DurableException.Code.INVALID,
+                () ->
+                        backend.control(
+                                thread,
+                                new ControlCommand(
+                                        turn.turnId(),
+                                        "user-withdraw",
+                                        ControlKind.WITHDRAW,
+                                        proof.id(),
+                                        null,
+                                        0)));
+        code(
+                DurableException.Code.INVALID,
+                () ->
+                        backend.withdraw(
+                                thread, turn.turnId(), proof.id(), "withdraw-without-lease"));
+        var holder = claim();
+        clock.addAndGet(1_001);
+        var replacement = backend.claim(thread, "replacement", Duration.ofSeconds(1)).orElseThrow();
+        code(
+                DurableException.Code.FENCED,
+                () -> backend.rejectNativeToolReconciliation(holder, proof.id()));
+        assertEquals(List.of(proof), backend.frame(replacement).signals());
+        backend.rejectNativeToolReconciliation(replacement, proof.id());
+        backend.rejectNativeToolReconciliation(replacement, proof.id());
+        assertTrue(backend.frame(replacement).signals().isEmpty());
+        assertEquals(
+                1,
+                backend.events(key, null, 100).events().stream()
+                        .filter(event -> event.type().equals("signal.withdrawn"))
+                        .count());
     }
 
     @Test

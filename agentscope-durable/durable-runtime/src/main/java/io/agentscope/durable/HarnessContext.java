@@ -23,10 +23,12 @@ import io.agentscope.durable.DurableTypes.Lease;
 import io.agentscope.durable.DurableTypes.LiveEvent;
 import io.agentscope.durable.DurableTypes.LiveEventInput;
 import io.agentscope.durable.DurableTypes.RunView;
+import io.agentscope.durable.DurableTypes.Signal;
 import java.util.List;
 import java.util.Objects;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.function.BooleanSupplier;
 
 /** Invocation-scoped fenced access, never stored in a reusable Agent field. */
 public final class HarnessContext {
@@ -34,6 +36,7 @@ public final class HarnessContext {
     private final Lease lease;
     private final AtomicBoolean stopped;
     private final LiveEvents liveEvents;
+    private final BooleanSupplier draining;
     private final String invocationRequest = UUID.randomUUID().toString();
     private RunView invocation;
 
@@ -43,14 +46,29 @@ public final class HarnessContext {
 
     HarnessContext(
             SessionBackend backend, Lease lease, AtomicBoolean stopped, LiveEvents liveEvents) {
+        this(backend, lease, stopped, liveEvents, () -> false);
+    }
+
+    HarnessContext(
+            SessionBackend backend,
+            Lease lease,
+            AtomicBoolean stopped,
+            LiveEvents liveEvents,
+            BooleanSupplier draining) {
         this.backend = Objects.requireNonNull(backend);
         this.lease = Objects.requireNonNull(lease);
         this.stopped = Objects.requireNonNull(stopped);
         this.liveEvents = Objects.requireNonNull(liveEvents);
+        this.draining = Objects.requireNonNull(draining);
     }
 
     public Lease lease() {
         return lease;
+    }
+
+    /** The host is yielding ownership. Finish a durable phase and return without pausing the Turn. */
+    public boolean draining() {
+        return draining.getAsBoolean();
     }
 
     /** Prepare immediately before one native call; retries keep the invocation's start identity. */
@@ -75,6 +93,12 @@ public final class HarnessContext {
     public void sealModelReply(DurableTypes.Signal signal) {
         check();
         backend.signal(lease.thread(), lease.turnId(), signal);
+    }
+
+    /** Discard stale host evidence without marking it as applied. */
+    public void rejectNativeToolReconciliation(Signal signal) {
+        check();
+        backend.rejectNativeToolReconciliation(lease, signal.id());
     }
 
     /** Optional change hints; callers must still repair lost hints by reading durable state. */

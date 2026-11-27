@@ -39,6 +39,7 @@ import io.agentscope.durable.SessionStreamEvent;
 import io.agentscope.durable.agentscope.AgentScopeAdapter;
 import io.agentscope.extensions.durable.jdbc.LocalBackend;
 import io.agentscope.extensions.durable.rocketmq.RocketMqRemoteExecutor;
+import io.agentscope.extensions.durable.rocketmq.RocketMqTurnScheduler;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
@@ -75,7 +76,8 @@ public final class SandboxBrainExample implements ApplicationRunner {
                         .clientConfiguration(config)
                         .namespace(properties.getMqNamespace())
                         .build();
-        try (var backend = LocalBackend.open(directory);
+        try (var scheduling = RocketMqTurnScheduler.create(config, properties.getMqNamespace());
+                var backend = LocalBackend.open(directory).withWakeups(scheduling);
                 var runtime = runtime(backend, remote)) {
             var key = new SessionKey(properties.getNamespace(), properties.getSessionId());
             var session = runtime.createSession(key, HARNESS);

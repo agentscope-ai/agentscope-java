@@ -15,6 +15,7 @@
  */
 package io.agentscope.durable;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import java.util.LinkedHashMap;
@@ -130,10 +131,11 @@ public final class DurableTypes {
         CANCELLING,
         SUCCEEDED,
         FAILED,
-        CANCELLED;
+        CANCELLED,
+        CONVERTED;
 
         public boolean terminal() {
-            return this == SUCCEEDED || this == FAILED || this == CANCELLED;
+            return this == SUCCEEDED || this == FAILED || this == CANCELLED || this == CONVERTED;
         }
     }
 
@@ -193,12 +195,57 @@ public final class DurableTypes {
             String turnId,
             TurnStatus status,
             long revision,
+            long inputRevision,
+            String inputMessageId,
             boolean cancellationRequested,
             JsonNode output,
             String error,
             WaitCondition waiting,
             RecoveryView recovery,
             DelegationParent parent) {}
+
+    public enum BlockerKind {
+        QUEUE_HEAD,
+        PAUSED,
+        APPROVAL,
+        MANUAL_TOOL_RESULT,
+        TOOL_DISPATCH,
+        TOOL_EXECUTION,
+        TOOL_OUTCOME_UNCONFIRMED,
+        NATIVE_TOOL_RECONCILIATION,
+        JOB,
+        MODEL_REPLY,
+        SIGNAL,
+        RETRY_BACKOFF
+    }
+
+    public record TurnBlocker(BlockerKind kind, String targetId, Long readyAt) {}
+
+    /** One consistent read of execution state and published acceptance facts. */
+    public record TurnProgress(
+            TurnView turn,
+            String cursor,
+            boolean leaseHeld,
+            List<TurnBlocker> blockers,
+            List<VerificationView> verifications) {
+        public TurnProgress {
+            blockers = List.copyOf(blockers);
+            verifications = List.copyOf(verifications);
+        }
+    }
+
+    public record VerificationView(
+            String verificationId,
+            String requirementId,
+            String actionId,
+            String verifierId,
+            String outcome,
+            String taskId,
+            long contractVersion,
+            String subjectVersion,
+            long recordedAt) {
+        public static final String EVENT_TYPE = "task.verification.completed";
+    }
 
     public record SessionPage(List<SessionView> items, String cursor) {}
 
@@ -390,6 +437,8 @@ public final class DurableTypes {
 
     public enum ControlKind {
         STEER,
+        STEER_QUEUED,
+        EDIT_QUEUED,
         INJECT,
         WITHDRAW,
         CANCEL,
@@ -416,7 +465,43 @@ public final class DurableTypes {
 
     /** A stable admission receipt; later application/settlement is observed through events/state. */
     public record CommandReceipt(
-            String requestId, String turnId, String operation, String status, String cursor) {}
+            String requestId,
+            String turnId,
+            String operation,
+            String status,
+            String cursor,
+            @JsonInclude(JsonInclude.Include.NON_NULL) String sourceTurnId,
+            @JsonInclude(JsonInclude.Include.NON_NULL) String messageId,
+            @JsonInclude(JsonInclude.Include.NON_NULL) Long inputRevision,
+            @JsonInclude(JsonInclude.Include.NON_NULL) Long acceptedAt) {
+        public CommandReceipt(
+                String requestId, String turnId, String operation, String status, String cursor) {
+            this(requestId, turnId, operation, status, cursor, null, null, null, null);
+        }
+    }
+
+    /** The started Turns selected by the transaction that accepted a cancellation request. */
+    public record ActiveTurnCancellation(
+            String requestId, String threadId, List<CancelTarget> targets, long acceptedAt) {
+        public ActiveTurnCancellation {
+            targets = List.copyOf(targets);
+        }
+    }
+
+    public record CancelTarget(String threadId, String turnId) {}
+
+    public enum SessionPhase {
+        RUNNING,
+        IDLE,
+        REQUIRES_ACTION,
+        RETRIES_EXHAUSTED
+    }
+
+    public record SessionActivity(SessionPhase phase, List<String> interactionIds) {
+        public SessionActivity {
+            interactionIds = List.copyOf(interactionIds);
+        }
+    }
 
     public record CheckpointRestore(
             ThreadKey source,
@@ -431,17 +516,38 @@ public final class DurableTypes {
         }
     }
 
-    public record WaitCondition(String key, long deadline) {
+    public record WaitCondition(
+            String key,
+            long deadline,
+            @JsonInclude(JsonInclude.Include.NON_EMPTY) List<String> targets) {
+        /** Host-only evidence resolves a native tool whose outcome is unknown. */
+        public static final String NATIVE_TOOL_RECONCILIATION = "native-tool-reconciliation";
+
+        public WaitCondition(String key, long deadline) {
+            this(key, deadline, List.of());
+        }
+
         public WaitCondition {
             DurableJson.text(key, "wait key");
             if (deadline < 0) throw new IllegalArgumentException("Negative deadline");
+            targets = targets == null ? List.of() : List.copyOf(targets);
+            targets.forEach(target -> DurableJson.text(target, "wait target"));
         }
     }
 
-    public record Signal(String id, String key, JsonNode value) {
+    public record Signal(
+            String id,
+            String key,
+            JsonNode value,
+            @JsonInclude(JsonInclude.Include.NON_NULL) String messageId) {
+        public Signal(String id, String key, JsonNode value) {
+            this(id, key, value, null);
+        }
+
         public Signal {
             DurableJson.text(id, "signal id");
             DurableJson.text(key, "signal key");
+            if (messageId != null) DurableJson.text(messageId, "messageId");
             value = DurableJson.copy(value);
         }
     }
@@ -506,11 +612,12 @@ public final class DurableTypes {
         SUCCEEDED,
         FAILED,
         CANCELLED,
+        DENIED,
         NOT_FOUND,
         UNKNOWN;
 
         public boolean terminal() {
-            return this == SUCCEEDED || this == FAILED || this == CANCELLED;
+            return this == SUCCEEDED || this == FAILED || this == CANCELLED || this == DENIED;
         }
     }
 
@@ -538,6 +645,41 @@ public final class DurableTypes {
             RunStepRef appliedAt,
             DelegationLink delegation) {}
 
+    public enum ToolExecutionStatus {
+        GENERATING_ARGUMENTS,
+        REQUESTED,
+        WAITING,
+        DISPATCHED,
+        RUNNING,
+        SUCCEEDED,
+        FAILED,
+        CANCELLED,
+        DENIED,
+        UNKNOWN
+    }
+
+    /** Committed tool state visible within one Turn. Native calls have no external execution ID. */
+    public record ToolExecutionView(
+            String callId,
+            String executionId,
+            String name,
+            ToolExecutionStatus status,
+            boolean applied,
+            RunStepRef origin,
+            RunStepRef appliedAt,
+            String reason,
+            long updatedAt,
+            Executor.Capabilities executorCapabilities,
+            JsonNode progress,
+            ToolOutputView output) {
+        public ToolExecutionView {
+            progress = DurableJson.copy(progress);
+        }
+    }
+
+    /** Output ranges up to nextOffset may include durable gaps. */
+    public record ToolOutputView(long nextOffset, boolean sealed, boolean hasGaps) {}
+
     public record DelegationLink(ThreadKey thread, String turnId) {
         public DelegationLink {
             Objects.requireNonNull(thread);
@@ -555,7 +697,11 @@ public final class DurableTypes {
     }
 
     /** Frozen child binding and input; naming an existing Thread explicitly reuses its context. */
-    public record DelegationTarget(ThreadSpec child, JsonNode input) {
+    public record DelegationTarget(ThreadSpec child, JsonNode input, boolean detached) {
+        public DelegationTarget(ThreadSpec child, JsonNode input) {
+            this(child, input, false);
+        }
+
         public DelegationTarget {
             Objects.requireNonNull(child);
             input = DurableJson.copy(input);
@@ -565,6 +711,14 @@ public final class DurableTypes {
     /** A cancellation before admission has no child; it never creates a runnable task. */
     public record DelegationView(
             ExecutionRequest parent, DelegationLink child, boolean cancelRequested) {}
+
+    /** A job's identity is the execution ID of its admission call. */
+    public record JobView(
+            String jobId, DelegationLink child, TurnStatus status, JsonNode output, String error) {
+        public JobView {
+            output = DurableJson.copy(output);
+        }
+    }
 
     /** Result application and its checkpoint are committed together, possibly in a later Run. */
     public record AppliedResult(String executionId, RunStepRef appliedAt) {
@@ -594,6 +748,18 @@ public final class DurableTypes {
     public record OutputPage(
             long offset, long nextOffset, String data, long size, boolean terminal, String gap) {}
 
+    /** A best-effort byte range for presentation. Contents are Base64 encoded. */
+    public record ToolOutputDelta(
+            String callId,
+            @JsonInclude(JsonInclude.Include.NON_NULL) String executionId,
+            long attempt,
+            long revision,
+            long offset,
+            long nextOffset,
+            String data) {
+        public static final String TYPE = "tool.output.delta";
+    }
+
     public record EventInput(
             String eventId, String type, JsonNode data, String runId, String stepId) {
         public EventInput(String eventId, String type, JsonNode data) {
@@ -622,8 +788,13 @@ public final class DurableTypes {
             String stepId,
             String sequence,
             String cursor,
+            long occurredAt,
             String type,
-            JsonNode data) {}
+            JsonNode data) {
+        public PublicEvent {
+            if (occurredAt < 0) throw new IllegalArgumentException("Negative event timestamp");
+        }
+    }
 
     /**
      * Best-effort live presentation signal. Live events have no durable sequence or cursor and are
@@ -675,7 +846,12 @@ public final class DurableTypes {
         }
     }
 
-    public record EventPage(List<PublicEvent> events, String cursor, String highWatermark) {}
+    public record EventPage(
+            List<PublicEvent> events,
+            String cursor,
+            String highWatermark,
+            String scannedSequence,
+            String highWatermarkSequence) {}
 
     /** A selection within one Session's committed stream, retaining its original cursor. */
     public record EventFilter(String threadId, String turnId, String runId) {
@@ -693,7 +869,14 @@ public final class DurableTypes {
         }
 
         public boolean matches(PublicEvent event) {
-            return matches(event.threadId(), event.turnId(), event.runId());
+            return matches(event.threadId(), event.turnId(), event.runId())
+                    || (turnId != null
+                            && runId == null
+                            && "turn.converted".equals(event.type())
+                            && matches(
+                                    event.threadId(),
+                                    event.data().path("message").path("turnId").asText(null),
+                                    null));
         }
 
         public boolean matches(LiveEvent event) {
@@ -710,7 +893,9 @@ public final class DurableTypes {
             return new EventPage(
                     page.events().stream().filter(this::matches).toList(),
                     page.cursor(),
-                    page.highWatermark());
+                    page.highWatermark(),
+                    page.scannedSequence(),
+                    page.highWatermarkSequence());
         }
 
         Snapshot select(Snapshot snapshot) {
@@ -857,6 +1042,7 @@ public final class DurableTypes {
             output = DurableJson.copy(output);
             if (expectedRevision < 0
                     || status == TurnStatus.QUEUED
+                    || status == TurnStatus.CONVERTED
                     || status == TurnStatus.PAUSING
                     || status == TurnStatus.CANCELLING)
                 throw new IllegalArgumentException("Invalid commit revision/status");

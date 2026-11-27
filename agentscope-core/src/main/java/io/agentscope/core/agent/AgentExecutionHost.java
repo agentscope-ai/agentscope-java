@@ -16,7 +16,11 @@
 package io.agentscope.core.agent;
 
 import io.agentscope.core.message.Msg;
+import io.agentscope.core.message.ToolResultBlock;
+import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.state.AgentState;
+import java.util.List;
+import java.util.Set;
 import java.util.function.Supplier;
 import reactor.core.publisher.Mono;
 
@@ -47,6 +51,26 @@ public interface AgentExecutionHost {
     /** Runs before a new phase starts; input applied at REASONING enters the next model context. */
     default Mono<Void> beforeBoundary(Boundary boundary, RuntimeContext context, AgentState state) {
         return Mono.empty();
+    }
+
+    /** Tool arguments and additional constraints prepared before native permission evaluation. */
+    record ToolPlan(List<ToolUseBlock> calls, Set<String> confirm, Set<String> denied) {
+        public ToolPlan {
+            calls = List.copyOf(calls);
+            confirm = Set.copyOf(confirm);
+            denied = Set.copyOf(denied);
+        }
+    }
+
+    default Mono<ToolPlan> prepareTools(
+            RuntimeContext context, AgentState state, List<ToolUseBlock> granted) {
+        return Mono.just(new ToolPlan(granted, Set.of(), Set.of()));
+    }
+
+    /** The result that should enter the native conversation after execution. */
+    default Mono<ToolResultBlock> normalizeToolResult(
+            RuntimeContext context, ToolUseBlock call, ToolResultBlock result) {
+        return Mono.just(result);
     }
 
     /** A previously produced reply whose finalization must resume, or null for ordinary execution. */

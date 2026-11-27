@@ -28,6 +28,7 @@ import io.agentscope.durable.DurableJson;
 import io.agentscope.durable.DurableProtocol;
 import io.agentscope.durable.DurableProtocol.Endpoint;
 import io.agentscope.durable.DurableRuntime;
+import io.agentscope.durable.DurableTypes.AppliedResult;
 import io.agentscope.durable.DurableTypes.Commit;
 import io.agentscope.durable.DurableTypes.DelegationTarget;
 import io.agentscope.durable.DurableTypes.EventInput;
@@ -35,14 +36,20 @@ import io.agentscope.durable.DurableTypes.ExecutionRequest;
 import io.agentscope.durable.DurableTypes.ExecutionResult;
 import io.agentscope.durable.DurableTypes.ExecutionState;
 import io.agentscope.durable.DurableTypes.LiveEvent;
+import io.agentscope.durable.DurableTypes.OutputPage;
 import io.agentscope.durable.DurableTypes.SessionKey;
 import io.agentscope.durable.DurableTypes.SessionSpec;
 import io.agentscope.durable.DurableTypes.ThreadBinding;
 import io.agentscope.durable.DurableTypes.ThreadKey;
 import io.agentscope.durable.DurableTypes.ThreadSpec;
 import io.agentscope.durable.DurableTypes.ToolCall;
+import io.agentscope.durable.DurableTypes.ToolExecutionStatus;
+import io.agentscope.durable.DurableTypes.ToolOutputDelta;
+import io.agentscope.durable.DurableTypes.ToolOutputView;
 import io.agentscope.durable.DurableTypes.TurnStatus;
+import io.agentscope.durable.ExecutionMessages;
 import io.agentscope.durable.Executor;
+import io.agentscope.durable.LiveEvents;
 import io.agentscope.durable.SessionBackend;
 import io.agentscope.durable.SessionEventClient;
 import io.agentscope.durable.TransactionalSessionBackend;
@@ -60,17 +67,25 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
+import java.time.Clock;
 import java.time.Duration;
+import java.time.Instant;
+import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Base64;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.Consumer;
+import javax.crypto.Mac;
+import javax.crypto.spec.SecretKeySpec;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -85,6 +100,61 @@ class DurableHttpTest {
     HttpSessionBackend remote;
     URI base;
     SessionKey key = new SessionKey("tenant", "session");
+
+    @Test
+    void webhookRetriesKeepTheSameScopedIdentityAndSignTheExactPayload() throws Exception {
+        record Delivery(String id, String timestamp, String signature, String body) {}
+        var deliveries = new LinkedBlockingQueue<Delivery>();
+        var attempts = new AtomicInteger();
+        server.createContext(
+                "/webhook",
+                exchange -> {
+                    try (exchange) {
+                        var headers = exchange.getRequestHeaders();
+                        deliveries.add(
+                                new Delivery(
+                                        headers.getFirst("webhook-id"),
+                                        headers.getFirst("webhook-timestamp"),
+                                        headers.getFirst("webhook-signature"),
+                                        new String(
+                                                exchange.getRequestBody().readAllBytes(),
+                                                StandardCharsets.UTF_8)));
+                        exchange.sendResponseHeaders(
+                                attempts.incrementAndGet() == 1 ? 503 : 204, -1);
+                    }
+                });
+        byte[] secret = new byte[32];
+        var now = Instant.parse("2026-11-27T00:00:00Z");
+        var publisher =
+                new DurableWebhookPublisher(
+                        base.resolve("/webhook"),
+                        secret,
+                        Duration.ofSeconds(2),
+                        Clock.fixed(now, ZoneOffset.UTC));
+        var event = apiRuntime.getSession(key).listEvents(null, 10).events().get(0);
+        assertEquals(
+                DurableException.Code.UNAVAILABLE,
+                assertThrows(DurableException.class, () -> publisher.accept(event)).code());
+        publisher.accept(event);
+        var first = deliveries.remove();
+        assertEquals(first, deliveries.remove());
+        assertEquals(Long.toString(now.getEpochSecond()), first.timestamp());
+        var notification = DurableJson.parse(first.body());
+        DurableProtocol.validate("webhookNotification", notification);
+        assertEquals(event.eventId(), notification.path("eventId").asText());
+        assertEquals(event.cursor(), notification.path("cursor").asText());
+        assertEquals(DurableJson.value(event.session()), notification.path("session"));
+        assertFalse(notification.has("data"));
+        Mac hmac = Mac.getInstance("HmacSHA256");
+        hmac.init(new SecretKeySpec(secret, "HmacSHA256"));
+        var signed = String.join(".", first.id(), first.timestamp(), first.body());
+        assertEquals(
+                "v1,"
+                        + Base64.getEncoder()
+                                .encodeToString(
+                                        hmac.doFinal(signed.getBytes(StandardCharsets.UTF_8))),
+                first.signature());
+    }
 
     @Test
     void delegationCannotHideAnotherSessionInsideAnAuthorizedEnvelope() throws Exception {
@@ -242,6 +312,210 @@ class DurableHttpTest {
                                         "lost",
                                         DurableJson.value("hello")));
         assertEquals(DurableException.Code.UNAVAILABLE, error.code());
+    }
+
+    @Test
+    void ssePreviewsRequireOptInAndUseTheLiveFrame() throws Exception {
+        var preview =
+                new LiveEvent(
+                        "1",
+                        "preview",
+                        key,
+                        "main",
+                        "turn",
+                        "run",
+                        "step",
+                        1,
+                        ToolOutputDelta.TYPE,
+                        DurableJson.value(
+                                new ToolOutputDelta("call", "execution", 1, 0, 0, 3, "YWJj")));
+        var feed =
+                new LiveEvents() {
+                    @Override
+                    public void publish(LiveEvent event) {}
+
+                    @Override
+                    public AutoCloseable subscribe(Consumer<LiveEvent> listener) {
+                        listener.accept(preview);
+                        return () -> {};
+                    }
+                };
+        try (var runtime = DurableRuntime.builder().backend(backend).liveEvents(feed).build()) {
+            server.createContext(
+                    "/preview-events",
+                    new SessionEventHandler(
+                            runtime,
+                            (e, o, n, s) -> {},
+                            Duration.ofMillis(100),
+                            Duration.ofMillis(10)));
+            var client = HttpClient.newHttpClient();
+            String path = "/preview-events?namespace=tenant&sessionId=session";
+            var committed =
+                    client.send(
+                            HttpRequest.newBuilder(base.resolve(path)).GET().build(),
+                            HttpResponse.BodyHandlers.ofString());
+            assertEquals(200, committed.statusCode());
+            assertFalse(committed.body().contains(ToolOutputDelta.TYPE));
+            var live =
+                    client.send(
+                            HttpRequest.newBuilder(base.resolve(path + "&deltas=TOOL_OUTPUT"))
+                                    .GET()
+                                    .build(),
+                            HttpResponse.BodyHandlers.ofString());
+            assertEquals(200, live.statusCode());
+            assertTrue(live.body().contains("event: live\ndata:"));
+            assertTrue(live.body().contains(ToolOutputDelta.TYPE));
+        }
+    }
+
+    @Test
+    void toolOutputQueryChecksTurnScopeAndReadsTheDurableByteRange() {
+        server.createContext(
+                "/api",
+                new DurableRuntimeHandler(
+                        apiRuntime,
+                        (e, o, n, s) -> {
+                            if (s != null && !key.equals(s)) throw new SecurityException();
+                        }));
+        try (var client =
+                DurableRuntime.builder().transport(new DurableHttp(base.resolve("/api"))).build()) {
+            verifyToolExecutionAndOutput(client);
+        }
+    }
+
+    private void verifyToolExecutionAndOutput(DurableRuntime client) {
+        var thread = apiRuntime.getSession(key).mainThread();
+        var turn = thread.submit("source", "prompt");
+        var unrelated = thread.submit("other", "unrelated");
+        var externalTurn = client.getSession(key).getTurn(turn.turnId());
+        var lease = remote.claim(thread.key(), "owner", Duration.ofSeconds(10)).orElseThrow();
+        var frame = remote.frame(lease);
+        remote.commit(
+                lease,
+                new Commit(
+                        "dispatch",
+                        frame.turn().revision(),
+                        frame.checkpoint(),
+                        List.of(new ToolCall("call", "hands", "tool", DurableJson.value("args"))),
+                        List.of(),
+                        List.of(),
+                        List.of(),
+                        TurnStatus.RUNNING,
+                        null,
+                        null,
+                        null));
+        var request = remote.frame(lease).tools().get(0).request();
+        String executionId = request.executionId();
+        assertEquals(ToolExecutionStatus.REQUESTED, externalTurn.getToolCall("call").status());
+        var capabilities = new Executor.Capabilities(true, true, false, true);
+        remote.beginDispatch(lease, executionId, capabilities);
+        assertEquals(
+                ToolExecutionStatus.DISPATCHED,
+                externalTurn.getToolExecution(executionId).status());
+        remote.acceptExecutionEvent(
+                ExecutionMessages.event(
+                        request,
+                        1,
+                        new ExecutionResult(
+                                ExecutionState.PENDING, "provider-handle", null, null)));
+        assertEquals(
+                ToolExecutionStatus.DISPATCHED,
+                externalTurn.getToolExecution(executionId).status());
+        remote.acceptExecutionEvent(
+                ExecutionMessages.event(
+                        request,
+                        2,
+                        new ExecutionResult(
+                                ExecutionState.RUNNING,
+                                "provider-handle",
+                                DurableJson.value(Map.of("completed", 1)),
+                                null)));
+        remote.acceptExecutionEvent(
+                ExecutionMessages.event(
+                        request,
+                        3,
+                        new ExecutionResult(
+                                ExecutionState.RUNNING,
+                                "provider-handle",
+                                DurableJson.value(Map.of("completed", 2)),
+                                null)));
+        var running = externalTurn.getToolCall("call");
+        assertEquals(ToolExecutionStatus.RUNNING, running.status());
+        assertEquals(2, running.progress().path("completed").asInt());
+        assertEquals(capabilities, running.executorCapabilities());
+        assertEquals(new ToolOutputView(0, false, false), running.output());
+        assertFalse(running.applied());
+        assertFalse(DurableJson.value(running).toString().contains("provider-handle"));
+        var page = new OutputPage(0, 3, "YWJj", 3, false, null);
+        remote.acceptExecutionEvent(ExecutionMessages.event(request, 4, null, page));
+        var gap = new OutputPage(3, 6, "", 6, true, "expired");
+        remote.acceptExecutionEvent(ExecutionMessages.event(request, 5, null, gap));
+        remote.acceptExecutionEvent(
+                ExecutionMessages.event(
+                        request,
+                        6,
+                        new ExecutionResult(
+                                ExecutionState.SUCCEEDED,
+                                "provider-handle",
+                                DurableJson.value("done"),
+                                null)));
+        var accepted = externalTurn.getToolExecution(executionId);
+        assertEquals(ToolExecutionStatus.SUCCEEDED, accepted.status());
+        assertFalse(accepted.applied());
+        assertEquals(new ToolOutputView(6, true, true), accepted.output());
+        assertTrue(accepted.updatedAt() >= running.updatedAt());
+        assertEquals(running.progress(), accepted.progress());
+        frame = remote.frame(lease);
+        remote.commit(
+                lease,
+                new Commit(
+                        "applied",
+                        frame.turn().revision(),
+                        DurableJson.value("native state"),
+                        List.of(),
+                        List.of(new AppliedResult(executionId, null)),
+                        List.of(),
+                        List.of(),
+                        TurnStatus.SUCCEEDED,
+                        null,
+                        DurableJson.value("done"),
+                        null));
+        var applied = externalTurn.getToolExecution(executionId);
+        assertTrue(applied.applied());
+        assertEquals(applied, remote.toolExecution(thread.key(), turn.turnId(), "call", null));
+        remote.pruneEvents(key, remote.snapshot(key).cursor());
+        assertEquals(applied, externalTurn.getToolCall("call"));
+        assertEquals(page, turn.toolOutput(executionId, 0));
+        assertEquals(page, remote.toolOutput(thread.key(), turn.turnId(), executionId, 0));
+        var denied =
+                assertThrows(DurableException.class, () -> unrelated.toolOutput(executionId, 0));
+        assertEquals(DurableException.Code.NOT_FOUND, denied.code());
+        var other = client.getSession(key).getTurn(unrelated.turnId());
+        assertEquals(
+                DurableException.Code.NOT_FOUND,
+                assertThrows(DurableException.class, () -> other.getToolExecution(executionId))
+                        .code());
+        assertEquals(
+                DurableException.Code.NOT_FOUND,
+                assertThrows(DurableException.class, () -> other.getToolCall("call")).code());
+        var deniedTenant =
+                assertThrows(
+                        DurableException.class,
+                        () ->
+                                new DurableHttp(base.resolve("/api"))
+                                        .call(
+                                                Endpoint.USER,
+                                                "getToolExecution",
+                                                Map.of(
+                                                        "session",
+                                                        new SessionKey("other", key.sessionId()),
+                                                        "threadId",
+                                                        thread.key().threadId(),
+                                                        "turnId",
+                                                        turn.turnId(),
+                                                        "executionId",
+                                                        executionId)));
+        assertEquals("Access denied", deniedTenant.getMessage());
     }
 
     @Test

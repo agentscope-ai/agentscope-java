@@ -294,7 +294,46 @@ class ChatSessionsTest {
     }
 
     @Test
-    void multiStepMessagesToolsProgressAndReplaySurviveRecreation() throws Exception {
+    void queuedInputCanSteerWaitingTurnWithoutCreatingAnotherMessage() throws Exception {
+        try (var sessions = open()) {
+            sessions.create("conversation");
+            String first = sessions.submit("conversation", "first", "/ask preference").turnId();
+            var waiting = await(sessions, s -> status(s, first) == TurnStatus.WAITING);
+            String second = sessions.submit("conversation", "second", "keep it brief").turnId();
+            var original =
+                    messages(sessions.snapshot("conversation")).stream()
+                            .filter(message -> "second".equals(message.path("requestId").asText()))
+                            .findFirst()
+                            .orElseThrow();
+            sessions.editQueued("conversation", second, "edit", 0, "keep it very brief");
+            sessions.steerQueued("conversation", first, "convert", second, 1);
+            var updated = sessions.snapshot("conversation");
+            assertEquals(TurnStatus.CONVERTED, status(updated, second));
+            assertEquals(TurnStatus.WAITING, status(updated, first));
+            assertEquals(pending(waiting), pending(updated));
+            var matching =
+                    messages(updated).stream()
+                            .filter(message -> "second".equals(message.path("requestId").asText()))
+                            .toList();
+            assertEquals(1, matching.size());
+            assertEquals(original.path("messageId"), matching.get(0).path("messageId"));
+            assertEquals("keep it very brief", matching.get(0).path("text").asText());
+            assertEquals(first, matching.get(0).path("turnId").asText());
+            assertEquals("steer", matching.get(0).path("inputKind").asText());
+            sessions.answer(
+                    "conversation",
+                    first,
+                    "answer",
+                    pending(waiting).get(0).path("id").asText(),
+                    "yes");
+            var completed = await(sessions, s -> status(s, first) == TurnStatus.SUCCEEDED);
+            assertEquals(TurnStatus.CONVERTED, status(completed, second));
+            assertTrue(sessions.runs("conversation", second, null, 100).items().isEmpty());
+        }
+    }
+
+    @Test
+    void multiStepMessagesAndToolResultsReplayAfterRecreation() throws Exception {
         Snapshot completed;
         try (var sessions = open()) {
             sessions.create("conversation");
@@ -305,7 +344,7 @@ class ChatSessionsTest {
             assertEquals(3, completed.projection().path("tools").size());
             for (var tool : completed.projection().path("tools")) {
                 assertEquals("SUCCEEDED", tool.path("data").path("status").asText());
-                assertEquals(4, tool.path("data").path("progress").size());
+                assertFalse(tool.path("data").has("progress"));
                 assertFalse(tool.path("data").path("content").isEmpty());
             }
             assertEquals(

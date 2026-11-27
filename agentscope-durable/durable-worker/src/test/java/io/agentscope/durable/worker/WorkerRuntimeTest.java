@@ -76,6 +76,42 @@ class WorkerRuntimeTest {
     }
 
     @Test
+    void queueDiagnosticsDistinguishCapacityWaitsFromProviderWaits() {
+        try (var records = JdbcRecordStore.sqlite(directory.resolve("queue-health.db"))) {
+            var store = new TransactionalExecutionStore(records);
+            var leased =
+                    new ExecutionRequest(
+                            "leased", request.thread(), request.turnId(), request.call());
+            var provider =
+                    new ExecutionRequest(
+                            "provider", request.thread(), request.turnId(), request.call());
+            var deferred =
+                    new ExecutionRequest(
+                            "deferred", request.thread(), request.turnId(), request.call());
+            for (var item : List.of(request, leased, provider, deferred)) store.admit(item);
+            var lease = Duration.ofMinutes(1);
+            store.claim(leased, "worker", lease).orElseThrow();
+            var awaiting = store.claim(provider, "worker", lease).orElseThrow();
+            store.begin(awaiting);
+            store.update(
+                    awaiting,
+                    new ExecutionResult(ExecutionState.RUNNING, "provider-id", null, null));
+            store.release(awaiting, lease);
+            store.defer(store.claim(deferred, "worker", lease).orElseThrow(), lease, lease);
+
+            var statistics = store.statistics(10);
+            assertEquals(4, statistics.pending());
+            assertEquals(1, statistics.readyToStart());
+            assertEquals(1, statistics.leased());
+            assertEquals(1, statistics.awaitingProvider());
+            assertEquals(1, statistics.deferred());
+            assertTrue(statistics.oldestPendingAgeMillis() >= statistics.oldestReadyAgeMillis());
+            assertFalse(statistics.truncated());
+            assertTrue(store.statistics(1).truncated());
+        }
+    }
+
+    @Test
     void forcedCloseReleasesQueuedCapacityWithoutDispatchAndReplacementContinues()
             throws Exception {
         var held = new CountDownLatch(2);

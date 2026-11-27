@@ -33,8 +33,31 @@
         "CANCELLING",
         "SUCCEEDED",
         "FAILED",
-        "CANCELLED"
+        "CANCELLED",
+        "CONVERTED"
       ]
+    },
+    "turnConversion": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["operationId", "message"],
+      "properties": {
+        "operationId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "message": {
+          "$ref": "#/$defs/projectedMessage",
+          "required": ["turnId", "requestId", "inputKind", "message", "sequence"],
+          "properties": {
+            "threadId": { "type": "string", "minLength": 1 },
+            "turnId": { "type": "string", "minLength": 1 },
+            "inputKind": { "const": "steer" },
+            "complete": { "const": true }
+          }
+        }
+      }
     },
     "wait": {
       "type": "object",
@@ -53,6 +76,11 @@
           "type": "integer",
           "minimum": 0,
           "maximum": 9007199254740991
+        },
+        "targets": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1, "maxLength": 256 }
         }
       }
     },
@@ -71,6 +99,11 @@
           "maxLength": 256
         },
         "key": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "messageId": {
           "type": "string",
           "minLength": 1,
           "maxLength": 256
@@ -110,6 +143,8 @@
         "turnId",
         "status",
         "revision",
+        "inputRevision",
+        "inputMessageId",
         "cancellationRequested",
         "output",
         "error",
@@ -131,6 +166,8 @@
           "minimum": 0,
           "maximum": 9007199254740991
         },
+        "inputRevision": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
+        "inputMessageId": { "type": "string", "minLength": 1, "maxLength": 256 },
         "cancellationRequested": {
           "type": "boolean"
         },
@@ -178,6 +215,49 @@
             }
           ]
         }
+      }
+    },
+    "turnProgress": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["turn", "cursor", "leaseHeld", "blockers", "verifications"],
+      "properties": {
+        "turn": { "$ref": "#/$defs/turn" },
+        "cursor": { "type": "string", "minLength": 1 },
+        "leaseHeld": { "type": "boolean" },
+        "blockers": { "type": "array", "items": { "$ref": "#/$defs/turnBlocker" } },
+        "verifications": { "type": "array", "items": { "$ref": "#/$defs/verificationView" } }
+      }
+    },
+    "turnBlocker": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "targetId", "readyAt"],
+      "properties": {
+        "kind": {
+          "enum": ["QUEUE_HEAD", "PAUSED", "APPROVAL", "MANUAL_TOOL_RESULT", "TOOL_DISPATCH",
+            "TOOL_EXECUTION", "TOOL_OUTCOME_UNCONFIRMED", "NATIVE_TOOL_RECONCILIATION",
+            "JOB", "MODEL_REPLY", "SIGNAL", "RETRY_BACKOFF"]
+        },
+        "targetId": { "type": ["string", "null"] },
+        "readyAt": { "type": ["integer", "null"], "minimum": 1, "maximum": 9007199254740991 }
+      }
+    },
+    "verificationView": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["verificationId", "requirementId", "actionId", "verifierId", "outcome", "taskId",
+        "contractVersion", "subjectVersion", "recordedAt"],
+      "properties": {
+        "verificationId": { "type": "string", "minLength": 1, "maxLength": 200 },
+        "requirementId": { "type": "string", "minLength": 1, "maxLength": 200 },
+        "actionId": { "type": "string", "minLength": 1, "maxLength": 200 },
+        "verifierId": { "type": "string", "minLength": 1, "maxLength": 200 },
+        "taskId": { "type": "string", "minLength": 1, "maxLength": 200 },
+        "subjectVersion": { "type": "string", "minLength": 1, "maxLength": 2000 },
+        "outcome": { "enum": ["PASSED", "FAILED", "UNKNOWN", "ERROR"] },
+        "contractVersion": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
+        "recordedAt": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 }
       }
     },
     "lease": {
@@ -348,6 +428,7 @@
             "SUCCEEDED",
             "FAILED",
             "CANCELLED",
+            "DENIED",
             "NOT_FOUND",
             "UNKNOWN"
           ]
@@ -561,6 +642,16 @@
         }
       ]
     },
+    "toolResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "error", "content"],
+      "properties": {
+        "type": { "const": "tool_response" },
+        "error": { "type": "boolean" },
+        "content": { "type": "array", "items": { "$ref": "#/$defs/content" } }
+      }
+    },
     "input": {
       "type": "object",
       "additionalProperties": false,
@@ -734,7 +825,8 @@
         "atomicCheckpointAndIntent",
         "fencedOwnership",
         "durableWaits",
-        "eventReplay"
+        "eventReplay",
+        "messageDrivenScheduling"
       ],
       "properties": {
         "protocolVersion": {
@@ -761,6 +853,9 @@
           "type": "boolean"
         },
         "eventReplay": {
+          "type": "boolean"
+        },
+        "messageDrivenScheduling": {
           "type": "boolean"
         }
       }
@@ -969,6 +1064,7 @@
                     "respond"
                   ]
                 },
+                "toolError": { "type": "boolean" },
                 "interactionId": {
                   "type": "string",
                   "minLength": 1,
@@ -1060,6 +1156,62 @@
                   ]
                 }
               }
+            }
+          }
+        },
+        {
+          "properties": {
+            "type": { "const": "task.verification.completed" },
+            "data": { "$ref": "#/$defs/verificationView" }
+          }
+        },
+        {
+          "properties": {
+            "type": {
+              "const": "session.activity_changed"
+            },
+            "data": {
+              "$ref": "#/$defs/sessionActivity"
+            }
+          }
+        },
+        {
+          "properties": {
+            "type": {
+              "const": "confirmation.applied"
+            },
+            "data": {
+              "$ref": "#/$defs/confirmationApplication"
+            }
+          }
+        },
+        {
+          "properties": {
+            "type": {
+              "const": "input.applied"
+            },
+            "data": {
+              "$ref": "#/$defs/message"
+            }
+          }
+        },
+        {
+          "properties": {
+            "type": {
+              "enum": ["turns.cancel_requested", "turns.cancel_applied"]
+            },
+            "data": {
+              "$ref": "#/$defs/activeTurnCancellation"
+            }
+          }
+        },
+        {
+          "properties": {
+            "type": {
+              "const": "turn.converted"
+            },
+            "data": {
+              "$ref": "#/$defs/turnConversion"
             }
           }
         },
@@ -1234,7 +1386,7 @@
                   "minimum": 1
                 },
                 "output": {
-                  "$ref": "#/$defs/outputPage"
+                  "$ref": "#/$defs/outputRange"
                 }
               }
             }
@@ -1916,6 +2068,24 @@
         }
       ]
     },
+    "webhookNotification": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "eventId", "type", "session", "threadId", "turnId", "runId", "stepId", "sequence", "cursor", "occurredAt"],
+      "properties": {
+        "schemaVersion": { "$ref": "#/$defs/event/properties/schemaVersion" },
+        "eventId": { "$ref": "#/$defs/event/properties/eventId" },
+        "type": { "$ref": "#/$defs/event/properties/type" },
+        "session": { "$ref": "#/$defs/event/properties/session" },
+        "threadId": { "$ref": "#/$defs/event/properties/threadId" },
+        "turnId": { "$ref": "#/$defs/event/properties/turnId" },
+        "runId": { "$ref": "#/$defs/event/properties/runId" },
+        "stepId": { "$ref": "#/$defs/event/properties/stepId" },
+        "sequence": { "$ref": "#/$defs/event/properties/sequence" },
+        "cursor": { "$ref": "#/$defs/event/properties/cursor" },
+        "occurredAt": { "$ref": "#/$defs/event/properties/occurredAt" }
+      }
+    },
     "event": {
       "type": "object",
       "additionalProperties": false,
@@ -1928,6 +2098,7 @@
         "turnId",
         "sequence",
         "cursor",
+        "occurredAt",
         "runId",
         "stepId",
         "threadId"
@@ -1972,6 +2143,10 @@
           "type": "string",
           "minLength": 1,
           "maxLength": 256
+        },
+        "occurredAt": {
+          "type": "integer",
+          "minimum": 0
         },
         "runId": {
           "anyOf": [
@@ -2068,6 +2243,7 @@
                     "respond"
                   ]
                 },
+                "toolError": { "type": "boolean" },
                 "interactionId": {
                   "type": "string",
                   "minLength": 1,
@@ -2159,6 +2335,62 @@
                   ]
                 }
               }
+            }
+          }
+        },
+        {
+          "properties": {
+            "type": { "const": "task.verification.completed" },
+            "data": { "$ref": "#/$defs/verificationView" }
+          }
+        },
+        {
+          "properties": {
+            "type": {
+              "const": "session.activity_changed"
+            },
+            "data": {
+              "$ref": "#/$defs/sessionActivity"
+            }
+          }
+        },
+        {
+          "properties": {
+            "type": {
+              "const": "confirmation.applied"
+            },
+            "data": {
+              "$ref": "#/$defs/confirmationApplication"
+            }
+          }
+        },
+        {
+          "properties": {
+            "type": {
+              "const": "input.applied"
+            },
+            "data": {
+              "$ref": "#/$defs/message"
+            }
+          }
+        },
+        {
+          "properties": {
+            "type": {
+              "enum": ["turns.cancel_requested", "turns.cancel_applied"]
+            },
+            "data": {
+              "$ref": "#/$defs/activeTurnCancellation"
+            }
+          }
+        },
+        {
+          "properties": {
+            "type": {
+              "const": "turn.converted"
+            },
+            "data": {
+              "$ref": "#/$defs/turnConversion"
             }
           }
         },
@@ -2333,7 +2565,7 @@
                   "minimum": 1
                 },
                 "output": {
-                  "$ref": "#/$defs/outputPage"
+                  "$ref": "#/$defs/outputRange"
                 }
               }
             }
@@ -3089,7 +3321,9 @@
       "required": [
         "events",
         "cursor",
-        "highWatermark"
+        "highWatermark",
+        "scannedSequence",
+        "highWatermarkSequence"
       ],
       "properties": {
         "events": {
@@ -3107,6 +3341,14 @@
           "type": "string",
           "minLength": 1,
           "maxLength": 256
+        },
+        "scannedSequence": {
+          "type": "string",
+          "pattern": "^(0|[1-9][0-9]{0,18})$"
+        },
+        "highWatermarkSequence": {
+          "type": "string",
+          "pattern": "^(0|[1-9][0-9]{0,18})$"
         }
       }
     },
@@ -3596,6 +3838,25 @@
         }
       }
     },
+    "backend_turnProgressRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["version", "operation", "payload"],
+      "properties": {
+        "version": { "const": "durable.v1" },
+        "operation": { "const": "turnProgress" },
+        "payload": { "$ref": "#/$defs/backend_turnRequest/properties/payload" }
+      }
+    },
+    "backend_turnProgressResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["version", "result"],
+      "properties": {
+        "version": { "const": "durable.v1" },
+        "result": { "$ref": "#/$defs/turnProgress" }
+      }
+    },
     "backend_turnRequest": {
       "type": "object",
       "additionalProperties": false,
@@ -3700,14 +3961,22 @@
           "const": "durable.v1"
         },
         "result": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/lease"
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["status", "lease", "discoveryDelayMillis"],
+          "properties": {
+            "status": {
+              "enum": ["ACQUIRED", "REUSED", "NO_WORK", "LEASE_HELD", "NOT_DUE", "WAITING", "STALE_DISPATCH", "UNKNOWN"]
             },
-            {
-              "type": "null"
+            "lease": {
+              "anyOf": [{"$ref": "#/$defs/lease"}, {"type": "null"}]
+            },
+            "discoveryDelayMillis": {
+              "type": ["integer", "null"],
+              "minimum": 0,
+              "maximum": 9007199254740991
             }
-          ]
+          }
         }
       }
     },
@@ -3991,7 +4260,8 @@
           "additionalProperties": false,
           "required": [
             "lease",
-            "executionId"
+            "executionId",
+            "capabilities"
           ],
           "properties": {
             "lease": {
@@ -4001,6 +4271,12 @@
               "type": "string",
               "minLength": 1,
               "maxLength": 256
+            },
+            "capabilities": {
+              "anyOf": [
+                { "$ref": "#/$defs/executorCapabilities" },
+                { "type": "null" }
+              ]
             }
           }
         }
@@ -4234,6 +4510,28 @@
         }
       }
     },
+    "backend_eventsBeforeRequest": { "$ref": "#/$defs/user_eventsBeforeRequest" },
+    "backend_eventsBeforeResponse": { "$ref": "#/$defs/backend_eventsResponse" },
+    "user_eventsBeforeRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["version", "operation", "payload"],
+      "properties": {
+        "version": { "const": "durable.v1" },
+        "operation": { "const": "eventsBefore" },
+        "payload": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["session", "cursor", "limit"],
+          "properties": {
+            "session": { "$ref": "#/$defs/session" },
+            "cursor": { "type": ["string", "null"], "maxLength": 256 },
+            "limit": { "type": "integer", "minimum": 1, "maximum": 1000 }
+          }
+        }
+      }
+    },
+    "user_eventsBeforeResponse": { "$ref": "#/$defs/backend_eventsResponse" },
     "backend_eventsRequest": {
       "type": "object",
       "additionalProperties": false,
@@ -4367,6 +4665,9 @@
           "$ref": "#/$defs/backend_turnRequest"
         },
         {
+          "$ref": "#/$defs/backend_turnProgressRequest"
+        },
+        {
           "$ref": "#/$defs/backend_claimRequest"
         },
         {
@@ -4403,6 +4704,9 @@
           "$ref": "#/$defs/backend_eventsRequest"
         },
         {
+          "$ref": "#/$defs/backend_eventsBeforeRequest"
+        },
+        {
           "$ref": "#/$defs/backend_pruneEventsRequest"
         },
         {
@@ -4421,6 +4725,9 @@
           "$ref": "#/$defs/backend_withdrawRequest"
         },
         {
+          "$ref": "#/$defs/backend_rejectNativeToolReconciliationRequest"
+        },
+        {
           "$ref": "#/$defs/backend_checkpointsRequest"
         },
         {
@@ -4431,6 +4738,12 @@
         },
         {
           "$ref": "#/$defs/backend_restoreRequest"
+        },
+        {
+          "$ref": "#/$defs/backend_toolOutputRequest"
+        },
+        {
+          "$ref": "#/$defs/backend_getToolExecutionRequest"
         },
         {
           "$ref": "#/$defs/backend_acceptExecutionEventRequest"
@@ -4464,6 +4777,9 @@
         },
         {
           "$ref": "#/$defs/backend_controlRequest"
+        },
+        {
+          "$ref": "#/$defs/backend_cancelActiveTurnsRequest"
         },
         {
           "$ref": "#/$defs/backend_prepareRunRequest"
@@ -4509,6 +4825,12 @@
         },
         {
           "$ref": "#/$defs/backend_delegationRequest"
+        },
+        {
+          "$ref": "#/$defs/backend_jobRequest"
+        },
+        {
+          "$ref": "#/$defs/backend_awaitJobRequest"
         },
         {
           "$ref": "#/$defs/backend_cancelDelegationRequest"
@@ -4902,6 +5224,7 @@
             "respond"
           ]
         },
+        "toolError": { "type": "boolean" },
         "interactionId": {
           "type": "string",
           "minLength": 1,
@@ -4988,7 +5311,8 @@
               "stepId",
               "threadId",
               "turnId",
-              "sequence"
+              "sequence",
+              "updatedAt"
             ],
             "properties": {
               "eventId": {
@@ -5048,6 +5372,11 @@
               "sequence": {
                 "type": "string",
                 "pattern": "^[1-9][0-9]*$"
+              },
+              "updatedAt": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
               }
             },
             "allOf": [
@@ -5107,6 +5436,20 @@
           "additionalProperties": {
             "$ref": "#/$defs/threadView"
           }
+        }
+      }
+    },
+    "executionBatch": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["version", "batchId", "requests"],
+      "properties": {
+        "version": { "const": "durable.v1" },
+        "batchId": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+        "requests": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/executionRequest" }
         }
       }
     },
@@ -5266,6 +5609,9 @@
             "limit"
           ],
           "properties": {
+            "session": {
+              "$ref": "#/$defs/session"
+            },
             "harnesses": {
               "type": "array",
               "maxItems": 128,
@@ -5571,6 +5917,27 @@
           "type": "null"
         }
       }
+    },
+    "backend_rejectNativeToolReconciliationRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["version", "operation", "payload"],
+      "properties": {
+        "version": { "const": "durable.v1" },
+        "operation": { "const": "rejectNativeToolReconciliation" },
+        "payload": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["lease", "signalId"],
+          "properties": {
+            "lease": { "$ref": "#/$defs/lease" },
+            "signalId": { "type": "string", "minLength": 1, "maxLength": 256 }
+          }
+        }
+      }
+    },
+    "backend_rejectNativeToolReconciliationResponse": {
+      "$ref": "#/$defs/backend_withdrawResponse"
     },
     "restoration": {
       "type": "object",
@@ -5903,6 +6270,389 @@
             "string",
             "null"
           ]
+        }
+      }
+    },
+    "outputRange": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "offset",
+        "nextOffset",
+        "size",
+        "terminal",
+        "gap"
+      ],
+      "properties": {
+        "offset": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "nextOffset": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "size": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "terminal": {
+          "type": "boolean"
+        },
+        "gap": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "toolExecutionView": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "callId",
+        "executionId",
+        "name",
+        "status",
+        "applied",
+        "origin",
+        "appliedAt",
+        "reason",
+        "updatedAt",
+        "executorCapabilities",
+        "progress",
+        "output"
+      ],
+      "properties": {
+        "callId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "executionId": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "name": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "status": {
+          "enum": [
+            "GENERATING_ARGUMENTS",
+            "REQUESTED",
+            "WAITING",
+            "DISPATCHED",
+            "RUNNING",
+            "SUCCEEDED",
+            "FAILED",
+            "CANCELLED",
+            "DENIED",
+            "UNKNOWN"
+          ]
+        },
+        "applied": {
+          "type": "boolean"
+        },
+        "origin": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/runStepRef"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "appliedAt": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/runStepRef"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "reason": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "updatedAt": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "executorCapabilities": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/executorCapabilities"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "progress": {},
+        "output": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/toolOutputView"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "toolOutputView": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "nextOffset",
+        "sealed",
+        "hasGaps"
+      ],
+      "properties": {
+        "nextOffset": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "sealed": {
+          "type": "boolean"
+        },
+        "hasGaps": {
+          "type": "boolean"
+        }
+      }
+    },
+    "backend_getToolExecutionRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "version",
+        "operation",
+        "payload"
+      ],
+      "properties": {
+        "version": {
+          "const": "durable.v1"
+        },
+        "operation": {
+          "const": "getToolExecution"
+        },
+        "payload": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "thread",
+            "turnId"
+          ],
+          "properties": {
+            "thread": {
+              "$ref": "#/$defs/thread"
+            },
+            "turnId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            },
+            "callId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            },
+            "executionId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            }
+          },
+          "oneOf": [
+            {
+              "required": [
+                "callId"
+              ]
+            },
+            {
+              "required": [
+                "executionId"
+              ]
+            }
+          ]
+        }
+      }
+    },
+    "backend_getToolExecutionResponse": {
+      "$ref": "#/$defs/user_getToolExecutionResponse"
+    },
+    "user_getToolExecutionRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "version",
+        "operation",
+        "payload"
+      ],
+      "properties": {
+        "version": {
+          "const": "durable.v1"
+        },
+        "operation": {
+          "const": "getToolExecution"
+        },
+        "payload": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "session",
+            "threadId",
+            "turnId"
+          ],
+          "properties": {
+            "session": {
+              "$ref": "#/$defs/session"
+            },
+            "threadId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            },
+            "turnId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            },
+            "callId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            },
+            "executionId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            }
+          },
+          "oneOf": [
+            {
+              "required": [
+                "callId"
+              ]
+            },
+            {
+              "required": [
+                "executionId"
+              ]
+            }
+          ]
+        }
+      }
+    },
+    "user_getToolExecutionResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "version",
+        "result"
+      ],
+      "properties": {
+        "version": {
+          "const": "durable.v1"
+        },
+        "result": {
+          "$ref": "#/$defs/toolExecutionView"
+        }
+      }
+    },
+    "backend_toolOutputRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "version",
+        "operation",
+        "payload"
+      ],
+      "properties": {
+        "version": {
+          "const": "durable.v1"
+        },
+        "operation": {
+          "const": "toolOutput"
+        },
+        "payload": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "thread",
+            "turnId",
+            "executionId",
+            "offset"
+          ],
+          "properties": {
+            "thread": {
+              "$ref": "#/$defs/thread"
+            },
+            "turnId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            },
+            "executionId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            },
+            "offset": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            }
+          }
+        }
+      }
+    },
+    "backend_toolOutputResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "version",
+        "result"
+      ],
+      "properties": {
+        "version": {
+          "const": "durable.v1"
+        },
+        "result": {
+          "$ref": "#/$defs/outputPage"
         }
       }
     },
@@ -6891,6 +7641,8 @@
         "kind": {
           "enum": [
             "STEER",
+            "STEER_QUEUED",
+            "EDIT_QUEUED",
             "INJECT",
             "WITHDRAW",
             "CANCEL",
@@ -6921,6 +7673,15 @@
       },
       "allOf": [
         {
+          "if": { "properties": { "kind": { "const": "EDIT_QUEUED" } } },
+          "then": {
+            "properties": {
+              "value": { "$ref": "#/$defs/input" },
+              "target": { "type": "null" }
+            }
+          }
+        },
+        {
           "if": {
             "properties": {
               "kind": {
@@ -6950,6 +7711,7 @@
             "properties": {
               "kind": {
                 "enum": [
+                  "STEER_QUEUED",
                   "WITHDRAW",
                   "RESPOND",
                   "SIGNAL"
@@ -6973,6 +7735,7 @@
               "kind": {
                 "enum": [
                   "CANCEL",
+                  "STEER_QUEUED",
                   "WITHDRAW",
                   "RESUME",
                   "PAUSE"
@@ -7072,6 +7835,8 @@
         "operation": {
           "enum": [
             "STEER",
+            "STEER_QUEUED",
+            "EDIT_QUEUED",
             "INJECT",
             "WITHDRAW",
             "CANCEL",
@@ -7081,6 +7846,10 @@
             "SIGNAL"
           ]
         },
+        "sourceTurnId": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "messageId": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "inputRevision": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
+        "acceptedAt": { "type": "integer", "minimum": 0 },
         "status": {
           "enum": ["accepted", "ignored"]
         },
@@ -7089,7 +7858,13 @@
           "minLength": 1,
           "maxLength": 256
         }
-      }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "status": { "const": "accepted" } } },
+          "then": { "required": ["acceptedAt"] }
+        }
+      ]
     },
     "userCapabilities": {
       "type": "object",
@@ -7403,6 +8178,75 @@
         }
       }
     },
+    "user_toolOutputRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "version",
+        "operation",
+        "payload"
+      ],
+      "properties": {
+        "version": {
+          "const": "durable.v1"
+        },
+        "operation": {
+          "const": "toolOutput"
+        },
+        "payload": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "session",
+            "threadId",
+            "turnId",
+            "executionId",
+            "offset"
+          ],
+          "properties": {
+            "session": {
+              "$ref": "#/$defs/session"
+            },
+            "threadId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            },
+            "turnId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            },
+            "executionId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            },
+            "offset": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            }
+          }
+        }
+      }
+    },
+    "user_toolOutputResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "version",
+        "result"
+      ],
+      "properties": {
+        "version": {
+          "const": "durable.v1"
+        },
+        "result": {
+          "$ref": "#/$defs/outputPage"
+        }
+      }
+    },
     "user_historyRequest": {
       "type": "object",
       "additionalProperties": false,
@@ -7534,6 +8378,25 @@
         }
       }
     },
+    "user_getTurnProgressRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["version", "operation", "payload"],
+      "properties": {
+        "version": { "const": "durable.v1" },
+        "operation": { "const": "getTurnProgress" },
+        "payload": { "$ref": "#/$defs/user_getTurnRequest/properties/payload" }
+      }
+    },
+    "user_getTurnProgressResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["version", "result"],
+      "properties": {
+        "version": { "const": "durable.v1" },
+        "result": { "$ref": "#/$defs/turnProgress" }
+      }
+    },
     "user_getTurnRequest": {
       "type": "object",
       "additionalProperties": false,
@@ -7646,6 +8509,124 @@
         }
       }
     },
+    "user_editQueuedInputRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "version",
+        "operation",
+        "payload"
+      ],
+      "properties": {
+        "version": {
+          "const": "durable.v1"
+        },
+        "operation": {
+          "const": "editQueuedInput"
+        },
+        "payload": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "session",
+            "threadId",
+            "requestId",
+            "expectedInputRevision",
+            "turnId",
+            "input"
+          ],
+          "properties": {
+            "session": {
+              "$ref": "#/$defs/session"
+            },
+            "threadId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            },
+            "requestId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            },
+            "expectedInputRevision": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "turnId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            },
+            "input": {
+              "$ref": "#/$defs/input"
+            }
+          }
+        }
+      }
+    },
+    "user_editQueuedInputResponse": { "$ref": "#/$defs/user_controlResponse" },
+    "user_convertQueuedToSteerRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "version",
+        "operation",
+        "payload"
+      ],
+      "properties": {
+        "version": {
+          "const": "durable.v1"
+        },
+        "operation": {
+          "const": "convertQueuedToSteer"
+        },
+        "payload": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "session",
+            "threadId",
+            "requestId",
+            "expectedInputRevision",
+            "sourceTurnId",
+            "targetTurnId"
+          ],
+          "properties": {
+            "session": {
+              "$ref": "#/$defs/session"
+            },
+            "threadId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            },
+            "requestId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            },
+            "expectedInputRevision": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "sourceTurnId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            },
+            "targetTurnId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            }
+          }
+        }
+      }
+    },
+    "user_convertQueuedToSteerResponse": { "$ref": "#/$defs/user_controlResponse" },
     "user_interactionsRequest": {
       "type": "object",
       "additionalProperties": false,
@@ -8041,6 +9022,12 @@
           "$ref": "#/$defs/user_listTurnsRequest"
         },
         {
+          "$ref": "#/$defs/user_toolOutputRequest"
+        },
+        {
+          "$ref": "#/$defs/user_getToolExecutionRequest"
+        },
+        {
           "$ref": "#/$defs/user_historyRequest"
         },
         {
@@ -8050,7 +9037,19 @@
           "$ref": "#/$defs/user_getTurnRequest"
         },
         {
+          "$ref": "#/$defs/user_getTurnProgressRequest"
+        },
+        {
           "$ref": "#/$defs/user_controlRequest"
+        },
+        {
+          "$ref": "#/$defs/user_cancelActiveTurnsRequest"
+        },
+        {
+          "$ref": "#/$defs/user_editQueuedInputRequest"
+        },
+        {
+          "$ref": "#/$defs/user_convertQueuedToSteerRequest"
         },
         {
           "$ref": "#/$defs/user_interactionsRequest"
@@ -8060,6 +9059,9 @@
         },
         {
           "$ref": "#/$defs/user_eventsRequest"
+        },
+        {
+          "$ref": "#/$defs/user_eventsBeforeRequest"
         },
         {
           "$ref": "#/$defs/user_checkpointsRequest"
@@ -8396,6 +9398,96 @@
             "$ref": "#/$defs/interaction"
           }
         }
+      }
+    },
+    "cancelActiveTurnsPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["session", "requestId"],
+      "properties": {
+        "session": { "$ref": "#/$defs/session" },
+        "requestId": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "threadId": { "$ref": "#/$defs/cancelActiveThreadId" }
+      }
+    },
+    "cancelActiveThreadId": {
+      "anyOf": [
+        { "type": "string", "minLength": 1, "maxLength": 256 },
+        { "type": "null" }
+      ]
+    },
+    "sessionActivity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["phase", "interactionIds"],
+      "properties": {
+        "phase": { "enum": ["RUNNING", "IDLE", "REQUIRES_ACTION", "RETRIES_EXHAUSTED"] },
+        "interactionIds": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1, "maxLength": 256 }
+        }
+      },
+      "if": { "properties": { "phase": { "const": "REQUIRES_ACTION" } } },
+      "then": { "properties": { "interactionIds": { "minItems": 1 } } },
+      "else": { "properties": { "interactionIds": { "maxItems": 0 } } }
+    },
+    "confirmationApplication": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["requestId", "interactionId", "allowed"],
+      "properties": {
+        "requestId": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "interactionId": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "allowed": { "type": "boolean" }
+      }
+    },
+    "activeTurnCancellation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["requestId", "threadId", "targets", "acceptedAt"],
+      "properties": {
+        "requestId": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "threadId": { "$ref": "#/$defs/cancelActiveThreadId" },
+        "acceptedAt": { "type": "integer", "minimum": 0 },
+        "targets": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["threadId", "turnId"],
+            "properties": {
+              "threadId": { "type": "string", "minLength": 1, "maxLength": 256 },
+              "turnId": { "type": "string", "minLength": 1, "maxLength": 256 }
+            }
+          }
+        }
+      }
+    },
+    "backend_cancelActiveTurnsRequest": {
+      "$ref": "#/$defs/user_cancelActiveTurnsRequest"
+    },
+    "user_cancelActiveTurnsRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["version", "operation", "payload"],
+      "properties": {
+        "version": { "const": "durable.v1" },
+        "operation": { "const": "cancelActiveTurns" },
+        "payload": { "$ref": "#/$defs/cancelActiveTurnsPayload" }
+      }
+    },
+    "backend_cancelActiveTurnsResponse": {
+      "$ref": "#/$defs/user_cancelActiveTurnsResponse"
+    },
+    "user_cancelActiveTurnsResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["version", "result"],
+      "properties": {
+        "version": { "const": "durable.v1" },
+        "result": { "$ref": "#/$defs/activeTurnCancellation" }
       }
     },
     "backend_controlRequest": {
@@ -10176,6 +11268,12 @@
         },
         "reason": {
           "type": "string"
+        },
+        "applied": {
+          "type": "boolean"
+        },
+        "appliedAt": {
+          "$ref": "#/$defs/runStepRef"
         }
       }
     },
@@ -11576,18 +12674,165 @@
         }
       }
     },
+    "jobView": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "jobId",
+        "child",
+        "status",
+        "output",
+        "error"
+      ],
+      "properties": {
+        "jobId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "child": {
+          "$ref": "#/$defs/delegationLink"
+        },
+        "status": {
+          "$ref": "#/$defs/turnStatus"
+        },
+        "output": {},
+        "error": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "backend_jobRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "version",
+        "operation",
+        "payload"
+      ],
+      "properties": {
+        "version": {
+          "const": "durable.v1"
+        },
+        "operation": {
+          "const": "job"
+        },
+        "payload": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "thread",
+            "jobId"
+          ],
+          "properties": {
+            "thread": {
+              "$ref": "#/$defs/thread"
+            },
+            "jobId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            }
+          }
+        }
+      }
+    },
+    "backend_jobResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "version",
+        "result"
+      ],
+      "properties": {
+        "version": {
+          "const": "durable.v1"
+        },
+        "result": {
+          "$ref": "#/$defs/jobView"
+        }
+      }
+    },
+    "backend_awaitJobRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "version",
+        "operation",
+        "payload"
+      ],
+      "properties": {
+        "version": {
+          "const": "durable.v1"
+        },
+        "operation": {
+          "const": "awaitJob"
+        },
+        "payload": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "thread",
+            "request",
+            "jobId",
+            "timeoutMillis"
+          ],
+          "properties": {
+            "thread": {
+              "$ref": "#/$defs/thread"
+            },
+            "request": {
+              "$ref": "#/$defs/executionRequest"
+            },
+            "jobId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            },
+            "timeoutMillis": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9007199254740991
+            }
+          }
+        }
+      }
+    },
+    "backend_awaitJobResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "version",
+        "result"
+      ],
+      "properties": {
+        "version": {
+          "const": "durable.v1"
+        },
+        "result": {
+          "$ref": "#/$defs/executionResult"
+        }
+      }
+    },
     "delegationTarget": {
       "type": "object",
       "additionalProperties": false,
       "required": [
         "child",
-        "input"
+        "input",
+        "detached"
       ],
       "properties": {
         "child": {
           "$ref": "#/$defs/threadSpec"
         },
-        "input": {}
+        "input": {},
+        "detached": {
+          "type": "boolean"
+        }
       }
     },
     "delegationView": {

@@ -33,14 +33,17 @@ Requirements: Java 17+, Maven, POSIX `sh`, Python 3, and an already running Rock
 Broker ACLs and authentication for your deployment; this is not a production credential configuration.
 
 Both applications default to `mq-namespace=durable-sandbox`, separate from the echo tool scenario.
-According to `RocketMqExecutionTopology`, route `hands` requires these pre-provisioned normal topics:
+Provision these LITE parents using the [Durable LiteTopic setup](../../../../docs/dev/en/docs/harness/durable.md):
 
+- `durable-sandbox-turn-dispatch`
+- `durable-sandbox-turn-signal`
+- `durable-sandbox-turn-owner`
 - `durable-sandbox-hands-commands`
 - `durable-sandbox-hands-controls`
 - `durable-sandbox-hands-updates`
 
-Groups are `durable-sandbox-hands-brain`, `durable-sandbox-hands-worker`, and
-`durable-sandbox-hands-worker-controls`. Grant the corresponding producer/consumer access. Both
+Configure a Shared consumer group per parent with explicit subscriptions for the owner group and
+wildcard delivery for the other groups. Grant producer and consumer access. Both
 applications must use the same MQ namespace, business namespace and session ID. Do not mix
 independent Brain databases in one consumer group.
 

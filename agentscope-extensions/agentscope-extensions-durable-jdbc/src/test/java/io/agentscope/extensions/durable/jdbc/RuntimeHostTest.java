@@ -21,8 +21,13 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.spy;
+import static org.mockito.Mockito.timeout;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -41,18 +46,54 @@ import io.agentscope.durable.DurableTypes.TurnStatus;
 import io.agentscope.durable.HarnessAdapter;
 import io.agentscope.durable.HarnessContext;
 import io.agentscope.durable.TransactionalSessionBackend;
+import io.agentscope.durable.TurnSchedulingStatistics.Source;
+import io.agentscope.durable.Wakeups;
 import io.agentscope.durable.store.RecordObjectStore;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 class RuntimeHostTest {
     @TempDir Path directory;
+
+    @Test
+    void idleDatabaseDiscoveryReportsAnEmptyScan() throws Exception {
+        var adapter = mock(HarnessAdapter.class);
+        when(adapter.capabilities())
+                .thenReturn(
+                        new HarnessAdapter.Capabilities(
+                                "1",
+                                HarnessAdapter.RecoveryBoundary.CHECKPOINT,
+                                HarnessAdapter.EventDelivery.COMPLETED,
+                                false,
+                                List.of("text")));
+        try (var backend = LocalBackend.open(directory);
+                var runtime =
+                        DurableRuntime.builder()
+                                .backend(backend)
+                                .harness("agent", "v1", adapter)
+                                .pollInterval(Duration.ofMinutes(1))
+                                .build()) {
+            runtime.start();
+            long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+            while (!runtime.schedulingStatistics().scans().containsKey(Source.DATABASE)
+                    && System.nanoTime() < deadline) Thread.sleep(10);
+            var scan = runtime.schedulingStatistics().scans().get(Source.DATABASE);
+            assertTrue(scan != null, "the initial database scan did not run");
+            assertEquals(1, scan.total());
+            assertEquals(1, scan.empty());
+            assertEquals(0, scan.failures());
+            assertEquals(1.0, scan.emptyRatio());
+        }
+    }
 
     @Test
     void incompatibleHostLeavesTheRunAvailableToACompatibleReplacement() {
@@ -138,6 +179,101 @@ class RuntimeHostTest {
                     runtime.getSession(key).getTurn(turn.turnId()).status().status());
             var older = new SessionKey("scope", "old-0");
             assertEquals(TurnStatus.QUEUED, backend.snapshot(older).turns().get(0).status());
+        }
+    }
+
+    @Test
+    void sessionWakeupKeepsWorkArrivingDuringAnActiveInvocationAndLeavesOtherSessionsAlone()
+            throws Exception {
+        var firstEntered = new CountDownLatch(1);
+        var finishFirst = new CountDownLatch(1);
+        var firstCommitted = new CountDownLatch(1);
+        var returnFirst = new CountDownLatch(1);
+        var secondFinished = new CountDownLatch(1);
+        var ours = new SessionKey("scope", "current");
+        var other = new SessionKey("scope", "other");
+        var adapter =
+                new HarnessAdapter() {
+                    public Capabilities capabilities() {
+                        return new Capabilities(
+                                "1",
+                                RecoveryBoundary.CHECKPOINT,
+                                EventDelivery.COMPLETED,
+                                false,
+                                List.of("text"));
+                    }
+
+                    public void execute(HarnessContext context) throws Exception {
+                        if (firstEntered.getCount() != 0) {
+                            firstEntered.countDown();
+                            assertTrue(finishFirst.await(5, TimeUnit.SECONDS));
+                            finish(context, "first");
+                            firstCommitted.countDown();
+                            assertTrue(returnFirst.await(5, TimeUnit.SECONDS));
+                        } else {
+                            assertEquals(ours, context.lease().session());
+                            finish(context, "second");
+                            secondFinished.countDown();
+                        }
+                    }
+                };
+        try (var records = JdbcRecordStore.sqlite(directory.resolve("session-wakeup.db"));
+                var storage = new TransactionalSessionBackend(records);
+                var backend = spy(storage.withWakeups(Wakeups.local()));
+                var runtime =
+                        DurableRuntime.builder()
+                                .backend(backend)
+                                .harness("agent", "v1", adapter)
+                                .parallelism(1)
+                                .pollInterval(Duration.ofMinutes(1))
+                                .build()) {
+            var thread = runtime.createSession(ours, "agent").mainThread();
+            var observer = runtime.createSession(other, "agent").mainThread();
+            thread.submit("first", "first");
+            runtime.start();
+            assertTrue(firstEntered.await(5, TimeUnit.SECONDS));
+            var unrelated = storage.submit(observer.key(), "other", DurableJson.value("other"));
+            var queued = thread.submit("second", "second");
+            finishFirst.countDown();
+            assertTrue(firstCommitted.await(5, TimeUnit.SECONDS));
+            runtime.wake(ours);
+            returnFirst.countDown();
+            assertTrue(secondFinished.await(5, TimeUnit.SECONDS));
+            verify(backend).ready(anyList(), anyInt());
+            assertFalse(backend.capabilities().messageDrivenScheduling());
+            assertEquals(TurnStatus.SUCCEEDED, queued.status().status());
+            assertEquals(
+                    TurnStatus.QUEUED, storage.turn(observer.key(), unrelated.turnId()).status());
+        }
+    }
+
+    @Test
+    void awaitReadsOnTheMatchingNotificationWithASeparateDeadline() throws Exception {
+        try (var backend = spy(LocalBackend.open(directory));
+                var runtime =
+                        DurableRuntime.builder()
+                                .backend(backend)
+                                .definition("agent", "v1", "1")
+                                .observationInterval(Duration.ofMinutes(1))
+                                .build()) {
+            var thread =
+                    runtime.createSession(new SessionKey("scope", "observed"), "agent")
+                            .mainThread();
+            var turn = thread.submit("first", "one");
+            var lease = backend.claim(thread.key(), "runner", Duration.ofMinutes(1)).orElseThrow();
+            var observation = turn.await(Duration.ofSeconds(5)).toCompletableFuture();
+            verify(backend, timeout(1000)).turn(thread.key(), turn.turnId());
+            finish(new HarnessContext(backend, lease, new AtomicBoolean()), "done");
+            assertEquals(TurnStatus.SUCCEEDED, observation.get(2, TimeUnit.SECONDS).status());
+            var queued = thread.submit("second", "two");
+            var failure =
+                    assertThrows(
+                            ExecutionException.class,
+                            () ->
+                                    queued.await(Duration.ofMillis(100))
+                                            .toCompletableFuture()
+                                            .get(2, TimeUnit.SECONDS));
+            assertTrue(failure.getCause() instanceof TimeoutException);
         }
     }
 
@@ -282,6 +418,7 @@ class RuntimeHostTest {
                 release.countDown();
                 assertTrue(runtime.drain(Duration.ofSeconds(5)));
                 assertFalse(runtime.offer(new ThreadKey(b, "main")));
+                runtime.tick(new ThreadKey(b, "main"));
                 assertEquals(
                         TurnStatus.SUCCEEDED,
                         runtime.getSession(a).getTurn(first.turnId()).status().status());
@@ -296,6 +433,51 @@ class RuntimeHostTest {
             } finally {
                 release.countDown();
             }
+        }
+    }
+
+    @Test
+    void drainingReleasesAnUnsettledTurnWithoutTheNormalReleaseDelay() throws Exception {
+        var entered = new CountDownLatch(1);
+        var finish = new CountDownLatch(1);
+        var adapter = mock(HarnessAdapter.class);
+        when(adapter.capabilities())
+                .thenReturn(
+                        new HarnessAdapter.Capabilities(
+                                "1",
+                                HarnessAdapter.RecoveryBoundary.CHECKPOINT,
+                                HarnessAdapter.EventDelivery.COMPLETED,
+                                false,
+                                List.of("text")));
+        doAnswer(
+                        call -> {
+                            entered.countDown();
+                            assertTrue(finish.await(5, TimeUnit.SECONDS));
+                            return null;
+                        })
+                .when(adapter)
+                .execute(any());
+        try (var backend = LocalBackend.open(directory);
+                var runtime =
+                        DurableRuntime.builder()
+                                .backend(backend)
+                                .harness("agent", "v1", adapter)
+                                .releaseDelay(Duration.ofMinutes(2))
+                                .build()) {
+            var thread =
+                    runtime.createSession(new SessionKey("scope", "drain"), "agent").mainThread();
+            var turn = thread.submit("one", "input");
+            assertTrue(runtime.offer(thread.key()));
+            assertTrue(entered.await(5, TimeUnit.SECONDS));
+            assertFalse(runtime.drain(Duration.ZERO));
+            finish.countDown();
+            assertTrue(runtime.drain(Duration.ofSeconds(5)));
+            var replacement =
+                    backend.claim(thread.key(), "replacement", Duration.ofSeconds(30))
+                            .orElseThrow();
+            assertEquals(turn.turnId(), replacement.turnId());
+        } finally {
+            finish.countDown();
         }
     }
 

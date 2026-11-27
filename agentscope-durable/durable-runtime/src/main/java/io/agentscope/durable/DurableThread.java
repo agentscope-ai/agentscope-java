@@ -18,6 +18,7 @@ package io.agentscope.durable;
 import com.fasterxml.jackson.databind.JsonNode;
 import io.agentscope.durable.DurableMessages.Input;
 import io.agentscope.durable.DurableTypes.CheckpointMetadata;
+import io.agentscope.durable.DurableTypes.CommandReceipt;
 import io.agentscope.durable.DurableTypes.CommitReceipt;
 import io.agentscope.durable.DurableTypes.EventFilter;
 import io.agentscope.durable.DurableTypes.EventPage;
@@ -93,6 +94,43 @@ public final class DurableThread {
 
     public DurableTurn submit(String requestId, String text) {
         return submit(requestId, Input.text(text));
+    }
+
+    /** Updates an unstarted user input at its current revision. */
+    public CommandReceipt editQueuedInput(
+            String requestId, String turnId, long expectedInputRevision, Input input) {
+        return DurableJson.convert(
+                call(
+                        "editQueuedInput",
+                        "requestId",
+                        requestId,
+                        "turnId",
+                        turnId,
+                        "expectedInputRevision",
+                        expectedInputRevision,
+                        "input",
+                        input),
+                CommandReceipt.class);
+    }
+
+    /** Moves an unstarted user's current input to the active Turn on this Thread. */
+    public CommandReceipt convertQueuedToSteer(
+            String requestId,
+            String sourceTurnId,
+            String targetTurnId,
+            long expectedInputRevision) {
+        return DurableJson.convert(
+                call(
+                        "convertQueuedToSteer",
+                        "requestId",
+                        requestId,
+                        "sourceTurnId",
+                        sourceTurnId,
+                        "targetTurnId",
+                        targetTurnId,
+                        "expectedInputRevision",
+                        expectedInputRevision),
+                CommandReceipt.class);
     }
 
     public DurableTurn getTurn(String turnId) {

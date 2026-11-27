@@ -21,8 +21,6 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyInt;
-import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -32,6 +30,7 @@ import io.agentscope.core.ReActAgent;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
+import io.agentscope.core.message.ToolResultState;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.GenerateOptions;
@@ -51,8 +50,11 @@ import io.agentscope.durable.DurableTypes.RunStepRef;
 import io.agentscope.durable.DurableTypes.SessionKey;
 import io.agentscope.durable.DurableTypes.ThreadKey;
 import io.agentscope.durable.DurableTypes.ToolCall;
+import io.agentscope.durable.DurableTypes.ToolExecutionStatus;
 import io.agentscope.durable.DurableTypes.TurnStatus;
 import io.agentscope.durable.ExecutionMessages;
+import io.agentscope.durable.ExecutionMessages.Command;
+import io.agentscope.durable.ExecutionMessages.ExecuteBatch;
 import io.agentscope.durable.ExecutionMessages.Kind;
 import io.agentscope.durable.Executor;
 import io.agentscope.durable.TransactionalSessionBackend;
@@ -60,6 +62,7 @@ import io.agentscope.durable.Wakeups;
 import io.agentscope.durable.agentscope.AgentScopeAdapter;
 import io.agentscope.durable.store.RecordStore;
 import io.agentscope.durable.worker.TransactionalExecutionStore;
+import io.agentscope.extensions.durable.jdbc.FileObjectStore;
 import io.agentscope.extensions.durable.jdbc.JdbcRecordStore;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
@@ -69,6 +72,7 @@ import java.util.Base64;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Properties;
 import java.util.Set;
 import java.util.UUID;
@@ -81,11 +85,12 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.BooleanSupplier;
 import java.util.function.Function;
 import java.util.function.Supplier;
 import org.apache.rocketmq.client.apis.ClientServiceProvider;
-import org.apache.rocketmq.client.apis.consumer.SimpleConsumer;
+import org.apache.rocketmq.client.apis.consumer.ConsumeResult;
 import org.apache.rocketmq.client.apis.message.Message;
 import org.apache.rocketmq.client.apis.message.MessageView;
 import org.apache.rocketmq.client.apis.producer.Producer;
@@ -232,6 +237,7 @@ class RocketMqExecutionTest {
         final AtomicInteger failedEventAck = new AtomicInteger();
         final AtomicInteger commandAcks = new AtomicInteger();
         final AtomicInteger eventAcks = new AtomicInteger();
+        final List<ExecuteBatch> dispatches = new CopyOnWriteArrayList<>();
 
         Broker() throws Exception {
             when(producer.send(any()))
@@ -239,12 +245,26 @@ class RocketMqExecutionTest {
                             call -> {
                                 var message = (Message) call.getArgument(0);
                                 boolean command = !message.getTopic().equals(TOPOLOGY.updates());
+                                if (message.getTopic().equals(TOPOLOGY.commands())) {
+                                    var value =
+                                            DurableJson.parse(
+                                                    StandardCharsets.UTF_8
+                                                            .decode(
+                                                                    message.getBody()
+                                                                            .asReadOnlyBuffer())
+                                                            .toString());
+                                    if (value.has("requests"))
+                                        dispatches.add(
+                                                DurableJson.convert(value, ExecuteBatch.class));
+                                }
                                 if (!command
                                         && failedEventPublish.getAndUpdate(n -> Math.max(0, n - 1))
                                                 > 0)
                                     throw new IllegalStateException("Event publication failed");
                                 var view = mock(MessageView.class);
                                 when(view.getTopic()).thenReturn(message.getTopic());
+                                when(view.getLiteTopic()).thenReturn(message.getLiteTopic());
+                                when(view.getKeys()).thenReturn(message.getKeys());
                                 when(view.getBody())
                                         .thenAnswer(
                                                 ignored -> message.getBody().asReadOnlyBuffer());
@@ -260,50 +280,63 @@ class RocketMqExecutionTest {
                             });
         }
 
-        SimpleConsumer consumer(boolean command) throws Exception {
+        RocketMqLoop.Subscription consumer(boolean command) {
             return consumer(command ? TOPOLOGY.commands() : TOPOLOGY.updates());
         }
 
-        SimpleConsumer consumer(String topic) throws Exception {
+        RocketMqLoop.Subscription consumer(String topic) {
             boolean command = !topic.equals(TOPOLOGY.updates());
-            var consumer = mock(SimpleConsumer.class);
             var queue = topic.equals(TOPOLOGY.controls()) ? controls : command ? commands : events;
-            when(consumer.receive(anyInt(), any(Duration.class)))
-                    .thenAnswer(
-                            call -> {
-                                var message = queue.poll(20, TimeUnit.MILLISECONDS);
-                                if (message == null) return List.of();
-                                redelivery.schedule(
-                                        () -> {
-                                            if (!acked.contains(message)) queue.add(message);
-                                        },
-                                        ACK_TIMEOUT_MILLIS,
-                                        TimeUnit.MILLISECONDS);
-                                return List.of(message);
-                            });
-            doAnswer(
-                            call -> {
-                                MessageView message = call.getArgument(0);
-                                if (!command
-                                        && failedEventAck.getAndUpdate(n -> Math.max(0, n - 1)) > 0)
-                                    throw new IllegalStateException("Consumer ACK lost");
-                                acked.add(message);
-                                (command ? commandAcks : eventAcks).incrementAndGet();
-                                return null;
-                            })
-                    .when(consumer)
-                    .ack(any());
-            return consumer;
+            return listener -> {
+                var receiver = Executors.newSingleThreadExecutor();
+                receiver.execute(
+                        () -> {
+                            try {
+                                while (!Thread.currentThread().isInterrupted()) {
+                                    var message = queue.take();
+                                    var result = listener.consume(message);
+                                    boolean lost =
+                                            !command
+                                                    && result == ConsumeResult.SUCCESS
+                                                    && failedEventAck.getAndUpdate(
+                                                                    n -> Math.max(0, n - 1))
+                                                            > 0;
+                                    if (result == ConsumeResult.SUCCESS && !lost) {
+                                        acked.add(message);
+                                        (command ? commandAcks : eventAcks).incrementAndGet();
+                                    } else {
+                                        redelivery.schedule(
+                                                () -> queue.add(message),
+                                                ACK_TIMEOUT_MILLIS,
+                                                TimeUnit.MILLISECONDS);
+                                    }
+                                }
+                            } catch (InterruptedException stopped) {
+                                Thread.currentThread().interrupt();
+                            }
+                        });
+                return receiver::shutdownNow;
+            };
         }
 
         void send(Object command) throws Exception {
+            String route = "malformed";
+            String key = "malformed";
+            if (command instanceof Command control) {
+                route = RocketMqLiteRouting.session(control.request().session());
+                key = control.commandId();
+            } else if (command instanceof ExecuteBatch batch) {
+                route = RocketMqLiteRouting.session(batch.requests().get(0).session());
+                key = batch.batchId();
+            }
             producer.send(
                     FACTORY.newMessageBuilder()
                             .setTopic(
-                                    command instanceof ExecutionMessages.Command c
-                                                    && c.kind() != Kind.EXECUTE
+                                    command instanceof Command
                                             ? TOPOLOGY.controls()
                                             : TOPOLOGY.commands())
+                            .setLiteTopic(route)
+                            .setKeys(key)
                             .setBody(
                                     DurableJson.value(command)
                                             .toString()
@@ -318,11 +351,13 @@ class RocketMqExecutionTest {
     }
 
     @Test
-    void agentScopeResumesThroughSeparateLedgersDespitePublicationAndAckFailures()
+    void agentScopeBatchesOneModelActionAndResumesDespitePublicationAndAckFailures()
             throws Exception {
         var starts = new AtomicInteger();
         var queries = new AtomicInteger();
         var modelCalls = new AtomicInteger();
+        var appliedCalls = new AtomicReference<List<ToolResultBlock>>();
+        var approvalRevoked = new AtomicBoolean();
         var errors = new CopyOnWriteArrayList<Throwable>();
         Executor provider =
                 new Executor() {
@@ -331,6 +366,7 @@ class RocketMqExecutionTest {
                     }
 
                     public ExecutionResult startExecution(ExecutionRequest request) {
+                        assertFalse("revoked".equals(request.call().callId()));
                         starts.incrementAndGet();
                         throw new IllegalStateException("External start response lost");
                     }
@@ -357,7 +393,7 @@ class RocketMqExecutionTest {
                     public Flux<ChatResponse> stream(
                             List<Msg> messages, List<ToolSchema> tools, GenerateOptions options) {
                         modelCalls.incrementAndGet();
-                        boolean applied =
+                        var applied =
                                 messages.stream()
                                         .flatMap(
                                                 message ->
@@ -365,11 +401,13 @@ class RocketMqExecutionTest {
                                                                 .getContentBlocks(
                                                                         ToolResultBlock.class)
                                                                 .stream())
-                                        .anyMatch(result -> !result.isSuspended());
+                                        .filter(result -> !result.isSuspended())
+                                        .toList();
+                        if (!applied.isEmpty()) appliedCalls.set(applied);
                         return Flux.just(
                                 ChatResponse.builder()
                                         .content(
-                                                applied
+                                                !applied.isEmpty()
                                                         ? List.of(
                                                                 TextBlock.builder()
                                                                         .text("done")
@@ -379,6 +417,16 @@ class RocketMqExecutionTest {
                                                                         .id("call")
                                                                         .name("echo")
                                                                         .input(Map.of("value", 7))
+                                                                        .build(),
+                                                                ToolUseBlock.builder()
+                                                                        .id("revoked")
+                                                                        .name("echo")
+                                                                        .input(Map.of("value", 9))
+                                                                        .build(),
+                                                                ToolUseBlock.builder()
+                                                                        .id("call-2")
+                                                                        .name("echo")
+                                                                        .input(Map.of("value", 8))
                                                                         .build()))
                                         .build());
                     }
@@ -429,12 +477,24 @@ class RocketMqExecutionTest {
                                             commands,
                                             broker.consumer(TOPOLOGY.controls()))
                                     .authorize(
-                                            command ->
-                                                    assertEquals(
-                                                            "tenant",
-                                                            command.request()
-                                                                    .session()
-                                                                    .namespace()))
+                                            command -> {
+                                                assertEquals(
+                                                        "tenant",
+                                                        command.request().session().namespace());
+                                                if ("revoked"
+                                                        .equals(command.request().call().callId()))
+                                                    approvalRevoked.set(true);
+                                            })
+                                    .authorizeStart(
+                                            request ->
+                                                    approvalRevoked.get()
+                                                                    && "revoked"
+                                                                            .equals(
+                                                                                    request.call()
+                                                                                            .callId())
+                                                            ? Optional.of(
+                                                                    "Resource permission revoked")
+                                                            : Optional.empty())
                                     .pollInterval(POLL)
                                     .onError(errors::add)
                                     .build();
@@ -474,9 +534,26 @@ class RocketMqExecutionTest {
                                 .get(0)
                                 .path("text")
                                 .asText());
-                assertEquals(1, starts.get());
-                assertEquals(1, queries.get());
+                assertEquals(2, starts.get());
+                assertEquals(2, queries.get());
                 assertEquals(2, modelCalls.get());
+                assertEquals(
+                        List.of("call", "revoked", "call-2"),
+                        appliedCalls.get().stream().map(ToolResultBlock::getId).toList());
+                assertEquals(ToolResultState.DENIED, appliedCalls.get().get(1).getState());
+                assertEquals(
+                        "Error: Resource permission revoked",
+                        ((TextBlock) appliedCalls.get().get(1).getOutput().get(0)).getText());
+                assertEquals(ToolExecutionStatus.DENIED, turn.getToolCall("revoked").status());
+                assertTrue(turn.getToolCall("revoked").applied());
+                assertFalse(broker.dispatches.isEmpty());
+                assertEquals(1, broker.dispatches.stream().distinct().count());
+                assertEquals(
+                        List.of("call", "call-2", "revoked"),
+                        broker.dispatches.get(0).requests().stream()
+                                .map(req -> req.call().callId())
+                                .sorted()
+                                .toList());
                 assertTrue(executor.capabilities().output());
                 assertNull(runtime.lastFailure(new ThreadKey(session, "main")));
                 assertTrue(
@@ -485,10 +562,114 @@ class RocketMqExecutionTest {
                 executor.close();
                 assertThrows(IllegalStateException.class, () -> executor.startExecution(request));
             }
-            verify(commands, never()).close();
-            verify(events, never()).close();
             verify(broker.producer, never()).close();
             assertFalse(hands.keys("execution-pool:", null, 10).isEmpty());
+        }
+    }
+
+    @Test
+    void largeBatchAcknowledgementWaitsForEveryChildAndRedeliveryDoesNotRepeatEffects()
+            throws Exception {
+        var arguments = DurableJson.value(Map.of("value", "x".repeat(RocketMqLoop.MAX_BYTES / 2)));
+        var first =
+                new ExecutionRequest(
+                        request.executionId(),
+                        request.thread(),
+                        request.turnId(),
+                        new ToolCall("call", "hands", "echo", arguments)
+                                .withOrigin(request.call().origin()));
+        var second =
+                new ExecutionRequest(
+                        "exec-second",
+                        request.thread(),
+                        request.turnId(),
+                        new ToolCall("call-2", "hands", "echo", arguments)
+                                .withOrigin(request.call().origin()));
+        var pending = new AtomicBoolean(true);
+        var missedAdmission = new CountDownLatch(1);
+        try (var broker = new Broker();
+                var database = open(directory.resolve("partial-batch.db"))) {
+            var objects = new FileObjectStore(directory.resolve("objects"));
+            String secondIdentity = ExecutionMessages.identity(second);
+            RecordStore records =
+                    new RecordStore() {
+                        public <T> T transaction(String scope, Function<Transaction, T> action) {
+                            if (scope.startsWith("execution-pool:")
+                                    && scope.endsWith(secondIdentity)
+                                    && pending.get()) {
+                                missedAdmission.countDown();
+                                throw new DurableException(
+                                        DurableException.Code.UNAVAILABLE,
+                                        "second admission interrupted");
+                            }
+                            return database.transaction(scope, action);
+                        }
+
+                        public List<Work> ready(String queue, int limit) {
+                            return database.ready(queue, limit);
+                        }
+
+                        public List<String> keys(String prefix, String after, int limit) {
+                            return database.keys(prefix, after, limit);
+                        }
+                    };
+            var provider = mock(Executor.class);
+            when(provider.capabilities()).thenReturn(new Executor.Capabilities(true, true, true));
+            when(provider.startExecution(any()))
+                    .thenReturn(
+                            new ExecutionResult(
+                                    ExecutionState.SUCCEEDED,
+                                    null,
+                                    DurableJson.value("done"),
+                                    null));
+            var store = new TransactionalExecutionStore(database, "hands");
+            try (var worker =
+                    RocketMqWorker.builder()
+                            .executor("hands", provider)
+                            .recordStore(records)
+                            .objects(objects)
+                            .clients(
+                                    FACTORY,
+                                    broker.producer,
+                                    broker.consumer(true),
+                                    broker.consumer(TOPOLOGY.controls()))
+                            .authorize(command -> {})
+                            .onError(error -> {})
+                            .pollInterval(POLL)
+                            .build()) {
+                var batch = ExecutionMessages.batch(List.of(first, second));
+                Runnable publish =
+                        () ->
+                                RocketMqLoop.send(
+                                        FACTORY,
+                                        broker.producer,
+                                        TOPOLOGY.commands(),
+                                        RocketMqLiteRouting.session(request.session()),
+                                        batch.batchId(),
+                                        batch,
+                                        objects);
+                publish.run();
+                assertTrue(
+                        DurableJson.parse(
+                                        StandardCharsets.UTF_8
+                                                .decode(broker.commands.element().getBody())
+                                                .toString())
+                                .has("objectReference"));
+                worker.start();
+                assertTrue(missedAdmission.await(AWAIT_DEADLINE_SECONDS, TimeUnit.SECONDS));
+                assertEquals(0, broker.commandAcks.get());
+                assertEquals(1, store.keys(null, 10).size());
+                pending.set(false);
+                await(() -> broker.commandAcks.get() == 1);
+                await(
+                        () ->
+                                store.query(first).state().terminal()
+                                        && store.query(second).state().terminal());
+                publish.run();
+                await(() -> broker.commandAcks.get() == 2);
+                verify(provider).startExecution(first);
+                verify(provider).startExecution(second);
+            }
         }
     }
 
@@ -592,12 +773,68 @@ class RocketMqExecutionTest {
             allow.set(true);
             broker.send(ExecutionMessages.command(Kind.CANCEL, request));
             await(() -> broker.commandAcks.get() > 1);
-            broker.send(ExecutionMessages.command(Kind.EXECUTE, request));
+            broker.send(ExecutionMessages.batch(List.of(request)));
             await(() -> broker.commandAcks.get() > 2);
             assertEquals(
                     ExecutionState.CANCELLED,
                     new TransactionalExecutionStore(records, "hands").query(request).state());
             verify(provider, never()).startExecution(any());
+        }
+    }
+
+    @Test
+    void durableControlInterruptsLocallyRunningProviderAndUsesItsConfirmedOutcome()
+            throws Exception {
+        var started = new CountDownLatch(1);
+        var interrupted = new CountDownLatch(1);
+        Executor provider =
+                new Executor() {
+                    public Capabilities capabilities() {
+                        return new Capabilities(false, true, true);
+                    }
+
+                    public ExecutionResult startExecution(ExecutionRequest request) {
+                        started.countDown();
+                        try {
+                            Thread.sleep(10_000);
+                            throw new AssertionError("Running provider was not interrupted");
+                        } catch (InterruptedException error) {
+                            interrupted.countDown();
+                            return new ExecutionResult(
+                                    ExecutionState.UNKNOWN, "external", null, "interrupted");
+                        }
+                    }
+
+                    public ExecutionResult query(ExecutionRequest request, String handle) {
+                        return new ExecutionResult(ExecutionState.RUNNING, "external", null, null);
+                    }
+
+                    public ExecutionResult cancel(ExecutionRequest request, String handle) {
+                        return new ExecutionResult(
+                                ExecutionState.CANCELLED, "external", null, null);
+                    }
+                };
+        try (var broker = new Broker();
+                var records = open(directory.resolve("cancel-running.db"));
+                var worker =
+                        RocketMqWorker.builder()
+                                .executor("hands", provider)
+                                .recordStore(records)
+                                .clients(
+                                        FACTORY,
+                                        broker.producer,
+                                        broker.consumer(true),
+                                        broker.consumer(TOPOLOGY.controls()))
+                                .authorize(command -> {})
+                                .pollInterval(Duration.ofSeconds(1))
+                                .build()) {
+            worker.start();
+            broker.send(ExecutionMessages.batch(List.of(request)));
+            assertTrue(started.await(5, TimeUnit.SECONDS));
+            broker.send(ExecutionMessages.command(Kind.CANCEL, request));
+            assertTrue(interrupted.await(4, TimeUnit.SECONDS));
+            var ledger = new TransactionalExecutionStore(records, "hands");
+            await(() -> ledger.query(request).state() == ExecutionState.CANCELLED);
         }
     }
 
@@ -666,8 +903,8 @@ class RocketMqExecutionTest {
                                 .build()) {
             first.start();
             second.start();
-            broker.send(ExecutionMessages.command(Kind.EXECUTE, request));
-            broker.send(ExecutionMessages.command(Kind.EXECUTE, request));
+            broker.send(ExecutionMessages.batch(List.of(request)));
+            broker.send(ExecutionMessages.batch(List.of(request)));
             assertTrue(entered.await(5, TimeUnit.SECONDS));
             await(() -> broker.commandAcks.get() >= 2);
             assertEquals(1, starts.get());

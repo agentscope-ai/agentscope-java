@@ -38,8 +38,7 @@ public final class SessionEventClient implements AutoCloseable {
     private final Consumer<Snapshot> snapshots;
     private final Consumer<PublicEvent> events;
     private volatile String cursor;
-    private volatile String replayHighWatermark;
-    private boolean replayBoundaryCaptured;
+    private Long replayHighWatermark;
     private volatile boolean replayCaughtUp;
     private final ArrayBlockingQueue<Boolean> changes = new ArrayBlockingQueue<>(1);
     private final AtomicBoolean closed = new AtomicBoolean();
@@ -156,18 +155,14 @@ public final class SessionEventClient implements AutoCloseable {
             resynchronize();
             return 0;
         }
-        if (!replayBoundaryCaptured) {
-            replayHighWatermark = page.highWatermark();
-            replayBoundaryCaptured = true;
-        }
+        replayThrough(page.highWatermarkSequence());
         for (var event : page.events()) {
             if (closed.get()) return 0;
             events.accept(event);
             cursor = event.cursor();
-            if (Objects.equals(cursor, replayHighWatermark)) replayCaughtUp = true;
         }
         cursor = page.cursor();
-        if (Objects.equals(cursor, replayHighWatermark)) replayCaughtUp = true;
+        if (Long.parseLong(page.scannedSequence()) >= replayHighWatermark) replayCaughtUp = true;
         return page.events().size();
     }
 
@@ -177,9 +172,12 @@ public final class SessionEventClient implements AutoCloseable {
         if (closed.get()) return;
         snapshots.accept(snapshot);
         cursor = snapshot.cursor();
-        replayHighWatermark = snapshot.cursor();
-        replayBoundaryCaptured = true;
+        replayHighWatermark = Long.parseLong(snapshot.sequence());
         replayCaughtUp = true;
+    }
+
+    void replayThrough(String sequence) {
+        if (replayHighWatermark == null) replayHighWatermark = Long.parseLong(sequence);
     }
 
     boolean replayCaughtUp() {

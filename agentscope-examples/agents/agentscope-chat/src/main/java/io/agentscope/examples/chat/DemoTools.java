@@ -60,8 +60,6 @@ public final class DemoTools {
                         step ->
                                 emitter.emit(
                                         ToolResultBlock.text("核对 " + topic + "：" + step + "/4\n")))
-                .then(
-                        Mono.fromSupplier(
-                                () -> ToolResultBlock.text("核对完成：文本、工具参数、执行进度和最终结果均可从日志恢复。")));
+                .then(Mono.fromSupplier(() -> ToolResultBlock.text("核对完成：文本、工具参数和最终结果可从日志恢复。")));
     }
 }

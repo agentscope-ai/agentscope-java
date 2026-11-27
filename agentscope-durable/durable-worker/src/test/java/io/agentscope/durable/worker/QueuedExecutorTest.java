@@ -33,7 +33,9 @@ import io.agentscope.durable.DurableTypes.ExecutionReconciliation;
 import io.agentscope.durable.DurableTypes.ExecutionRequest;
 import io.agentscope.durable.DurableTypes.ExecutionResult;
 import io.agentscope.durable.DurableTypes.ExecutionState;
+import io.agentscope.durable.DurableTypes.LiveEvent;
 import io.agentscope.durable.DurableTypes.OutputPage;
+import io.agentscope.durable.DurableTypes.RunStepRef;
 import io.agentscope.durable.DurableTypes.SessionKey;
 import io.agentscope.durable.DurableTypes.SessionSpec;
 import io.agentscope.durable.DurableTypes.ThreadBinding;
@@ -43,9 +45,12 @@ import io.agentscope.durable.DurableTypes.TurnStatus;
 import io.agentscope.durable.ExecutionMessages;
 import io.agentscope.durable.ExecutionMessages.Command;
 import io.agentscope.durable.ExecutionMessages.Event;
+import io.agentscope.durable.ExecutionMessages.ExecuteBatch;
 import io.agentscope.durable.ExecutionMessages.Kind;
+import io.agentscope.durable.LiveEvents;
 import io.agentscope.durable.SessionBackend;
 import io.agentscope.durable.TransactionalSessionBackend;
+import io.agentscope.durable.store.RecordStore;
 import io.agentscope.extensions.durable.jdbc.JdbcRecordStore;
 import java.nio.file.Path;
 import java.sql.DriverManager;
@@ -57,11 +62,53 @@ import java.util.Map;
 import java.util.Properties;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.Consumer;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 class QueuedExecutorTest {
+    private static QueuedExecutor singleQueue(
+            String route,
+            RecordStore records,
+            SessionBackend backend,
+            Consumer<Command> send,
+            Duration retry) {
+        return singleQueue(route, records, backend, send, retry, Duration.ofSeconds(30));
+    }
+
+    private static QueuedExecutor singleQueue(
+            String route,
+            RecordStore records,
+            SessionBackend backend,
+            Consumer<Command> send,
+            Duration retry,
+            Duration response) {
+        return singleQueue(route, records, backend, send, retry, response, LiveEvents.none());
+    }
+
+    private static QueuedExecutor singleQueue(
+            String route,
+            RecordStore records,
+            SessionBackend backend,
+            Consumer<Command> send,
+            Duration retry,
+            Duration response,
+            LiveEvents live) {
+        return new QueuedExecutor(
+                route,
+                records,
+                backend,
+                batch -> {
+                    assertEquals(1, batch.requests().size());
+                    send.accept(ExecutionMessages.command(Kind.EXECUTE, batch.requests().get(0)));
+                },
+                send,
+                retry,
+                response,
+                live);
+    }
+
     @TempDir Path directory;
     private final String postgresUrl = System.getProperty("durable.test.jdbcUrl");
     private final Map<Path, String> schemas = new HashMap<>();
@@ -142,8 +189,7 @@ class QueuedExecutorTest {
             backend.release(brain, Duration.ZERO);
             var hands = new TransactionalExecutionStore(records, "reconciliation");
             var queue =
-                    new QueuedExecutor(
-                            "hands", records, backend, hands::receive, Duration.ofMillis(1));
+                    singleQueue("hands", records, backend, hands::receive, Duration.ofMillis(1));
             queue.startExecution(admitted);
             queue.tick(error -> fail(error));
             var key = hands.keys(null, 1).get(0);
@@ -358,7 +404,7 @@ class QueuedExecutorTest {
                 .acceptExecutionEvent(any());
         try (var records = open(file)) {
             var executor =
-                    new QueuedExecutor(
+                    singleQueue(
                             "hands",
                             records,
                             backend,
@@ -373,7 +419,7 @@ class QueuedExecutorTest {
         var recovered = mock(SessionBackend.class);
         try (var records = open(file)) {
             var executor =
-                    new QueuedExecutor(
+                    singleQueue(
                             "hands",
                             records,
                             recovered,
@@ -421,7 +467,7 @@ class QueuedExecutorTest {
         var failures = new AtomicInteger();
         try (var records = open(file)) {
             var executor =
-                    new QueuedExecutor(
+                    singleQueue(
                             "hands",
                             records,
                             mock(SessionBackend.class),
@@ -438,11 +484,12 @@ class QueuedExecutorTest {
         Thread.sleep(5);
         try (var records = open(file)) {
             var executor =
-                    new QueuedExecutor(
+                    singleQueue(
                             "hands",
                             records,
                             mock(SessionBackend.class),
                             sent::add,
+                            Duration.ofMillis(1),
                             Duration.ofMillis(1));
             executor.tick(error -> fail(error));
             assertEquals(1, failures.get());
@@ -463,6 +510,121 @@ class QueuedExecutorTest {
     }
 
     @Test
+    void batchRetryKeepsTheFrozenEnvelopeAcrossBrainReplacement() throws Exception {
+        var requests = sameAction();
+        var expected = ExecutionMessages.batch(requests);
+        var sent = new ArrayList<ExecuteBatch>();
+        var file = directory.resolve("batch-restart.db");
+        try (var records = open(file)) {
+            var queue =
+                    new QueuedExecutor(
+                            "hands",
+                            records,
+                            mock(SessionBackend.class),
+                            batch -> {
+                                sent.add(batch);
+                                throw new IllegalStateException("Broker response lost");
+                            },
+                            command -> fail("Unexpected control"),
+                            Duration.ofMillis(1),
+                            Duration.ofSeconds(30),
+                            LiveEvents.none());
+            queue.stageBatch(requests);
+            queue.tick(
+                    requests.get(0),
+                    error -> assertEquals("Broker response lost", error.getMessage()));
+        }
+        Thread.sleep(5);
+        try (var records = open(file)) {
+            var queue =
+                    new QueuedExecutor(
+                            "hands",
+                            records,
+                            mock(SessionBackend.class),
+                            sent::add,
+                            command -> fail("Unexpected control"),
+                            Duration.ofMillis(1),
+                            Duration.ofSeconds(30),
+                            LiveEvents.none());
+            queue.stageBatch(List.of(requests.get(1), requests.get(0)));
+            queue.tick(requests.get(1), error -> fail(error));
+        }
+        assertEquals(List.of(expected, expected), sent);
+    }
+
+    private List<ExecutionRequest> sameAction() {
+        var origin = new RunStepRef("run", "step");
+        var first =
+                new ExecutionRequest(
+                        request.executionId(),
+                        request.thread(),
+                        request.turnId(),
+                        request.call().withOrigin(origin));
+        var second =
+                new ExecutionRequest(
+                        "second",
+                        request.thread(),
+                        request.turnId(),
+                        new ToolCall("call-2", "hands", "echo", request.call().arguments())
+                                .withOrigin(origin));
+        return List.of(first, second);
+    }
+
+    @Test
+    void cancellationBeforePublicationKeepsTheSiblingDispatchAndSeparateControl() {
+        var requests = sameAction();
+        var first = requests.get(0);
+        var second = requests.get(1);
+        var batches = new ArrayList<ExecuteBatch>();
+        var controls = new ArrayList<Command>();
+        try (var records = open(directory.resolve("batch.db"))) {
+            var queue =
+                    new QueuedExecutor(
+                            "hands",
+                            records,
+                            mock(SessionBackend.class),
+                            batches::add,
+                            controls::add,
+                            Duration.ofSeconds(30),
+                            Duration.ofSeconds(30),
+                            LiveEvents.none());
+            queue.stageBatch(requests);
+            queue.cancel(second, null);
+            queue.tick(error -> fail(error));
+            queue.stageBatch(requests);
+            queue.tick(error -> fail(error));
+            assertEquals(List.of(ExecutionMessages.batch(List.of(first))), batches);
+            assertEquals(List.of(ExecutionMessages.command(Kind.CANCEL, second)), controls);
+        }
+    }
+
+    @Test
+    void progressWaitsForItsResponseDeadlineButAKnownSequenceGapQueriesImmediately() {
+        var sent = new ArrayList<Command>();
+        var running = new ExecutionResult(ExecutionState.RUNNING, "external", null, null);
+        try (var records = open(directory.resolve("response.db"))) {
+            var executor =
+                    singleQueue(
+                            "hands",
+                            records,
+                            mock(SessionBackend.class),
+                            sent::add,
+                            Duration.ofMillis(1),
+                            Duration.ofMinutes(1));
+            executor.startExecution(request);
+            executor.tick(error -> fail(error));
+            assertEquals(Kind.EXECUTE, sent.get(0).kind());
+            executor.receive(ExecutionMessages.event(request, 1, running));
+            executor.tick(error -> fail(error));
+            assertEquals(1, sent.size());
+            executor.receive(ExecutionMessages.event(request, 3, completed));
+            executor.tick(error -> fail(error));
+            assertEquals(Kind.QUERY, sent.get(1).kind());
+            assertEquals(1, sent.get(1).afterSequence());
+        }
+    }
+
+    @Test
     void sessionAcceptanceFailureDoesNotBlockCancellationDelivery() {
         var backend = mock(SessionBackend.class);
         doThrow(new IllegalStateException("Session storage unavailable"))
@@ -471,8 +633,7 @@ class QueuedExecutorTest {
         var sent = new ArrayList<Command>();
         var errors = new AtomicInteger();
         try (var records = open(directory.resolve("brain.db"))) {
-            var executor =
-                    new QueuedExecutor("hands", records, backend, sent::add, Duration.ofSeconds(1));
+            var executor = singleQueue("hands", records, backend, sent::add, Duration.ofSeconds(1));
             executor.startExecution(request);
             assertThrows(
                     IllegalStateException.class,
@@ -495,7 +656,7 @@ class QueuedExecutorTest {
     }
 
     @Test
-    void outOfOrderOutputWaitsForPrefixAndTerminalSealThenSurvivesRestart() {
+    void outOfOrderOutputWaitsForPrefixAndTerminalSealThenSurvivesRestart() throws Exception {
         Path file = directory.resolve("ordered.db");
         var backend = mock(SessionBackend.class);
         var sent = new ArrayList<Command>();
@@ -508,12 +669,23 @@ class QueuedExecutorTest {
                 ExecutionMessages.event(
                         request, 2, null, new OutputPage(0, 3, "YWJj", 3, true, null));
         var terminal = ExecutionMessages.event(request, 3, completed);
-        try (var records = open(file)) {
+        var previews = new ArrayList<LiveEvent>();
+        var live = LiveEvents.local();
+        try (var subscription = live.subscribe(previews::add);
+                var records = open(file)) {
             var executor =
-                    new QueuedExecutor("hands", records, backend, sent::add, Duration.ofSeconds(1));
+                    singleQueue(
+                            "hands",
+                            records,
+                            backend,
+                            sent::add,
+                            Duration.ofSeconds(1),
+                            Duration.ofSeconds(30),
+                            live);
             executor.startExecution(request);
             executor.receive(terminal);
             executor.receive(output);
+            assertTrue(previews.isEmpty());
             assertEquals(ExecutionState.PENDING, executor.query(request, null).state());
             verify(backend, times(0)).acceptExecutionEvent(any());
             executor.tick(error -> fail(error));
@@ -523,10 +695,12 @@ class QueuedExecutorTest {
             executor.receive(output);
             verify(backend, times(3)).acceptExecutionEvent(any());
             assertEquals(completed, executor.query(request, null));
+            assertEquals(1, previews.size());
+            assertEquals("tool.output.delta", previews.get(0).type());
+            assertEquals("YWJj", previews.get(0).data().path("data").asText());
         }
         try (var records = open(file)) {
-            var executor =
-                    new QueuedExecutor("hands", records, backend, sent::add, Duration.ofSeconds(1));
+            var executor = singleQueue("hands", records, backend, sent::add, Duration.ofSeconds(1));
             assertEquals("YWJj", executor.output(request, 0).data());
             assertTrue(executor.output(request, 3).terminal());
             executor.tick(error -> fail(error));
@@ -544,7 +718,7 @@ class QueuedExecutorTest {
             assertTrue(b.keys(null, 10).isEmpty());
             var sent = new ArrayList<Command>();
             var browser =
-                    new QueuedExecutor(
+                    singleQueue(
                             "browser",
                             records,
                             mock(SessionBackend.class),
@@ -554,7 +728,7 @@ class QueuedExecutorTest {
             browser.tick(error -> fail(error));
             assertTrue(sent.isEmpty());
             var hands =
-                    new QueuedExecutor(
+                    singleQueue(
                             "hands",
                             records,
                             mock(SessionBackend.class),

@@ -94,13 +94,15 @@ class AgentScopeToolEventsTest {
                 ToolResultBlock.text("Result delivered directly to user")
                         .withIdAndName("call", "job")
                         .withState(ToolResultState.SUCCESS);
-        assertTrue(
+        var applied =
                 accept(
-                                "tool/result",
-                                Map.of(
-                                        "message",
-                                        ToolResultMessage.builder().result(placeholder).build()))
-                        .isEmpty());
+                        "tool/result",
+                        Map.of("message", ToolResultMessage.builder().result(placeholder).build()));
+        assertEquals(1, applied.size());
+        assertTrue(applied.get(0).data().path("applied").asBoolean());
+        assertFalse(
+                applied.get(0).data().has("content"),
+                "Applying the placeholder must not replace the observed output");
         var completed =
                 accept(
                         "presentation/tool_result",

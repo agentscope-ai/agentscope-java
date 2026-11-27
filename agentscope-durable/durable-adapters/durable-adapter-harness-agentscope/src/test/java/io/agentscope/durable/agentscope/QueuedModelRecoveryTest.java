@@ -16,10 +16,15 @@
 package io.agentscope.durable.agentscope;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.message.ToolResultBlock;
+import io.agentscope.core.message.ToolResultState;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.Model;
@@ -30,7 +35,9 @@ import io.agentscope.durable.DurableRuntime;
 import io.agentscope.durable.DurableTypes.LiveEvent;
 import io.agentscope.durable.DurableTypes.SessionKey;
 import io.agentscope.durable.DurableTypes.ThreadKey;
+import io.agentscope.durable.DurableTypes.ToolExecutionStatus;
 import io.agentscope.durable.DurableTypes.TurnStatus;
+import io.agentscope.durable.DurableTypes.WaitCondition;
 import io.agentscope.durable.LiveEvents;
 import io.agentscope.durable.TransactionalSessionBackend;
 import io.agentscope.extensions.durable.jdbc.JdbcRecordStore;
@@ -641,17 +648,44 @@ class QueuedModelRecoveryTest {
         }
         runCrashingChild(db, "effect", 23);
         assertEquals(List.of("effect-1"), Files.readAllLines(directory.resolve("receipts")));
-        try (var next = effectRuntime(db, QueuedModelRecoveryTest::unexpectedDispatch, false)) {
+        var resumed = new AtomicReference<QueuedModelRequest>();
+        try (var next = effectRuntime(db, resumed::set, false);
+                var operator = new TransactionalSessionBackend(JdbcRecordStore.sqlite(db))) {
             var turn = next.getSession(KEY).getTurn(sent.get().turnId());
+            var evidenceWait =
+                    new WaitCondition(
+                            WaitCondition.NATIVE_TOOL_RECONCILIATION, 0, List.of("effect-1"));
             long until = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
-            while (turn.status().recovery() == null && System.nanoTime() < until) {
+            while (!evidenceWait.equals(turn.status().waiting()) && System.nanoTime() < until) {
                 next.tick(THREAD);
                 Thread.sleep(25);
             }
             assertEquals(TurnStatus.WAITING, turn.status().status());
-            assertTrue(turn.status().error().contains("effect-1"));
-            assertTrue(turn.status().error().contains("reconciliation"));
-            assertEquals(false, turn.status().recovery().retryAllowed());
+            assertEquals(evidenceWait, turn.status().waiting());
+            assertEquals(ToolExecutionStatus.UNKNOWN, turn.getToolCall("effect-1").status());
+            assertNull(turn.status().recovery());
+            assertNull(resumed.get());
+            var proof =
+                    ToolResultBlock.text("verified receipt")
+                            .withIdAndName("effect-1", "effect")
+                            .withState(ToolResultState.SUCCESS);
+            new NativeToolReconciliation("verify", "audit:receipt/effect-1", List.of(proof))
+                    .submit(operator, THREAD, turn.turnId());
+            next.tick(THREAD);
+            var continuation = resumed.get();
+            assertNotNull(continuation, () -> String.valueOf(next.lastFailure(THREAD)));
+            assertNotEquals(sent.get().callId(), continuation.callId());
+            assertEquals(ToolExecutionStatus.SUCCEEDED, turn.getToolCall("effect-1").status());
+            assertTrue(turn.getToolCall("effect-1").applied());
+            assertEquals(
+                    1,
+                    continuation.messages().findValuesAsText("text").stream()
+                            .filter("verified receipt"::equals)
+                            .count());
+            var reply = QueuedModelRequest.reply(continuation.callId(), 0, text("done"), true);
+            turn.signal(reply.id(), reply.key(), reply.value());
+            next.tick(THREAD);
+            assertEquals(TurnStatus.SUCCEEDED, turn.status().status());
             assertEquals(List.of("effect-1"), Files.readAllLines(directory.resolve("receipts")));
         }
     }
