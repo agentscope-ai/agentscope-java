@@ -206,6 +206,56 @@ class OpenAIChatModelStreamingRetryTest {
                 "Non-streaming retry should re-issue HTTP request on each attempt");
     }
 
+    @Test
+    @DisplayName("Truncated stream retries with default retry predicate before visible content")
+    void truncatedStreamRetriesBeforeVisibleContent() {
+        AtomicInteger requestCount = new AtomicInteger(0);
+        mockServer.setDispatcher(
+                new Dispatcher() {
+                    @Override
+                    public MockResponse dispatch(RecordedRequest request) {
+                        return requestCount.incrementAndGet() == 1
+                                ? emptyStreamResponse()
+                                : successStreamResponse("hello");
+                    }
+                });
+
+        OpenAIChatModel model = buildStreamingModel(new OkHttpTransport());
+
+        List<ChatResponse> responses =
+                model.stream(List.of(singleUserMessage()), null, retryableErrorOptions())
+                        .collectList()
+                        .block(Duration.ofSeconds(10));
+
+        assertEquals(2, requestCount.get());
+        assertTrue(responses != null && !responses.isEmpty(), "Expected at least one response");
+        assertEquals("hello", firstText(responses.get(0)));
+    }
+
+    @Test
+    @DisplayName("Truncated stream does not retry after visible content")
+    void truncatedStreamDoesNotRetryAfterVisibleContent() {
+        AtomicInteger requestCount = new AtomicInteger(0);
+        mockServer.setDispatcher(
+                new Dispatcher() {
+                    @Override
+                    public MockResponse dispatch(RecordedRequest request) {
+                        requestCount.incrementAndGet();
+                        return truncatedStreamResponse("partial");
+                    }
+                });
+
+        OpenAIChatModel model = buildStreamingModel(new OkHttpTransport());
+
+        StepVerifier.create(
+                        model.stream(List.of(singleUserMessage()), null, retryableErrorOptions()))
+                .expectNextMatches(response -> "partial".equals(firstText(response)))
+                .expectError()
+                .verify(Duration.ofSeconds(10));
+
+        assertEquals(1, requestCount.get(), "Visible partial content must not be duplicated");
+    }
+
     // ==================== helpers ====================
 
     private HttpTransport defaultTransport() {
@@ -259,6 +309,19 @@ class OpenAIChatModelStreamingRetryTest {
                 .build();
     }
 
+    private GenerateOptions retryableErrorOptions() {
+        return GenerateOptions.builder()
+                .executionConfig(
+                        ExecutionConfig.builder()
+                                .maxAttempts(MAX_ATTEMPTS)
+                                .initialBackoff(BACKOFF)
+                                .maxBackoff(Duration.ofMillis(50))
+                                .retryOn(ExecutionConfig.RETRYABLE_ERRORS)
+                                .build())
+                .stream(true)
+                .build();
+    }
+
     private Msg singleUserMessage() {
         return Msg.builder()
                 .role(MsgRole.USER)
@@ -280,6 +343,20 @@ class OpenAIChatModelStreamingRetryTest {
                 .setResponseCode(200)
                 .setHeader("Content-Type", "text/event-stream")
                 .setBody(sseChunk(content) + sseDone());
+    }
+
+    private static MockResponse emptyStreamResponse() {
+        return new MockResponse()
+                .setResponseCode(200)
+                .setHeader("Content-Type", "text/event-stream")
+                .setBody("");
+    }
+
+    private static MockResponse truncatedStreamResponse(String content) {
+        return new MockResponse()
+                .setResponseCode(200)
+                .setHeader("Content-Type", "text/event-stream")
+                .setBody(sseChunk(content));
     }
 
     private static String sseChunk(String content) {

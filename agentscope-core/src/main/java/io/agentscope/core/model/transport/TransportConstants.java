@@ -30,6 +30,15 @@ public class TransportConstants {
      */
     public static final String STREAM_FORMAT_NDJSON = "ndjson";
 
+    /**
+     * Header name declaring the expected SSE stream terminator (e.g. {@code [DONE]}).
+     *
+     * <p>When set, transports must fail the stream with {@link StreamTerminationException} if the
+     * body ends before the terminator is seen, instead of silently completing with a possibly
+     * truncated payload. When absent, transports keep their lenient default behavior.
+     */
+    public static final String STREAM_TERMINATOR_HEADER = "X-AgentScope-Stream-Terminator";
+
     private TransportConstants() {
         // Prevent instantiation
     }

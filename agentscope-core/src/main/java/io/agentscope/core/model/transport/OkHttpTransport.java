@@ -33,6 +33,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import javax.net.ssl.SSLContext;
 import javax.net.ssl.SSLSocketFactory;
 import javax.net.ssl.TrustManager;
@@ -237,6 +238,10 @@ public class OkHttpTransport implements HttpTransport {
         boolean isNdjson =
                 TransportConstants.STREAM_FORMAT_NDJSON.equals(
                         request.getHeaders().get(TransportConstants.STREAM_FORMAT_HEADER));
+        String terminator =
+                isNdjson
+                        ? null
+                        : request.getHeaders().get(TransportConstants.STREAM_TERMINATOR_HEADER);
         return Flux.defer(
                         () -> {
                             Call call = client.newCall(okHttpRequest);
@@ -265,21 +270,47 @@ public class OkHttpTransport implements HttpTransport {
                                                         Flux.fromStream(reader.lines());
                                                 if (isNdjson)
                                                     return lines.filter(line -> !line.isEmpty());
-                                                return lines.filter(
-                                                                line ->
-                                                                        line.startsWith(
-                                                                                SSE_DATA_PREFIX))
-                                                        .map(
-                                                                line ->
-                                                                        line.substring(
-                                                                                        SSE_DATA_PREFIX
-                                                                                                .length())
-                                                                                .trim())
-                                                        .takeWhile(
-                                                                data ->
-                                                                        !SSE_DONE_MARKER.equals(
-                                                                                data))
-                                                        .filter(data -> !data.isEmpty());
+                                                String marker =
+                                                        terminator != null
+                                                                ? terminator
+                                                                : SSE_DONE_MARKER;
+                                                AtomicBoolean sawMarker = new AtomicBoolean(false);
+                                                lines =
+                                                        lines.filter(
+                                                                        line ->
+                                                                                line.startsWith(
+                                                                                        SSE_DATA_PREFIX))
+                                                                .map(
+                                                                        line ->
+                                                                                line.substring(
+                                                                                                SSE_DATA_PREFIX
+                                                                                                        .length())
+                                                                                        .trim())
+                                                                .doOnNext(
+                                                                        data -> {
+                                                                            if (marker.equals(
+                                                                                    data)) {
+                                                                                sawMarker.set(true);
+                                                                            }
+                                                                        })
+                                                                .takeWhile(
+                                                                        data ->
+                                                                                !marker.equals(
+                                                                                        data))
+                                                                .filter(data -> !data.isEmpty());
+                                                if (terminator == null) return lines;
+                                                return lines.concatWith(
+                                                        Flux.defer(
+                                                                () ->
+                                                                        sawMarker.get()
+                                                                                ? Flux
+                                                                                        .<String>
+                                                                                                empty()
+                                                                                : Flux
+                                                                                        .<String>
+                                                                                                error(
+                                                                                                        new StreamTerminationException(
+                                                                                                                terminator))));
                                             },
                                             this::closeQuietly)
                                     .doOnCancel(call::cancel);
