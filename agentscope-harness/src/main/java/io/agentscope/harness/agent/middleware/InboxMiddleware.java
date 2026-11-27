@@ -37,6 +37,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Function;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -120,37 +121,60 @@ public class InboxMiddleware implements HarnessRuntimeMiddleware {
             return next.apply(input);
         }
 
-        Mono<List<BusEntry>> inbox = messageBus.inboxDrain(sessionId, maxDrainCount);
+        // How many entries the drain took off the bus, to report them if the round is then
+        // aborted before they can be delivered.
+        AtomicInteger drainedCount = new AtomicInteger();
+        Mono<List<BusEntry>> inbox =
+                messageBus
+                        .inboxDrain(sessionId, maxDrainCount)
+                        .doOnNext(entries -> drainedCount.set(entries.size()));
 
-        Mono<List<HintBlock>> staleHints =
+        // A failed stale scan is degraded: the records stay in the registry and are reported on a
+        // later round, so a flaky read must not fail this one (#3973).
+        Mono<List<AsyncToolRecord>> staleRecords =
                 asyncToolRegistry != null
                         ? asyncToolRegistry
                                 .findStale(sessionId, staleTtl)
-                                .flatMap(
-                                        staleRecords -> {
-                                            List<HintBlock> hints = new ArrayList<>();
-                                            for (AsyncToolRecord rec : staleRecords) {
-                                                asyncToolRegistry.markTimeout(rec.id()).subscribe();
-                                                hints.add(
-                                                        new HintBlock(
-                                                                UUID.randomUUID()
-                                                                        .toString()
-                                                                        .replace("-", ""),
-                                                                "<system-reminder>Tool '"
-                                                                        + rec.toolName()
-                                                                        + "' (id="
-                                                                        + rec.toolCallId()
-                                                                        + ") did not complete"
-                                                                        + " (process crash or"
-                                                                        + " timeout). You may"
-                                                                        + " retry or proceed"
-                                                                        + " without the result."
-                                                                        + "</system-reminder>",
-                                                                "system"));
-                                            }
-                                            return Mono.just(hints);
+                                .onErrorResume(
+                                        e -> {
+                                            log.warn(
+                                                    "InboxMiddleware: stale-tool scan failed,"
+                                                            + " skipping stale-tool hints"
+                                                            + " this round",
+                                                    e);
+                                            return Mono.just(List.of());
                                         })
                         : Mono.just(List.of());
+
+        // Marking is a write whose failure must not pass silently: an un-marked record is
+        // re-reported, with "you may retry", on every later round. Unlike the scan it is not
+        // degraded — its error stays in the flow and fails the turn (#3973).
+        Mono<List<HintBlock>> staleHints =
+                staleRecords.flatMap(
+                        records -> {
+                            List<HintBlock> hints = new ArrayList<>();
+                            List<Mono<Void>> markers = new ArrayList<>();
+                            for (AsyncToolRecord rec : records) {
+                                markers.add(asyncToolRegistry.markTimeout(rec.id()).then());
+                                hints.add(
+                                        new HintBlock(
+                                                UUID.randomUUID().toString().replace("-", ""),
+                                                "<system-reminder>Tool '"
+                                                        + rec.toolName()
+                                                        + "' (id="
+                                                        + rec.toolCallId()
+                                                        + ") did not complete"
+                                                        + " (process crash or"
+                                                        + " timeout). You may"
+                                                        + " retry or proceed"
+                                                        + " without the result."
+                                                        + "</system-reminder>",
+                                                "system"));
+                            }
+                            return markers.isEmpty()
+                                    ? Mono.just(hints)
+                                    : Mono.when(markers).thenReturn(hints);
+                        });
 
         Mono<List<Msg>> carriedTaskHints =
                 Mono.deferContextual(
@@ -159,14 +183,50 @@ public class InboxMiddleware implements HarnessRuntimeMiddleware {
                                         deferSubagentTaskHints && context.hasKey(PENDING_TASK_HINTS)
                                                 ? context.get(PENDING_TASK_HINTS)
                                                 : new ArrayList<>()));
-        return Mono.zip(inbox, staleHints, carriedTaskHints)
+        // Each read degrades on its own, so one flaky read cannot fail a turn the other source
+        // can serve (#3973). The reads run in parallel and the drain is destructive: should the
+        // round then be aborted — a marker write failed — the entries it took cannot be
+        // delivered, so they are reported rather than dropped in silence (#3971).
+        return Mono.zip(
+                        inbox.onErrorResume(
+                                e -> {
+                                    log.warn(
+                                            "InboxMiddleware: inbox drain failed, degrading to"
+                                                    + " stale-tool hints only",
+                                            e);
+                                    return Mono.just(List.<BusEntry>of());
+                                }),
+                        staleHints,
+                        carriedTaskHints)
+                .onErrorMap(
+                        error -> {
+                            if (drainedCount.get() > 0) {
+                                log.warn(
+                                        "InboxMiddleware: round aborted for session {} after the"
+                                                + " inbox drain had taken {} entry(ies) off the"
+                                                + " bus; they cannot be delivered",
+                                        sessionId,
+                                        drainedCount.get());
+                            }
+                            return error;
+                        })
                 .flatMapMany(
                         tuple -> {
                             List<Msg> taskHints = tuple.getT3();
                             List<HintBlock> allHints = new ArrayList<>();
                             for (BusEntry entry : tuple.getT1()) {
                                 HintBlock hint = deserializeHintBlock(entry.payload());
-                                if (hint == null) continue;
+                                if (hint == null) {
+                                    // The entry has already been taken off the bus, so say so:
+                                    // dropped without a word, its loss is invisible (#3973).
+                                    log.warn(
+                                            "InboxMiddleware: dropped inbox entry {} for session"
+                                                    + " {}: its payload carries no usable"
+                                                    + " hint",
+                                            entry.entryId(),
+                                            sessionId);
+                                    continue;
+                                }
                                 Msg taskHint =
                                         deferSubagentTaskHints
                                                 ? SubagentsMiddleware.projectTaskHint(
@@ -195,6 +255,17 @@ public class InboxMiddleware implements HarnessRuntimeMiddleware {
                             List<Msg> notifications = List.of();
                             if (state != null) {
                                 notifications = injectHintsToContext(state, allHints);
+                            } else {
+                                // The hints were already destructively drained from the bus —
+                                // without this WARN the consumed-and-emitted-but-never-injected
+                                // loss is invisible (#3971).
+                                log.warn(
+                                        "InboxMiddleware: {} hint(s) drained but agent state is"
+                                                + " null for session {}; they are emitted as"
+                                                + " events but NOT injected into the reasoning"
+                                                + " input",
+                                        allHints.size(),
+                                        sessionId);
                             }
 
                             String replyId =
@@ -275,6 +346,9 @@ public class InboxMiddleware implements HarnessRuntimeMiddleware {
     }
 
     static HintBlock deserializeHintBlock(Map<String, Object> payload) {
+        if (payload == null) {
+            return null;
+        }
         Object id = payload.get("id");
         Object hint = payload.get("hint");
         Object source = payload.get("source");
