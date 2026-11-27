@@ -63,6 +63,8 @@ ScheduleConfig schedule = ScheduleConfig.builder()
 scheduler.schedule(agent, schedule);
 ```
 
+When a trigger is due immediately, Quartz may execute it before `schedule(...)` returns. The task's full runtime configuration is available to that first execution. If registration fails, the pending local task is removed so you can retry with the same agent name.
+
 Runtime control:
 
 ```java

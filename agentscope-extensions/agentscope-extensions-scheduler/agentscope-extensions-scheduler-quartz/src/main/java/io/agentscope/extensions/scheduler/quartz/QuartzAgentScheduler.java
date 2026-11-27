@@ -216,9 +216,10 @@ public class QuartzAgentScheduler implements AgentScheduler {
         }
 
         // Check if already scheduled
-        if (tasks.containsKey(jobName)) {
+        QuartzScheduleAgentTask existing = tasks.get(jobName);
+        if (existing != null) {
             logger.warn("Task '{}' is already scheduled, returning existing task", jobName);
-            return tasks.get(jobName);
+            return existing;
         }
 
         JobKey jobKey = new JobKey(jobName, "agentscope-quartz");
@@ -268,6 +269,12 @@ public class QuartzAgentScheduler implements AgentScheduler {
                         ? new Date(System.currentTimeMillis() + initialDelay)
                         : new Date();
 
+        // Quartz can dispatch the first trigger before scheduleJob returns.
+        existing = tasks.putIfAbsent(jobName, task);
+        if (existing != null) {
+            return existing;
+        }
+
         try {
             if (mode == ScheduleMode.CRON) {
                 CronScheduleBuilder csb =
@@ -304,12 +311,15 @@ public class QuartzAgentScheduler implements AgentScheduler {
                 scheduler.scheduleJob(jobDetail, trigger);
             }
 
-            tasks.put(jobName, task);
             logger.info("Successfully scheduled task '{}' with mode {}", jobName, mode);
 
         } catch (SchedulerException e) {
+            tasks.remove(jobName, task);
             logger.error("Failed to schedule task '{}'", jobName, e);
             throw new RuntimeException("Failed to schedule task: " + jobName, e);
+        } catch (RuntimeException e) {
+            tasks.remove(jobName, task);
+            throw e;
         }
 
         return task;

@@ -63,6 +63,8 @@ ScheduleConfig schedule = ScheduleConfig.builder()
 scheduler.schedule(agent, schedule);
 ```
 
+触发时间为立即执行时，Quartz 可能在 `schedule(...)` 返回前就开始运行任务，首轮执行同样能取得完整的运行时配置。如果注册失败，调度器会移除本地的待注册任务，允许使用同一个 Agent 名称重试。
+
 支持运行时管控：
 
 ```java
