@@ -32,10 +32,24 @@ import io.agentscope.harness.agent.filesystem.model.EditResult;
 import io.agentscope.harness.agent.filesystem.sandbox.AbstractSandboxFilesystem;
 import java.nio.charset.CharacterCodingException;
 import java.nio.charset.StandardCharsets;
+import java.util.Locale;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
 
 class FilesystemUtilsTest {
+
+    @Test
+    void getFileType_isLocaleIndependentForUppercaseExtensions() {
+        // Under tr-TR, "GIF".toLowerCase() is "gıf"; the extension check must not depend on
+        // the JVM default locale.
+        Locale previous = Locale.getDefault();
+        try {
+            Locale.setDefault(Locale.forLanguageTag("tr-TR"));
+            assertEquals("binary", FilesystemUtils.getFileType("PHOTO.GIF"));
+        } finally {
+            Locale.setDefault(previous);
+        }
+    }
 
     // ================================================================
     // stringReplacement
