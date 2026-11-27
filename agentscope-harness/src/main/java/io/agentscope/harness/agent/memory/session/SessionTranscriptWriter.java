@@ -25,6 +25,7 @@ import io.agentscope.core.message.ThinkingBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.util.JsonUtils;
+import io.agentscope.harness.agent.transcript.ObjectStoreTranscriptStore;
 import io.agentscope.harness.agent.transcript.TranscriptRef;
 import io.agentscope.harness.agent.transcript.TranscriptStore;
 import io.agentscope.harness.agent.workspace.WorkspaceConstants;
@@ -68,15 +69,52 @@ public class SessionTranscriptWriter {
     private final TranscriptStore transcriptStore;
     private final String tenant;
 
+    /**
+     * Id the filesystem routes were built with (the builder's {@code agentId}). The transcript
+     * middleware passes the agent's display name, which can differ, so route-aligned segment
+     * keys use this id instead. {@code null} keeps the caller's id.
+     */
+    private final String routingAgentId;
+
     public SessionTranscriptWriter(WorkspaceManager workspaceManager) {
-        this(workspaceManager, null, null);
+        this(workspaceManager, null, null, null);
     }
 
     public SessionTranscriptWriter(
             WorkspaceManager workspaceManager, TranscriptStore transcriptStore, String tenant) {
+        this(workspaceManager, transcriptStore, tenant, null);
+    }
+
+    public SessionTranscriptWriter(
+            WorkspaceManager workspaceManager,
+            TranscriptStore transcriptStore,
+            String tenant,
+            String routingAgentId) {
         this.workspaceManager = workspaceManager;
         this.transcriptStore = transcriptStore;
         this.tenant = tenant != null && !tenant.isBlank() ? tenant : "default";
+        this.routingAgentId = routingAgentId;
+    }
+
+    /**
+     * Chooses the {@link TranscriptRef} whose segment keys land on the routes {@code
+     * RemoteFilesystemSpec} registers. The object-store implementation writes through {@code
+     * AbstractFilesystem}: a ref laid out as {@code {tenant}/{agentId}/{sessionId}} matches none
+     * of those routes, so its segments fall through to the default backend and never reach the
+     * distributed store (#2918). {@code agents/{agentId}/sessions/{sessionId}} does match, keyed
+     * on the id the routes were built with. Other {@link TranscriptStore} implementations keep
+     * the tenant layout.
+     */
+    private TranscriptRef transcriptRef(String agentId, String sessionId) {
+        if (transcriptStore instanceof ObjectStoreTranscriptStore) {
+            String routeId =
+                    routingAgentId != null && !routingAgentId.isBlank() ? routingAgentId : agentId;
+            return new TranscriptRef(
+                    WorkspaceConstants.AGENTS_DIR,
+                    routeId,
+                    WorkspaceConstants.SESSIONS_DIR + "/" + sessionId);
+        }
+        return new TranscriptRef(tenant, agentId, sessionId);
     }
 
     /**
@@ -107,8 +145,7 @@ public class SessionTranscriptWriter {
                                     workspaceManager.getIndex(),
                                     contextRelPath)
                             .setRuntimeContext(rc)
-                            .setTranscriptStore(
-                                    transcriptStore, new TranscriptRef(tenant, agentId, sessionId));
+                            .setTranscriptStore(transcriptStore, transcriptRef(agentId, sessionId));
             tree.load();
             tree.syncFromRemote();
 

@@ -47,15 +47,32 @@ public class TranscriptMiddleware implements HarnessRuntimeMiddleware {
     private final TranscriptStore transcriptStore;
     private final String tenant;
 
+    /**
+     * Id the filesystem routes were built with (the builder's {@code agentId}). In the default
+     * wiring the agent seen here is the inner {@code ReActAgent}, so the transcript is keyed on
+     * its display name; keys built from it miss the sessions route whenever that name differs
+     * from the builder's {@code agentId} (#2918).
+     */
+    private final String routingAgentId;
+
     public TranscriptMiddleware(WorkspaceManager workspaceManager) {
-        this(workspaceManager, null, null);
+        this(workspaceManager, null, null, null);
     }
 
     public TranscriptMiddleware(
             WorkspaceManager workspaceManager, TranscriptStore transcriptStore, String tenant) {
+        this(workspaceManager, transcriptStore, tenant, null);
+    }
+
+    public TranscriptMiddleware(
+            WorkspaceManager workspaceManager,
+            TranscriptStore transcriptStore,
+            String tenant,
+            String routingAgentId) {
         this.workspaceManager = workspaceManager;
         this.transcriptStore = transcriptStore;
         this.tenant = tenant;
+        this.routingAgentId = routingAgentId;
     }
 
     @Override
@@ -99,7 +116,8 @@ public class TranscriptMiddleware implements HarnessRuntimeMiddleware {
                         ? rc.getSessionId()
                         : "default";
         SessionTranscriptWriter writer =
-                new SessionTranscriptWriter(workspaceManager, transcriptStore, tenant);
+                new SessionTranscriptWriter(
+                        workspaceManager, transcriptStore, tenant, routingAgentId);
         final String key = agentId;
         return Mono.fromRunnable(() -> writer.appendMessages(rc, messages, key, sessionId))
                 .then()

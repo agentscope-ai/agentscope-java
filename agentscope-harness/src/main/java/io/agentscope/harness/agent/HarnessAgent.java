@@ -2201,7 +2201,15 @@ public class HarnessAgent implements Agent, AutoCloseable {
             return this;
         }
 
-        /** Tenant segment used in transcript object keys (default {@code "default"}). */
+        /**
+         * Tenant segment used in transcript object keys (default {@code "default"}).
+         *
+         * <p>Applies only to a {@link TranscriptStore} that is not the default object-store one.
+         * The default {@code ObjectStoreTranscriptStore} keys segments as {@code
+         * agents/{agentId}/sessions/{sessionId}/events/...}, on the builder's {@code agentId}, so
+         * that they reach the sessions route of a remote filesystem; that layout has no tenant
+         * segment (#2918).
+         */
         public Builder transcriptTenant(String transcriptTenant) {
             this.transcriptTenant = transcriptTenant;
             return this;
@@ -2497,7 +2505,10 @@ public class HarnessAgent implements Agent, AutoCloseable {
                 }
                 inner.middleware(
                         new TranscriptMiddleware(
-                                wsManager, effectiveTranscriptStore, transcriptTenant));
+                                wsManager,
+                                effectiveTranscriptStore,
+                                transcriptTenant,
+                                resolvedAgentId));
             }
             Model memoryModel = memoryConfig.model() != null ? memoryConfig.model() : model;
             if (memoryModel != null && !disableMemoryHooks) {
