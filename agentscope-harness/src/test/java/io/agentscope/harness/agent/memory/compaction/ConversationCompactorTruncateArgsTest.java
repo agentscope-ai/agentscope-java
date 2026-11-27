@@ -82,7 +82,9 @@ class ConversationCompactorTruncateArgsTest {
         Msg truncatedMessage = truncate(originalMessage);
         ToolUseBlock truncated = toolBlock(truncatedMessage);
 
-        assertEquals("x".repeat(20) + config.getTruncationText(), truncated.getInput().get("code"));
+        assertEquals(
+                "x".repeat(config.getMaxArgLength()) + config.getTruncationText(),
+                truncated.getInput().get("code"));
         assertEquals("short", truncated.getInput().get("label"));
         assertEquals(7, truncated.getInput().get("count"));
         assertEquals("x".repeat(100), original.getInput().get("code"));
@@ -120,10 +122,10 @@ class ConversationCompactorTruncateArgsTest {
         List<Msg> result = custom.truncateArgs(List.of(old, recent, tail), tokenConfig);
 
         assertEquals(
-                "x".repeat(20) + tokenConfig.getTruncationText(),
+                "x".repeat(tokenConfig.getMaxArgLength()) + tokenConfig.getTruncationText(),
                 toolBlock(result.get(0)).getInput().get("code"));
         assertEquals(
-                "y".repeat(20) + tokenConfig.getTruncationText(),
+                "y".repeat(tokenConfig.getMaxArgLength()) + tokenConfig.getTruncationText(),
                 toolBlock(result.get(1)).getInput().get("code"));
         assertSame(tail, result.get(2));
     }
