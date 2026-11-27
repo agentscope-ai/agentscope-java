@@ -19,6 +19,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 
@@ -38,6 +39,23 @@ public class InMemoryStore implements BaseStore {
     @Override
     public StoreItem get(List<String> namespace, String key) {
         return store.get(compoundKey(namespace, key));
+    }
+
+    @Override
+    public boolean containsKey(List<String> namespace, String key) {
+        return store.containsKey(compoundKey(namespace, key));
+    }
+
+    @Override
+    public boolean hasKeyPrefix(List<String> namespace, String prefix) {
+        Objects.requireNonNull(prefix, "prefix must not be null");
+        String nsPrefix = namespacePrefix(namespace);
+        for (Map.Entry<String, StoreItem> entry : store.entrySet()) {
+            if (entry.getKey().startsWith(nsPrefix) && entry.getValue().key().startsWith(prefix)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     @Override
