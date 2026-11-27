@@ -30,6 +30,14 @@ public final class TeamWakeups {
     @FunctionalInterface
     public interface Hook {
         boolean wake(String teamName, String memberName, String notice);
+
+        /**
+         * Wakes a teammate in a namespace. The default bridge preserves legacy implementations
+         * but discards the namespace; hooks that provide isolation must override this method.
+         */
+        default boolean wake(String namespace, String teamName, String memberName, String notice) {
+            return wake(teamName, memberName, notice);
+        }
     }
 
     private static final AtomicReference<Hook> HOOK = new AtomicReference<>();
@@ -49,6 +57,25 @@ public final class TeamWakeups {
         }
         try {
             return hook.wake(teamName, memberName, notice);
+        } catch (RuntimeException e) {
+            return false;
+        }
+    }
+
+    /**
+     * Wakes a teammate in a namespace; returns false when no hook or target is available.
+     * Null or blank namespace resolves to default.
+     * Namespace isolation depends on the registered hook's scoped implementation.
+     */
+    public static boolean wake(
+            String namespace, String teamName, String memberName, String notice) {
+        Hook hook = HOOK.get();
+        if (hook == null || teamName == null || memberName == null || memberName.isBlank()) {
+            return false;
+        }
+        try {
+            String scope = namespace == null || namespace.isBlank() ? "default" : namespace;
+            return hook.wake(scope, teamName, memberName, notice);
         } catch (RuntimeException e) {
             return false;
         }

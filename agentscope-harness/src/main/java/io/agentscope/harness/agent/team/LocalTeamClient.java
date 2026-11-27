@@ -364,7 +364,7 @@ public final class LocalTeamClient implements TeamClient {
                             store.put(msgNs(namespace, teamName), String.valueOf(id), value);
                             // Wake the recipient through the middleware, which owns the
                             // member -> runtime session mapping this client cannot resolve.
-                            TeamWakeups.wake(teamName, to, content);
+                            TeamWakeups.wake(namespace, teamName, to, content);
                             return msg;
                         })
                 .subscribeOn(Schedulers.boundedElastic());
