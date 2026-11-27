@@ -330,6 +330,12 @@ AgentScope 提供了多个开箱即用的 Channel 适配器作为扩展模块：
 
 详见 [Channel 适配器](/dev/zh/integration/channel/index)集成总览。
 
+### Webhook 重复投递
+
+默认的进程内 `IdempotencyStore` 最多保留 10,000 个事件标识，保留时间为五分钟。对于仍在缓存中且未过期的事件，重复投递会被拒绝；即使缓存已满，也不会为这次重复投递淘汰其他记录。新的事件可能触发记录淘汰以满足容量限制，因此流量较大时，记录不保证保留完整的五分钟。
+
+该缓存不会跨进程共享，重启后也不会保留记录。多实例部署需要通过 channel 的程序化 `InboundEventDeduplicator` 重载接入共享实现；通过配置工厂创建的 channel 使用默认的进程内缓存。
+
 ## 相关文档
 
 - [子 Agent](/dev/zh/docs/harness/subagent) — 声明和 spawn 子 agent、后台任务、流式转发

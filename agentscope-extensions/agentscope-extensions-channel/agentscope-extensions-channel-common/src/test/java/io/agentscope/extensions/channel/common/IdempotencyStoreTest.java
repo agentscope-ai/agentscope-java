@@ -19,7 +19,15 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.util.ArrayList;
+import java.util.List;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 /** Tests for the default in-process {@link IdempotencyStore} implementation. */
 class IdempotencyStoreTest {
@@ -39,9 +47,10 @@ class IdempotencyStoreTest {
         assertTrue(store.firstSeen(null));
     }
 
-    @Test
-    void entriesExpireAfterTtl() throws InterruptedException {
-        IdempotencyStore store = new IdempotencyStore(80, 100);
+    @ParameterizedTest
+    @ValueSource(ints = {1, 100})
+    void entriesExpireAfterTtl(int capacity) throws InterruptedException {
+        IdempotencyStore store = new IdempotencyStore(80, capacity);
         assertTrue(store.firstSeen("ch|1"));
         assertFalse(store.firstSeen("ch|1"));
         Thread.sleep(160);
@@ -59,5 +68,66 @@ class IdempotencyStoreTest {
         assertEquals(3, store.size());
         assertTrue(store.firstSeen("d"));
         assertEquals(3, store.size());
+    }
+
+    @Test
+    void duplicateAtCapacityDoesNotEvictItsOwnEntry() {
+        IdempotencyStore store = new IdempotencyStore(60_000, 1);
+        assertTrue(store.firstSeen("a"));
+        for (int i = 0; i < 10; i++) {
+            assertFalse(store.firstSeen("a"));
+        }
+        assertEquals(1, store.size());
+        assertTrue(store.firstSeen("b"));
+        assertFalse(store.firstSeen("b"));
+        assertEquals(1, store.size());
+    }
+
+    @Test
+    void duplicateAtCapacityDoesNotEvictOtherRetainedEntries() {
+        IdempotencyStore store = new IdempotencyStore(60_000, 3);
+        assertTrue(store.firstSeen("a"));
+        assertTrue(store.firstSeen("b"));
+        assertTrue(store.firstSeen("c"));
+        for (String key : List.of("c", "b", "a")) {
+            assertFalse(store.firstSeen(key));
+            assertEquals(3, store.size());
+        }
+    }
+
+    @Test
+    void concurrentFirstDeliveriesAtCapacityAdmitOneCaller() throws Exception {
+        IdempotencyStore store = new IdempotencyStore(60_000, 1);
+        var executor = Executors.newFixedThreadPool(8);
+        try {
+            for (int round = 0; round < 20; round++) {
+                String key = "event-" + round;
+                CountDownLatch ready = new CountDownLatch(8);
+                CountDownLatch start = new CountDownLatch(1);
+                List<Future<Boolean>> results = new ArrayList<>();
+                for (int i = 0; i < 8; i++) {
+                    results.add(
+                            executor.submit(
+                                    () -> {
+                                        ready.countDown();
+                                        assertTrue(start.await(5, TimeUnit.SECONDS));
+                                        return store.firstSeen(key);
+                                    }));
+                }
+                assertTrue(ready.await(5, TimeUnit.SECONDS));
+                start.countDown();
+                int accepted = 0;
+                for (Future<Boolean> result : results) {
+                    if (result.get(5, TimeUnit.SECONDS)) {
+                        accepted++;
+                    }
+                }
+                assertEquals(1, accepted);
+                assertEquals(1, store.size());
+            }
+        } finally {
+            executor.shutdownNow();
+            assertTrue(executor.awaitTermination(5, TimeUnit.SECONDS));
+        }
     }
 }
