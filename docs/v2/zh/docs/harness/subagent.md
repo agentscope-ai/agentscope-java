@@ -178,6 +178,8 @@ HarnessAgent.builder()
 - `timeout_seconds > 0`（默认 30，最大 600）—— **同步**调用，主 agent 在这一步 block 等待结果，结果作为工具结果返回。默认超时后会 **promote** 成后台任务（`status: timeout_promoted` + `task_id`），子 agent 继续跑。
 - `timeout_seconds = 0` —— **后台**调用，立即返回一个 `task_id`，子 agent 在后台跑。
 
+在父子 agent 上都配置 `OtelTracingMiddleware` 后，本地后台调用会保留任务提交时的 OpenTelemetry 上下文。即使父调用先结束，子 agent 仍属于提交该任务的工具调用所在的 trace；后续每次 `agent_send` 都继承当次调用方的上下文。
+
 **通过 `RuntimeContext` 强制同步。** 应用侧可在当前调用的 `RuntimeContext` 里放入 `AgentSpawnTool.CTX_FORCE_SYNC = true`，覆盖 LLM 的异步选择；可选再放 `CTX_FORCE_SYNC_TIMEOUT_SECONDS` 指定硬超时（秒）：
 
 ```java
