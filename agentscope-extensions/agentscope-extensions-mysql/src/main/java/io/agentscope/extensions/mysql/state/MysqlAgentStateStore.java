@@ -941,31 +941,6 @@ public class MysqlAgentStateStore implements AgentStateStore {
     }
 
     /**
-     * Clear all sessions from the database (for testing or cleanup).
-     *
-     * @return Number of rows deleted
-     * @deprecated Use {@link #truncateAllSessions()} instead
-     */
-    @Deprecated
-    public int clearAllSessions() {
-        String clearSql = "DELETE FROM " + getFullTableName();
-
-        try (Connection conn = dataSource.getConnection()) {
-            int[] deletedRows = new int[1];
-            executeInWriteTransaction(
-                    conn,
-                    () -> {
-                        try (PreparedStatement stmt = conn.prepareStatement(clearSql)) {
-                            deletedRows[0] = stmt.executeUpdate();
-                        }
-                    });
-            return deletedRows[0];
-        } catch (Exception e) {
-            throw new RuntimeException("Failed to clear sessions", e);
-        }
-    }
-
-    /**
      * Truncate session table from the database (for testing or cleanup).
      *
      * <p>This method clears all session records by executing a TRUNCATE TABLE statement on the

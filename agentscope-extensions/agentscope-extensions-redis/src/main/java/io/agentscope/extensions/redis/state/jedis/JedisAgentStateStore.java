@@ -27,8 +27,6 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
-import reactor.core.publisher.Mono;
-import reactor.core.scheduler.Schedulers;
 import redis.clients.jedis.Jedis;
 import redis.clients.jedis.JedisPool;
 
@@ -335,27 +333,6 @@ public class JedisAgentStateStore implements AgentStateStore {
     @Override
     public void close() {
         jedisPool.close();
-    }
-
-    /**
-     * Clear all sessions stored in Redis (for testing or cleanup).
-     *
-     * @return Mono that completes with the number of deleted session keys
-     */
-    public Mono<Integer> clearAllSessions() {
-        return Mono.fromSupplier(
-                        () -> {
-                            try (Jedis jedis = jedisPool.getResource()) {
-                                Set<String> keys = jedis.keys(keyPrefix + "*");
-                                if (!keys.isEmpty()) {
-                                    jedis.del(keys.toArray(new String[0]));
-                                }
-                                return keys.size();
-                            } catch (Exception e) {
-                                throw new RuntimeException("Failed to clear sessions", e);
-                            }
-                        })
-                .subscribeOn(Schedulers.boundedElastic());
     }
 
     /**
