@@ -16,11 +16,14 @@
 package io.agentscope.core.agent;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.node.JsonNodeFactory;
 import io.agentscope.core.agent.test.TestConstants;
 import io.agentscope.core.agent.test.TestUtils;
 import io.agentscope.core.interruption.InterruptContext;
@@ -37,6 +40,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
+import reactor.test.StepVerifier;
 
 /**
  * Unit tests for AgentBase class.
@@ -387,5 +391,40 @@ class AgentBaseTest {
         assertNotNull(firstResponse.get(), "First call should complete successfully");
         assertNotNull(secondResponse.get(), "Second call should complete successfully");
         assertTrue(error.get() == null, "No error should occur during concurrent calls");
+    }
+
+    @Test
+    @DisplayName("Schema structured-output default error names the agent class")
+    void testSchemaStructuredOutputUnsupportedErrorNamesAgentClass() {
+        JsonNode schema = JsonNodeFactory.instance.objectNode().put("type", "object");
+        List<Msg> msgs =
+                List.of(TestUtils.createUserMessage("User", TestConstants.TEST_USER_INPUT));
+
+        StepVerifier.create(agent.call(msgs, schema))
+                .expectErrorSatisfies(
+                        error -> {
+                            assertInstanceOf(UnsupportedOperationException.class, error);
+                            assertEquals(
+                                    "Structured output not supported by TestAgent",
+                                    error.getMessage());
+                        })
+                .verify(Duration.ofMillis(TestConstants.DEFAULT_TEST_TIMEOUT_MS));
+    }
+
+    @Test
+    @DisplayName("Class structured-output default error names the agent class")
+    void testClassStructuredOutputUnsupportedErrorNamesAgentClass() {
+        List<Msg> msgs =
+                List.of(TestUtils.createUserMessage("User", TestConstants.TEST_USER_INPUT));
+
+        StepVerifier.create(agent.call(msgs, String.class))
+                .expectErrorSatisfies(
+                        error -> {
+                            assertInstanceOf(UnsupportedOperationException.class, error);
+                            assertEquals(
+                                    "Structured output not supported by TestAgent",
+                                    error.getMessage());
+                        })
+                .verify(Duration.ofMillis(TestConstants.DEFAULT_TEST_TIMEOUT_MS));
     }
 }
