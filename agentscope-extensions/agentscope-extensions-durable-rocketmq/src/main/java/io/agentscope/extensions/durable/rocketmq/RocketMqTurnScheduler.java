@@ -22,25 +22,33 @@ import io.agentscope.durable.DurableTypes.ThreadKey;
 import io.agentscope.durable.SessionBackend;
 import io.agentscope.durable.TurnDispatch;
 import io.agentscope.durable.TurnScheduler;
+import io.agentscope.durable.TurnSignal;
 import io.agentscope.durable.Wakeups;
 import io.agentscope.extensions.durable.rocketmq.RocketMqLoop.Subscription;
 import java.time.Duration;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.CompletionStage;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.ScheduledThreadPoolExecutor;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.LongAdder;
 import java.util.function.Consumer;
-import java.util.function.Predicate;
+import java.util.function.Function;
 import org.apache.rocketmq.client.apis.ClientConfiguration;
 import org.apache.rocketmq.client.apis.ClientServiceProvider;
 import org.apache.rocketmq.client.apis.producer.Producer;
 
-/** Thread-scoped notifications and replayable dispatch over two RocketMQ LITE parents. */
+/** Thread-scoped notifications, owner signals and replayable dispatch over RocketMQ LiteTopics. */
 public final class RocketMqTurnScheduler implements TurnScheduler, AutoCloseable {
+    private static final int MAX_DEADLINES = 4096;
     private static final Options DEFAULT_OPTIONS =
             new Options(Duration.ofSeconds(2), Duration.ofSeconds(5), 32, 32);
     private final RocketMqTurnTopology topology;
@@ -48,6 +56,7 @@ public final class RocketMqTurnScheduler implements TurnScheduler, AutoCloseable
     private final ClientConfiguration configuration;
     private final Subscription dispatchSubscription;
     private final Subscription signalSubscription;
+    private final Function<String, Subscription> ownerSubscription;
     private final Options options;
     private final Wakeups local = Wakeups.local();
     private final Set<ThreadKey> pendingSignals = ConcurrentHashMap.newKeySet();
@@ -58,6 +67,15 @@ public final class RocketMqTurnScheduler implements TurnScheduler, AutoCloseable
     private final LongAdder repairPublications = new LongAdder();
     private final LongAdder suppressedPublications = new LongAdder();
     private final LongAdder failedPublications = new LongAdder();
+    private final Map<ThreadKey, DeadlineCheck> pendingDeadlines = new HashMap<>();
+    private final ScheduledThreadPoolExecutor deadlines =
+            new ScheduledThreadPoolExecutor(
+                    1,
+                    task -> {
+                        var thread = new Thread(task, "durable-rocketmq-deadlines");
+                        thread.setDaemon(true);
+                        return thread;
+                    });
     private final ThreadPoolExecutor signals =
             new ThreadPoolExecutor(
                     1,
@@ -75,6 +93,26 @@ public final class RocketMqTurnScheduler implements TurnScheduler, AutoCloseable
     private Producer producer;
     private RocketMqLoop dispatchLoop;
     private RocketMqLoop signalLoop;
+    private RocketMqLoop ownerLoop;
+
+    private final class DeadlineCheck implements Runnable {
+        private final SessionBackend backend;
+        private final ThreadKey key;
+        private ScheduledFuture<?> future;
+
+        private DeadlineCheck(SessionBackend backend, ThreadKey key) {
+            this.backend = backend;
+            this.key = key;
+        }
+
+        @Override
+        public void run() {
+            synchronized (pendingDeadlines) {
+                if (!pendingDeadlines.remove(key, this)) return;
+            }
+            refreshPublication(backend, key);
+        }
+    }
 
     /** Cumulative publication statistics for this scheduler instance. */
     public record Statistics(
@@ -126,7 +164,7 @@ public final class RocketMqTurnScheduler implements TurnScheduler, AutoCloseable
                 configuration,
                 topology,
                 null,
-                RocketMqLoop.subscription(
+                RocketMqStageConsumer.subscription(
                         provider,
                         configuration,
                         topology.dispatch(),
@@ -138,6 +176,14 @@ public final class RocketMqTurnScheduler implements TurnScheduler, AutoCloseable
                         topology.signal(),
                         topology.signalGroup(),
                         options.signalCacheSize()),
+                route ->
+                        RocketMqLoop.subscription(
+                                provider,
+                                configuration,
+                                topology.ownerSignal(),
+                                topology.ownerGroup(),
+                                options.signalCacheSize(),
+                                route),
                 options);
     }
 
@@ -147,24 +193,8 @@ public final class RocketMqTurnScheduler implements TurnScheduler, AutoCloseable
             RocketMqTurnTopology topology,
             Producer producer,
             Subscription dispatchSubscription,
-            Subscription signalSubscription) {
-        this(
-                provider,
-                configuration,
-                topology,
-                producer,
-                dispatchSubscription,
-                signalSubscription,
-                DEFAULT_OPTIONS);
-    }
-
-    RocketMqTurnScheduler(
-            ClientServiceProvider provider,
-            ClientConfiguration configuration,
-            RocketMqTurnTopology topology,
-            Producer producer,
-            Subscription dispatchSubscription,
             Subscription signalSubscription,
+            Function<String, Subscription> ownerSubscription,
             Options options) {
         this.provider = provider;
         this.configuration = configuration;
@@ -173,7 +203,9 @@ public final class RocketMqTurnScheduler implements TurnScheduler, AutoCloseable
         ownsProducer = producer == null;
         this.dispatchSubscription = dispatchSubscription;
         this.signalSubscription = signalSubscription;
+        this.ownerSubscription = ownerSubscription;
         this.options = options;
+        deadlines.setRemoveOnCancelPolicy(true);
     }
 
     @Override
@@ -199,14 +231,7 @@ public final class RocketMqTurnScheduler implements TurnScheduler, AutoCloseable
             signals.execute(
                     () -> {
                         pendingSignals.remove(key);
-                        if (backend != null) {
-                            try {
-                                backend.pendingDispatch(key)
-                                        .ifPresent(dispatch -> publish(backend, dispatch));
-                            } catch (RuntimeException error) {
-                                if (!closed) report(error);
-                            }
-                        }
+                        if (backend != null) refreshPublication(backend, key);
                         try {
                             String route = RocketMqLiteRouting.thread(key);
                             RocketMqLoop.send(
@@ -228,8 +253,53 @@ public final class RocketMqTurnScheduler implements TurnScheduler, AutoCloseable
     }
 
     @Override
+    public void controlChanged(SessionBackend backend, ThreadKey key, String turnId) {
+        enqueue(
+                () ->
+                        backend.ownerSignal(key, turnId)
+                                .ifPresent(
+                                        signal -> {
+                                            String route =
+                                                    RocketMqLiteRouting.owner(signal.runnerId());
+                                            RocketMqLoop.send(
+                                                    provider,
+                                                    producer(),
+                                                    topology.ownerSignal(),
+                                                    route,
+                                                    route,
+                                                    signal,
+                                                    null);
+                                        }));
+        changed(backend, key);
+    }
+
+    @Override
+    public void claimed(SessionBackend backend, ThreadKey key) {
+        enqueue(() -> refreshPublication(backend, key));
+    }
+
+    private void enqueue(Runnable action) {
+        if (closed) return;
+        try {
+            signals.execute(
+                    () -> {
+                        try {
+                            action.run();
+                        } catch (RuntimeException error) {
+                            if (!closed) report(error);
+                        }
+                    });
+        } catch (RejectedExecutionException saturated) {
+            if (!closed) report(saturated);
+        }
+    }
+
+    @Override
     public synchronized AutoCloseable start(
-            SessionBackend backend, Predicate<TurnDispatch> admission) {
+            SessionBackend backend,
+            String runnerId,
+            Function<TurnDispatch, CompletionStage<Boolean>> advance,
+            Consumer<TurnSignal> refresh) {
         if (dispatchLoop != null) throw new IllegalStateException("Turn scheduler already started");
         var records =
                 backend.localStorage()
@@ -257,9 +327,31 @@ public final class RocketMqTurnScheduler implements TurnScheduler, AutoCloseable
                         this::report,
                         null,
                         records);
+        String ownerRoute = RocketMqLiteRouting.owner(runnerId);
+        var directed =
+                new RocketMqLoop(
+                        provider,
+                        publisher,
+                        ownerSubscription.apply(ownerRoute),
+                        topology.ownerSignal(),
+                        this::report,
+                        null,
+                        records);
         dispatchLoop = dispatches;
         signalLoop = notifications;
+        ownerLoop = directed;
         try {
+            directed.start(
+                    (payload, message) -> {
+                        var signal = DurableJson.convert(payload, TurnSignal.class);
+                        if (!runnerId.equals(signal.runnerId()))
+                            throw new IllegalArgumentException(
+                                    "Signal targets another Turn runner");
+                        RocketMqLiteRouting.require(message, ownerRoute, ownerRoute);
+                        refresh.accept(signal);
+                    },
+                    null,
+                    options.publicationRepairInterval());
             dispatches.start(
                     (payload, message) -> {
                         var dispatch = DurableJson.convert(payload, TurnDispatch.class);
@@ -267,9 +359,10 @@ public final class RocketMqTurnScheduler implements TurnScheduler, AutoCloseable
                                 message,
                                 RocketMqLiteRouting.thread(dispatch.thread()),
                                 dispatch.id());
-                        if (!admission.test(dispatch))
+                        if (!awaitStage(advance.apply(dispatch)))
                             throw new DurableException(
-                                    DurableException.Code.UNAVAILABLE, "Turn runner unavailable");
+                                    DurableException.Code.UNAVAILABLE,
+                                    "Turn phase requires another delivery");
                     },
                     null,
                     options.publicationRepairInterval());
@@ -279,8 +372,7 @@ public final class RocketMqTurnScheduler implements TurnScheduler, AutoCloseable
                         String route = RocketMqLiteRouting.thread(thread);
                         RocketMqLiteRouting.require(message, route, route);
                         local.publish(thread.session());
-                        backend.pendingDispatch(thread)
-                                .ifPresent(dispatch -> publish(backend, dispatch));
+                        refreshPublication(backend, thread);
                     },
                     () -> repair(backend),
                     options.publicationRepairInterval());
@@ -289,6 +381,48 @@ public final class RocketMqTurnScheduler implements TurnScheduler, AutoCloseable
             throw failure;
         }
         return this;
+    }
+
+    private void refreshPublication(SessionBackend backend, ThreadKey key) {
+        if (closed) return;
+        try {
+            backend.dispatchSchedule(key)
+                    .ifPresent(
+                            schedule -> {
+                                if (schedule.delayMillis() > 0)
+                                    scheduleCheck(backend, key, schedule.delayMillis());
+                                else publish(backend, schedule.dispatch());
+                            });
+        } catch (RuntimeException error) {
+            if (!closed) report(error);
+        }
+    }
+
+    private void scheduleCheck(SessionBackend backend, ThreadKey key, long delayMillis) {
+        synchronized (pendingDeadlines) {
+            if (closed) return;
+            var previous = pendingDeadlines.get(key);
+            if (previous == null && pendingDeadlines.size() >= MAX_DEADLINES) return;
+            if (previous != null) {
+                if (previous.future.getDelay(TimeUnit.MILLISECONDS) <= delayMillis) return;
+                previous.future.cancel(false);
+            }
+            var task = new DeadlineCheck(backend, key);
+            task.future = deadlines.schedule(task, delayMillis, TimeUnit.MILLISECONDS);
+            pendingDeadlines.put(key, task);
+        }
+    }
+
+    private static boolean awaitStage(CompletionStage<Boolean> stage) {
+        try {
+            return stage.toCompletableFuture().get();
+        } catch (InterruptedException interrupted) {
+            Thread.currentThread().interrupt();
+            return false;
+        } catch (ExecutionException failed) {
+            throw new DurableException(
+                    DurableException.Code.UNAVAILABLE, "Turn phase failed", failed.getCause());
+        }
     }
 
     private void repair(SessionBackend backend) {
@@ -328,6 +462,8 @@ public final class RocketMqTurnScheduler implements TurnScheduler, AutoCloseable
         } catch (RuntimeException error) {
             failedPublications.increment();
             throw error;
+        } finally {
+            scheduleCheck(backend, dispatch.thread(), options.republishAfter().toMillis());
         }
     }
 
@@ -338,7 +474,8 @@ public final class RocketMqTurnScheduler implements TurnScheduler, AutoCloseable
             producer =
                     provider.newProducerBuilder()
                             .setClientConfiguration(configuration)
-                            .setTopics(topology.dispatch(), topology.signal())
+                            .setTopics(
+                                    topology.dispatch(), topology.signal(), topology.ownerSignal())
                             .build();
             return producer;
         } catch (Exception error) {
@@ -359,6 +496,7 @@ public final class RocketMqTurnScheduler implements TurnScheduler, AutoCloseable
         if (closed || dispatchQuiesced || dispatchLoop == null) return;
         dispatchQuiesced = true;
         dispatchLoop.quiesce();
+        if (dispatchLoop.stopStageReceiver()) return;
         // Closing the SDK consumer can wait for its long poll. Keep the outbox and the
         // signal consumer available while the runtime drains its active invocations.
         var closer = new Thread(dispatchLoop::close, "durable-rocketmq-dispatch-drain");
@@ -376,6 +514,11 @@ public final class RocketMqTurnScheduler implements TurnScheduler, AutoCloseable
         }
         signals.shutdownNow();
         pendingSignals.clear();
+        synchronized (pendingDeadlines) {
+            deadlines.shutdownNow();
+            pendingDeadlines.clear();
+        }
+        if (ownerLoop != null) ownerLoop.close();
         if (signalLoop != null) signalLoop.close();
         if (dispatchLoop != null) dispatchLoop.close();
         if (ownsProducer && client != null) {

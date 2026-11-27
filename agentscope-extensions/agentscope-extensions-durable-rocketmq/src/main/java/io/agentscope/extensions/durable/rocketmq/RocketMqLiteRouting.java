@@ -33,6 +33,10 @@ final class RocketMqLiteRouting {
         return key(thread.session().namespace(), thread.session().sessionId(), thread.threadId());
     }
 
+    static String owner(String runnerId) {
+        return key("turn-owner", runnerId);
+    }
+
     static String execution(ExecutionRequest execution) {
         return key(
                 execution.session().namespace(),

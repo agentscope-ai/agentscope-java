@@ -352,31 +352,23 @@ public final class TransactionalExecutionStore implements ExecutionStore {
             throw new IllegalArgumentException("Inspection limit must be 1..10000");
         var keys = keys(null, limit + 1);
         int pending = 0, unknown = 0, publications = 0;
-        long pendingAge = 0, publicationAge = 0;
+        int ready = 0, leased = 0, awaiting = 0, deferred = 0;
+        long pendingAge = 0, publicationAge = 0, readyAge = 0;
         for (var key : keys.stream().limit(limit).toList()) {
-            long[] counts =
-                    records.transaction(
-                            key,
-                            tx -> {
-                                var state = read(tx);
-                                boolean unfinished =
-                                        !state.result.state().terminal() || !state.outputSealed;
-                                boolean unpublished = state.sequence > state.publishedSequence;
-                                return new long[] {
-                                    unfinished ? 1 : 0,
-                                    state.result.state() == ExecutionState.UNKNOWN ? 1 : 0,
-                                    unpublished ? 1 : 0,
-                                    unfinished ? Math.max(0, tx.now() - state.createdAt) : 0,
-                                    unpublished
-                                            ? Math.max(0, tx.now() - state.publicationPendingAt)
-                                            : 0
-                                };
-                            });
-            pending += (int) counts[0];
-            unknown += (int) counts[1];
-            publications += (int) counts[2];
-            pendingAge = Math.max(pendingAge, counts[3]);
-            publicationAge = Math.max(publicationAge, counts[4]);
+            var sample = records.transaction(key, tx -> inspect(read(tx), tx.now()));
+            switch (sample.phase()) {
+                case READY -> ready++;
+                case LEASED -> leased++;
+                case AWAITING_PROVIDER -> awaiting++;
+                case DEFERRED -> deferred++;
+                case SETTLED -> {}
+            }
+            if (sample.phase() != QueuePhase.SETTLED) pending++;
+            if (sample.unknown()) unknown++;
+            if (sample.unpublished()) publications++;
+            pendingAge = Math.max(pendingAge, sample.pendingAge());
+            publicationAge = Math.max(publicationAge, sample.publicationAge());
+            readyAge = Math.max(readyAge, sample.readyAge());
         }
         return new Statistics(
                 Math.min(limit, keys.size()),
@@ -385,7 +377,48 @@ public final class TransactionalExecutionStore implements ExecutionStore {
                 unknown,
                 publications,
                 pendingAge,
-                publicationAge);
+                publicationAge,
+                ready,
+                leased,
+                awaiting,
+                deferred,
+                readyAge);
+    }
+
+    private enum QueuePhase {
+        READY,
+        LEASED,
+        AWAITING_PROVIDER,
+        DEFERRED,
+        SETTLED
+    }
+
+    private record Inspection(
+            QueuePhase phase,
+            boolean unknown,
+            boolean unpublished,
+            long pendingAge,
+            long publicationAge,
+            long readyAge) {}
+
+    private static Inspection inspect(State state, long now) {
+        boolean settled = state.result.state().terminal() && state.outputSealed;
+        boolean unpublished = state.sequence > state.publishedSequence;
+        QueuePhase phase;
+        if (settled) phase = QueuePhase.SETTLED;
+        else if (state.owner != null && state.expiresAt > now) phase = QueuePhase.LEASED;
+        else if (state.nextAttemptAt > now && (!state.attempted || state.consecutiveFailures > 0))
+            phase = QueuePhase.DEFERRED;
+        else if (state.attempted || state.cancelled) phase = QueuePhase.AWAITING_PROVIDER;
+        else phase = QueuePhase.READY;
+        long eligibleAt = Math.max(state.createdAt, Math.max(state.nextAttemptAt, state.expiresAt));
+        return new Inspection(
+                phase,
+                state.result.state() == ExecutionState.UNKNOWN,
+                unpublished,
+                settled ? 0 : Math.max(0, now - state.createdAt),
+                unpublished ? Math.max(0, now - state.publicationPendingAt) : 0,
+                phase == QueuePhase.READY ? Math.max(0, now - eligibleAt) : 0);
     }
 
     public List<String> pendingPublications(int limit) {
@@ -460,6 +493,23 @@ public final class TransactionalExecutionStore implements ExecutionStore {
                     if (!state.cancelled && !state.result.state().terminal())
                         state.attempted = true;
                     return before;
+                });
+    }
+
+    @Override
+    public void denyStart(Work work, String reason) {
+        DurableJson.text(reason, "denial reason");
+        transact(
+                work.key(),
+                (state, now) -> {
+                    fence(state, work, now);
+                    if (state.result.state().terminal()) return null;
+                    if (state.attempted)
+                        throw failure(DurableException.Code.CONFLICT, "Execution already started");
+                    state.outputSealed = true;
+                    state.result = new ExecutionResult(ExecutionState.DENIED, null, null, reason);
+                    emit(state, publicResult(state), null);
+                    return null;
                 });
     }
 

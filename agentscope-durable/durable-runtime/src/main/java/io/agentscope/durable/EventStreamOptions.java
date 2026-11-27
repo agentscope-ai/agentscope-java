@@ -24,9 +24,12 @@ import java.util.Set;
 
 /** Options for one event stream or subscription. Delta previews are opt-in per connection. */
 public final class EventStreamOptions {
+    static final int LIVE_BUFFER_CAPACITY = 128;
+
     public enum EventDeltaType {
         MESSAGE,
-        TOOL_ARGUMENTS
+        TOOL_ARGUMENTS,
+        TOOL_OUTPUT
     }
 
     private final String cursor;
@@ -57,6 +60,7 @@ public final class EventStreamOptions {
         return switch (event.type()) {
             case "message.started", "message.delta" -> deltas.contains(EventDeltaType.MESSAGE);
             case "tool.arguments.delta" -> deltas.contains(EventDeltaType.TOOL_ARGUMENTS);
+            case "tool.output.delta" -> deltas.contains(EventDeltaType.TOOL_OUTPUT);
             default -> false;
         };
     }

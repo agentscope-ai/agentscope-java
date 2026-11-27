@@ -20,8 +20,6 @@ import io.agentscope.durable.DurableMessages.Input;
 import io.agentscope.durable.DurableTypes.CheckpointMetadata;
 import io.agentscope.durable.DurableTypes.CommandReceipt;
 import io.agentscope.durable.DurableTypes.CommitReceipt;
-import io.agentscope.durable.DurableTypes.ControlCommand;
-import io.agentscope.durable.DurableTypes.ControlKind;
 import io.agentscope.durable.DurableTypes.EventFilter;
 import io.agentscope.durable.DurableTypes.EventPage;
 import io.agentscope.durable.DurableTypes.HistoryPage;
@@ -98,20 +96,40 @@ public final class DurableThread {
         return submit(requestId, Input.text(text));
     }
 
-    /** Moves an unstarted submission's input to the named active Turn on this Thread. */
-    public CommandReceipt convertQueuedTurnToSteer(
-            String operationId, String queuedRequestId, String activeTurnId) {
+    /** Updates an unstarted user input at its current revision. */
+    public CommandReceipt editQueuedInput(
+            String requestId, String turnId, long expectedInputRevision, Input input) {
         return DurableJson.convert(
                 call(
-                        "control",
-                        "command",
-                        new ControlCommand(
-                                activeTurnId,
-                                operationId,
-                                ControlKind.STEER_QUEUED,
-                                queuedRequestId,
-                                null,
-                                0)),
+                        "editQueuedInput",
+                        "requestId",
+                        requestId,
+                        "turnId",
+                        turnId,
+                        "expectedInputRevision",
+                        expectedInputRevision,
+                        "input",
+                        input),
+                CommandReceipt.class);
+    }
+
+    /** Moves an unstarted user's current input to the active Turn on this Thread. */
+    public CommandReceipt convertQueuedToSteer(
+            String requestId,
+            String sourceTurnId,
+            String targetTurnId,
+            long expectedInputRevision) {
+        return DurableJson.convert(
+                call(
+                        "convertQueuedToSteer",
+                        "requestId",
+                        requestId,
+                        "sourceTurnId",
+                        sourceTurnId,
+                        "targetTurnId",
+                        targetTurnId,
+                        "expectedInputRevision",
+                        expectedInputRevision),
                 CommandReceipt.class);
     }
 

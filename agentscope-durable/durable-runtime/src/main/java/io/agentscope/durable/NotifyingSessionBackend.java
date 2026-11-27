@@ -17,12 +17,14 @@
 package io.agentscope.durable;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import io.agentscope.durable.DurableTypes.ActiveTurnCancellation;
 import io.agentscope.durable.DurableTypes.CheckpointMetadata;
 import io.agentscope.durable.DurableTypes.CheckpointView;
 import io.agentscope.durable.DurableTypes.CommandReceipt;
 import io.agentscope.durable.DurableTypes.Commit;
 import io.agentscope.durable.DurableTypes.CommitReceipt;
 import io.agentscope.durable.DurableTypes.ControlCommand;
+import io.agentscope.durable.DurableTypes.ControlKind;
 import io.agentscope.durable.DurableTypes.DelegationTarget;
 import io.agentscope.durable.DurableTypes.DelegationView;
 import io.agentscope.durable.DurableTypes.EventPage;
@@ -33,9 +35,11 @@ import io.agentscope.durable.DurableTypes.Frame;
 import io.agentscope.durable.DurableTypes.HarnessSelector;
 import io.agentscope.durable.DurableTypes.HistoryPage;
 import io.agentscope.durable.DurableTypes.Interaction;
+import io.agentscope.durable.DurableTypes.JobView;
 import io.agentscope.durable.DurableTypes.Lease;
 import io.agentscope.durable.DurableTypes.ModelCallPage;
 import io.agentscope.durable.DurableTypes.ModelCallView;
+import io.agentscope.durable.DurableTypes.OutputPage;
 import io.agentscope.durable.DurableTypes.RecoveryView;
 import io.agentscope.durable.DurableTypes.Restoration;
 import io.agentscope.durable.DurableTypes.RunPage;
@@ -53,7 +57,9 @@ import io.agentscope.durable.DurableTypes.ThreadPage;
 import io.agentscope.durable.DurableTypes.ThreadSpec;
 import io.agentscope.durable.DurableTypes.ThreadView;
 import io.agentscope.durable.DurableTypes.ToolExecution;
+import io.agentscope.durable.DurableTypes.ToolExecutionView;
 import io.agentscope.durable.DurableTypes.TurnPage;
+import io.agentscope.durable.DurableTypes.TurnProgress;
 import io.agentscope.durable.DurableTypes.TurnReceipt;
 import io.agentscope.durable.DurableTypes.TurnStatus;
 import io.agentscope.durable.DurableTypes.TurnView;
@@ -89,6 +95,36 @@ final class NotifyingSessionBackend implements SessionBackend {
         try {
             if (wakeups instanceof TurnScheduler scheduler) scheduler.changed(delegate, thread);
             else wakeups.publish(thread);
+        } catch (RuntimeException error) {
+            report(thread.session(), error);
+        }
+    }
+
+    private void controlChanged(ThreadKey thread, String turnId) {
+        try {
+            if (wakeups instanceof TurnScheduler scheduler)
+                scheduler.controlChanged(delegate, thread, turnId);
+            else wakeups.publish(thread);
+        } catch (RuntimeException error) {
+            report(thread.session(), error);
+        }
+    }
+
+    private void notifyJobOwner(ThreadKey child, String turnId) {
+        if (!(wakeups instanceof TurnScheduler)
+                || !child.threadId().startsWith(DelegationExecutor.CHILD_THREAD_PREFIX)) return;
+        try {
+            var turn = delegate.turn(child, turnId);
+            if (turn.status().terminal() && turn.parent() != null) changed(turn.parent().thread());
+        } catch (RuntimeException error) {
+            report(child.session(), error);
+        }
+    }
+
+    private void claimed(ThreadKey thread) {
+        changed(thread.session());
+        try {
+            if (wakeups instanceof TurnScheduler scheduler) scheduler.claimed(delegate, thread);
         } catch (RuntimeException error) {
             report(thread.session(), error);
         }
@@ -197,7 +233,20 @@ final class NotifyingSessionBackend implements SessionBackend {
     @Override
     public CommandReceipt control(ThreadKey key, ControlCommand command) {
         var result = delegate.control(key, command);
-        changed(key);
+        if ("accepted".equals(result.status())) {
+            controlChanged(key, result.turnId());
+            if (command.kind() == ControlKind.CANCEL) notifyJobOwner(key, result.turnId());
+        }
+        return result;
+    }
+
+    @Override
+    public ActiveTurnCancellation cancelActiveTurns(
+            SessionKey session, String requestId, String threadId) {
+        var result = delegate.cancelActiveTurns(session, requestId, threadId);
+        changed(session);
+        for (var target : result.targets())
+            controlChanged(new ThreadKey(session, target.threadId()), target.turnId());
         return result;
     }
 
@@ -241,6 +290,11 @@ final class NotifyingSessionBackend implements SessionBackend {
     @Override
     public TurnView turn(ThreadKey session, String turnId) {
         return delegate.turn(session, turnId);
+    }
+
+    @Override
+    public TurnProgress turnProgress(ThreadKey session, String turnId) {
+        return delegate.turnProgress(session, turnId);
     }
 
     @Override
@@ -301,14 +355,14 @@ final class NotifyingSessionBackend implements SessionBackend {
     @Override
     public ClaimOutcome claimOutcome(ThreadKey session, String owner, Duration duration) {
         var result = delegate.claimOutcome(session, owner, duration);
-        if (result.lease() != null) changed(session.session());
+        if (result.lease() != null) claimed(session);
         return result;
     }
 
     @Override
     public ClaimOutcome claimOutcome(TurnDispatch dispatch, String owner, Duration duration) {
         var result = delegate.claimOutcome(dispatch, owner, duration);
-        if (result.lease() != null) changed(dispatch.thread().session());
+        if (result.lease() != null) claimed(dispatch.thread());
         return result;
     }
 
@@ -320,6 +374,16 @@ final class NotifyingSessionBackend implements SessionBackend {
     @Override
     public Optional<TurnDispatch> pendingDispatch(ThreadKey key) {
         return delegate.pendingDispatch(key);
+    }
+
+    @Override
+    public Optional<DispatchSchedule> dispatchSchedule(ThreadKey key) {
+        return delegate.dispatchSchedule(key);
+    }
+
+    @Override
+    public Optional<TurnSignal> ownerSignal(ThreadKey key, String turnId) {
+        return delegate.ownerSignal(key, turnId);
     }
 
     @Override
@@ -362,6 +426,7 @@ final class NotifyingSessionBackend implements SessionBackend {
                 || commit.status() == TurnStatus.WAITING
                 || commit.status() == TurnStatus.PAUSED) changed(lease.thread());
         else changed(lease.session());
+        if (commit.status().terminal()) notifyJobOwner(lease.thread(), lease.turnId());
         return result;
     }
 
@@ -383,13 +448,26 @@ final class NotifyingSessionBackend implements SessionBackend {
     @Override
     public DelegationView delegate(ExecutionRequest parent, DelegationTarget target) {
         var result = delegate.delegate(parent, target);
-        changed(parent.session());
+        if (result.child() != null) changed(result.child().thread());
+        else changed(parent.session());
         return result;
     }
 
     @Override
     public Optional<DelegationView> delegation(ExecutionRequest parent) {
         return delegate.delegation(parent);
+    }
+
+    @Override
+    public JobView job(ThreadKey owner, String jobId) {
+        return delegate.job(owner, jobId);
+    }
+
+    @Override
+    public ExecutionResult awaitJob(ExecutionRequest waiter, String jobId, long timeoutMillis) {
+        var result = delegate.awaitJob(waiter, jobId, timeoutMillis);
+        changed(waiter.thread());
+        return result;
     }
 
     @Override
@@ -400,8 +478,9 @@ final class NotifyingSessionBackend implements SessionBackend {
     }
 
     @Override
-    public ToolExecution beginDispatch(Lease lease, String executionId) {
-        var result = delegate.beginDispatch(lease, executionId);
+    public ToolExecution beginDispatch(
+            Lease lease, String executionId, Executor.Capabilities capabilities) {
+        var result = delegate.beginDispatch(lease, executionId, capabilities);
         changed(lease.session());
         return result;
     }
@@ -423,6 +502,17 @@ final class NotifyingSessionBackend implements SessionBackend {
     }
 
     @Override
+    public ToolExecutionView toolExecution(
+            ThreadKey thread, String turnId, String callId, String executionId) {
+        return delegate.toolExecution(thread, turnId, callId, executionId);
+    }
+
+    @Override
+    public OutputPage toolOutput(ThreadKey thread, String turnId, String executionId, long offset) {
+        return delegate.toolOutput(thread, turnId, executionId, offset);
+    }
+
+    @Override
     public void acceptResult(ThreadKey session, String executionId, ExecutionResult result) {
         delegate.acceptResult(session, executionId, result);
         changed(session);
@@ -431,19 +521,26 @@ final class NotifyingSessionBackend implements SessionBackend {
     @Override
     public void signal(ThreadKey session, String turnId, Signal signal) {
         delegate.signal(session, turnId, signal);
-        changed(session);
+        controlChanged(session, turnId);
     }
 
     @Override
     public void withdraw(ThreadKey session, String turnId, String signalId, String requestId) {
         delegate.withdraw(session, turnId, signalId, requestId);
-        changed(session);
+        controlChanged(session, turnId);
+    }
+
+    @Override
+    public void rejectNativeToolReconciliation(Lease lease, String signalId) {
+        delegate.rejectNativeToolReconciliation(lease, signalId);
+        changed(lease.thread());
     }
 
     @Override
     public void cancel(ThreadKey session, String turnId, String requestId) {
         delegate.cancel(session, turnId, requestId);
-        changed(session);
+        controlChanged(session, turnId);
+        notifyJobOwner(session, turnId);
     }
 
     @Override
@@ -454,6 +551,11 @@ final class NotifyingSessionBackend implements SessionBackend {
     @Override
     public EventPage events(SessionKey session, String cursor, int limit) {
         return delegate.events(session, cursor, limit);
+    }
+
+    @Override
+    public EventPage eventsBefore(SessionKey session, String cursor, int limit) {
+        return delegate.eventsBefore(session, cursor, limit);
     }
 
     @Override

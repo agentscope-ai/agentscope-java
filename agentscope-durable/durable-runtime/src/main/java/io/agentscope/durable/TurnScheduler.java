@@ -16,7 +16,9 @@
 package io.agentscope.durable;
 
 import io.agentscope.durable.DurableTypes.ThreadKey;
-import java.util.function.Predicate;
+import java.util.concurrent.CompletionStage;
+import java.util.function.Consumer;
+import java.util.function.Function;
 
 /** Thread notifications and durable dispatch transport for a distributed runtime. */
 public interface TurnScheduler extends Wakeups {
@@ -25,11 +27,23 @@ public interface TurnScheduler extends Wakeups {
         publish(thread);
     }
 
+    /** A committed control can also wake the current owner of the targeted Turn. */
+    default void controlChanged(SessionBackend backend, ThreadKey thread, String turnId) {
+        changed(backend, thread);
+    }
+
+    /** Observe the recovery deadline written by a successful claim. */
+    default void claimed(SessionBackend backend, ThreadKey thread) {}
+
     /**
-     * Starts one runner. Successful admission may acknowledge a delivery because the backend
-     * retains the dispatch until a claim changes its generation.
+     * Starts one runner. A delivery can be acknowledged when the returned stage confirms a
+     * durable outcome or handoff. A false or failed stage leaves the delivery eligible for retry.
      */
-    AutoCloseable start(SessionBackend backend, Predicate<TurnDispatch> admission);
+    AutoCloseable start(
+            SessionBackend backend,
+            String runnerId,
+            Function<TurnDispatch, CompletionStage<Boolean>> advance,
+            Consumer<TurnSignal> refresh);
 
     /** Stop taking new dispatches while allowing committed work to be published. */
     default void quiesce() {}

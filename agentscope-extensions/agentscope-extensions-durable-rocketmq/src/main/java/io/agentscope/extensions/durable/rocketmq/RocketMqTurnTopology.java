@@ -16,13 +16,20 @@
 package io.agentscope.extensions.durable.rocketmq;
 
 record RocketMqTurnTopology(
-        String dispatch, String signal, String runnerGroup, String signalGroup) {
+        String dispatch,
+        String signal,
+        String ownerSignal,
+        String runnerGroup,
+        String signalGroup,
+        String ownerGroup) {
     static RocketMqTurnTopology namespace(String namespace) {
         String prefix = RocketMqExecutionTopology.component(namespace, "RocketMQ Turn namespace");
         return new RocketMqTurnTopology(
                 prefix + "-turn-dispatch",
                 prefix + "-turn-signal",
+                prefix + "-turn-owner",
                 prefix + "-turn-runner",
-                prefix + "-turn-signal");
+                prefix + "-turn-signal",
+                prefix + "-turn-owner");
     }
 }

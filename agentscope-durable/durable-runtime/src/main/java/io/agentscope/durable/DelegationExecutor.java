@@ -31,6 +31,7 @@ import java.util.function.Function;
 
 /** Durable asynchronous child Turns through the ordinary Executor/result-application boundary. */
 public final class DelegationExecutor implements Executor {
+    static final String CHILD_THREAD_PREFIX = "child-";
     private final SessionBackend backend;
     private final Function<ExecutionRequest, DelegationTarget> targets;
 
@@ -58,7 +59,8 @@ public final class DelegationExecutor implements Executor {
     public static ThreadKey childThread(ExecutionRequest request) {
         return new ThreadKey(
                 request.session(),
-                "child-" + DurableJson.hash(List.of(request.thread(), request.executionId())));
+                CHILD_THREAD_PREFIX
+                        + DurableJson.hash(List.of(request.thread(), request.executionId())));
     }
 
     @Override

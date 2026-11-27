@@ -55,17 +55,40 @@ final class RocketMqLoop implements AutoCloseable {
             String topic,
             String group,
             int cachedMessages) {
-        return listener ->
-                provider.newLitePushConsumerBuilder()
-                        .setClientConfiguration(configuration)
-                        .bindTopic(topic)
-                        .setConsumerGroup(group)
-                        .setConsumptionThreadCount(Math.min(4, cachedMessages))
-                        .setMaxCacheMessageCount(cachedMessages)
-                        .setMaxCacheMessageSizeInBytes(cachedMessages * MAX_BYTES)
-                        .setEnableFifoConsumeAccelerator(true)
-                        .setMessageListener(listener)
-                        .build();
+        return subscription(provider, configuration, topic, group, cachedMessages, null);
+    }
+
+    static Subscription subscription(
+            ClientServiceProvider provider,
+            ClientConfiguration configuration,
+            String topic,
+            String group,
+            int cachedMessages,
+            String route) {
+        return listener -> {
+            var consumer =
+                    provider.newLitePushConsumerBuilder()
+                            .setClientConfiguration(configuration)
+                            .bindTopic(topic)
+                            .setConsumerGroup(group)
+                            .setConsumptionThreadCount(Math.min(4, cachedMessages))
+                            .setMaxCacheMessageCount(cachedMessages)
+                            .setMaxCacheMessageSizeInBytes(cachedMessages * MAX_BYTES)
+                            .setEnableFifoConsumeAccelerator(true)
+                            .setMessageListener(listener)
+                            .build();
+            try {
+                if (route != null) consumer.subscribeLite(route);
+                return consumer;
+            } catch (Exception failure) {
+                try {
+                    consumer.close();
+                } catch (Exception closeError) {
+                    failure.addSuppressed(closeError);
+                }
+                throw failure;
+            }
+        };
     }
 
     private final ClientServiceProvider provider;
@@ -240,7 +263,11 @@ final class RocketMqLoop implements AutoCloseable {
     }
 
     private static String objectScope(JsonNode value) {
-        return DurableJson.hash(value.required("request").required("session"));
+        var request =
+                value.has("requests")
+                        ? value.required("requests").required(0)
+                        : value.required("request");
+        return DurableJson.hash(request.required("thread").required("session"));
     }
 
     private static boolean permanent(RuntimeException error) {
@@ -272,6 +299,12 @@ final class RocketMqLoop implements AutoCloseable {
         synchronized (admission) {
             accepting = false;
         }
+    }
+
+    synchronized boolean stopStageReceiver() {
+        if (!(consumer instanceof RocketMqStageConsumer stages)) return false;
+        stages.stopReceiving();
+        return true;
     }
 
     boolean drainAdmissions(Duration timeout) throws InterruptedException {

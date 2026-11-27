@@ -24,6 +24,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.sql.Connection;
 import java.sql.DriverManager;
+import java.sql.PreparedStatement;
 import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.List;
@@ -104,6 +105,18 @@ public final class JdbcRecordStore implements RecordStore {
                 statement.executeUpdate(
                         "CREATE INDEX IF NOT EXISTS durable_work_ready ON"
                                 + " durable_work(queue,ready_at,record_key,work_id)");
+                statement.executeUpdate(
+                        "CREATE INDEX IF NOT EXISTS durable_work_scoped_ready ON"
+                                + " durable_work(queue,record_key,ready_at,work_id)");
+                if (dialect == Dialect.POSTGRESQL) {
+                    statement.executeUpdate(
+                            "CREATE INDEX IF NOT EXISTS durable_records_key_order ON"
+                                    + " durable_records(record_key COLLATE \"C\")"
+                                    + " WHERE payload IS NOT NULL");
+                    statement.executeUpdate(
+                            "CREATE INDEX IF NOT EXISTS durable_parts_key_order ON"
+                                    + " durable_parts(record_key,part_key COLLATE \"C\")");
+                }
             }
         } catch (SQLException e) {
             throw unavailable(e);
@@ -176,7 +189,7 @@ public final class JdbcRecordStore implements RecordStore {
                         if (!rs.next()) throw new SQLException("Missing transaction record");
                     }
                 }
-                T result = action.apply(new Parts(c, key, time(c), dialect));
+                T result = action.apply(new Parts(c, key, time(c)));
                 c.commit();
                 return result;
             } catch (SQLException | RuntimeException | Error e) {
@@ -204,17 +217,15 @@ public final class JdbcRecordStore implements RecordStore {
         }
     }
 
-    private static final class Parts implements Transaction {
+    private final class Parts implements Transaction {
         private final Connection connection;
         private final String scope;
         private final long now;
-        private final Dialect dialect;
 
-        Parts(Connection connection, String scope, long now, Dialect dialect) {
+        Parts(Connection connection, String scope, long now) {
             this.connection = connection;
             this.scope = scope;
             this.now = now;
-            this.dialect = dialect;
         }
 
         public long now() {
@@ -269,23 +280,14 @@ public final class JdbcRecordStore implements RecordStore {
 
         public List<String> keys(String prefix, String after, int limit) {
             checkLimit(limit);
-            String keyOrder = keyOrder("part_key", dialect);
+            String key = orderedKey("part_key");
+            String end = prefixEnd(prefix);
             try (var s =
                     connection.prepareStatement(
                             "SELECT part_key FROM durable_parts WHERE record_key=? AND "
-                                    + keyOrder
-                                    + ">=? AND "
-                                    + keyOrder
-                                    + "<? AND "
-                                    + keyOrder
-                                    + ">? ORDER BY "
-                                    + keyOrder
-                                    + " LIMIT ?")) {
+                                    + keyRange(key, end))) {
                 s.setString(1, scope);
-                s.setString(2, prefix);
-                s.setString(3, prefix + "\uffff");
-                s.setString(4, after == null ? "" : after);
-                s.setInt(5, limit);
+                bindRange(s, 2, prefix, end, after, limit);
                 try (var rs = s.executeQuery()) {
                     var keys = new ArrayList<String>();
                     while (rs.next()) keys.add(rs.getString(1));
@@ -370,32 +372,18 @@ public final class JdbcRecordStore implements RecordStore {
             throw new IllegalArgumentException("Invalid " + name);
     }
 
-    private static String keyOrder(String column, Dialect dialect) {
-        // The prefix bounds and cursors depend on byte order, independent of the database locale.
-        return dialect == Dialect.POSTGRESQL ? column + " COLLATE \"C\"" : column;
-    }
-
     @Override
     public List<String> keys(String prefix, String after, int limit) {
-        if (limit < 1 || limit > 1000) throw new IllegalArgumentException("Limit must be 1..1000");
-        String keyOrder = keyOrder("record_key", dialect);
+        checkLimit(limit);
+        String key = orderedKey("record_key");
+        String end = prefixEnd(prefix);
         try (Connection c = connect();
                 var s =
                         c.prepareStatement(
                                 "SELECT record_key FROM durable_records WHERE payload IS NOT NULL"
                                         + " AND "
-                                        + keyOrder
-                                        + ">=? AND "
-                                        + keyOrder
-                                        + "<? AND "
-                                        + keyOrder
-                                        + ">? ORDER BY "
-                                        + keyOrder
-                                        + " LIMIT ?")) {
-            s.setString(1, prefix);
-            s.setString(2, prefix + "\uffff");
-            s.setString(3, after == null ? "" : after);
-            s.setInt(4, limit);
+                                        + keyRange(key, end))) {
+            bindRange(s, 1, prefix, end, after, limit);
             try (var rs = s.executeQuery()) {
                 List<String> result = new ArrayList<>();
                 while (rs.next()) result.add(rs.getString(1));
@@ -404,6 +392,42 @@ public final class JdbcRecordStore implements RecordStore {
         } catch (SQLException e) {
             throw unavailable(e);
         }
+    }
+
+    private String orderedKey(String column) {
+        return dialect == Dialect.POSTGRESQL ? column + " COLLATE \"C\"" : column;
+    }
+
+    private static String keyRange(String key, String end) {
+        String upper = end == null ? "" : " AND " + key + "<?";
+        return key + ">=? AND " + key + ">?" + upper + " ORDER BY " + key + " LIMIT ?";
+    }
+
+    private static void bindRange(
+            PreparedStatement statement,
+            int index,
+            String prefix,
+            String end,
+            String after,
+            int limit)
+            throws SQLException {
+        statement.setString(index++, prefix);
+        statement.setString(index++, after == null ? "" : after);
+        if (end != null) statement.setString(index++, end);
+        statement.setInt(index, limit);
+    }
+
+    /** Exclusive upper bound under UTF-8 byte order, including supplementary characters. */
+    private static String prefixEnd(String prefix) {
+        for (int end = prefix.length(); end > 0; ) {
+            int codePoint = prefix.codePointBefore(end);
+            end -= Character.charCount(codePoint);
+            if (codePoint < Character.MAX_CODE_POINT) {
+                int next = codePoint == 0xD7FF ? 0xE000 : codePoint + 1;
+                return prefix.substring(0, end) + Character.toString(next);
+            }
+        }
+        return null;
     }
 
     private static DurableException unavailable(SQLException cause) {

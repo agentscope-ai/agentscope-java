@@ -29,12 +29,14 @@ Provision these LITE parents:
 
 - `durable-turn-dispatch`
 - `durable-turn-signal`
+- `durable-turn-owner`
 - `durable-hands-commands`
 - `durable-hands-controls`
 - `durable-hands-updates`
 
 Topics and consumer groups derive from the default MQ namespace `durable` and executor route
-`hands`. Configure a Shared wildcard consumer group per parent and grant access as described
+`hands`. Configure a Shared consumer group per parent, using an explicit subscription for
+`durable-turn-owner` and wildcard delivery for the other parents. Grant access as described
 in the [Durable LiteTopic setup](../../../../docs/dev/en/docs/harness/durable.md). The script creates no
 infrastructure and configures no credentials. Production hosts add authentication and TLS to
 `ClientConfiguration`. Do not mix independent Brain databases in one consumer group.

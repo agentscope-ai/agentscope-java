@@ -16,6 +16,7 @@
 
 package io.agentscope.durable.agentscope;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.AgentExecutionHost;
 import io.agentscope.core.agent.RunOutcome;
@@ -27,6 +28,7 @@ import io.agentscope.core.journal.ModelInvocation;
 import io.agentscope.core.journal.ThreadInteractions;
 import io.agentscope.core.journal.ThreadJournal;
 import io.agentscope.core.journal.ThreadJournalStore;
+import io.agentscope.core.journal.ThreadRecovery;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.GenerateReason;
 import io.agentscope.core.message.Msg;
@@ -42,10 +44,14 @@ import io.agentscope.core.tool.ToolBase;
 import io.agentscope.core.tool.ToolCallParam;
 import io.agentscope.core.tool.Toolkit;
 import io.agentscope.core.util.JsonUtils;
+import io.agentscope.core.util.MessageUtils;
 import io.agentscope.durable.DurableException;
 import io.agentscope.durable.DurableJson;
+import io.agentscope.durable.DurableMessages.ToolResponse;
 import io.agentscope.durable.DurableTypes.Commit;
+import io.agentscope.durable.DurableTypes.EventInput;
 import io.agentscope.durable.DurableTypes.Frame;
+import io.agentscope.durable.DurableTypes.Signal;
 import io.agentscope.durable.DurableTypes.ThreadSpec;
 import io.agentscope.durable.DurableTypes.TurnStatus;
 import io.agentscope.durable.DurableTypes.WaitCondition;
@@ -53,19 +59,23 @@ import io.agentscope.durable.HarnessAdapter;
 import io.agentscope.durable.HarnessContext;
 import io.agentscope.durable.ModelExecutions;
 import io.agentscope.durable.ToolBinding;
+import io.agentscope.durable.TransactionalSessionBackend;
 import io.agentscope.durable.codec.agentscope.AgentScopeCheckpointCodec;
+import io.agentscope.durable.codec.agentscope.DurableEventSchemas;
 import io.agentscope.harness.agent.HarnessAgent;
 import io.agentscope.harness.agent.middleware.MemoryFlushMiddleware;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 import java.util.function.Function;
+import java.util.stream.Collectors;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
@@ -97,6 +107,7 @@ public final class AgentScopeAdapter implements HarnessAdapter {
     private final ModelExecutions modelExecutions;
     private final String modelRoute;
     private final Duration replyTimeout;
+    private final AgentScopeToolHooks toolHooks;
 
     private AgentScopeAdapter(
             Function<InvocationBinding, NativeAgent> factory,
@@ -109,7 +120,8 @@ public final class AgentScopeAdapter implements HarnessAdapter {
                 null,
                 null,
                 null,
-                ExecutionConfig.MODEL_DEFAULTS.getTimeout());
+                ExecutionConfig.MODEL_DEFAULTS.getTimeout(),
+                AgentScopeToolHooks.NONE);
     }
 
     private AgentScopeAdapter(
@@ -119,7 +131,8 @@ public final class AgentScopeAdapter implements HarnessAdapter {
             QueuedModelRequest.Publisher publisher,
             ModelExecutions modelExecutions,
             String modelRoute,
-            Duration replyTimeout) {
+            Duration replyTimeout,
+            AgentScopeToolHooks toolHooks) {
         this.replyTimeout = replyTimeout;
         this.publisher = publisher;
         this.modelExecutions = modelExecutions;
@@ -127,6 +140,20 @@ public final class AgentScopeAdapter implements HarnessAdapter {
         this.factory = factory;
         this.executors = Map.copyOf(executors);
         this.bindings = Map.copyOf(bindings);
+        this.toolHooks = Objects.requireNonNull(toolHooks);
+    }
+
+    /** Configure durable tool hooks for this adapter's pinned Harness definition. */
+    public AgentScopeAdapter withToolHooks(AgentScopeToolHooks hooks) {
+        return new AgentScopeAdapter(
+                factory,
+                executors,
+                bindings,
+                publisher,
+                modelExecutions,
+                modelRoute,
+                replyTimeout,
+                hooks);
     }
 
     /** Dispatch reasoning model calls to a durable message queue. */
@@ -146,7 +173,8 @@ public final class AgentScopeAdapter implements HarnessAdapter {
                 Objects.requireNonNull(publisher),
                 null,
                 null,
-                replyTimeout);
+                replyTimeout,
+                toolHooks);
     }
 
     /** Hand off reasoning to a lease-based Model Worker. */
@@ -165,7 +193,8 @@ public final class AgentScopeAdapter implements HarnessAdapter {
                 null,
                 Objects.requireNonNull(executions),
                 DurableJson.text(route, "model route"),
-                replyTimeout);
+                replyTimeout,
+                toolHooks);
     }
 
     /** Registers schemas from the same immutable definitions used by the remote worker. */
@@ -331,10 +360,18 @@ public final class AgentScopeAdapter implements HarnessAdapter {
     @Override
     public void execute(HarnessContext context) {
         if (pauseIfRequested(context)) return;
+        if (context.draining()) return;
         var log = new BackendThreadJournal(context, executors, bindings);
+        var turnId = context.lease().turnId();
+        if (log.hasUnsettledNativeTools(turnId)
+                && resolveNativeToolOutcomes(context, log, JournalProjection.read(log)) == null)
+            return;
+        var hooks =
+                new ToolHookJournal(
+                        toolHooks, context.frame().definition(), context.lease().turnId(), log);
         var host =
                 new AgentScopeExecutionHost(
-                        context, log, publisher, modelExecutions, modelRoute, replyTimeout);
+                        context, log, publisher, modelExecutions, modelRoute, replyTimeout, hooks);
         if (host.pending()) host.restoreEntry();
         else if (completeInvocation(context, log)) return;
         var frame = context.frame();
@@ -362,8 +399,16 @@ public final class AgentScopeAdapter implements HarnessAdapter {
                     waitFor(context, null);
                     return;
                 }
-                var block = AgentScopeToolResults.convert(call, result);
-                results.add(block);
+                var tool = execution.get();
+                results.add(
+                        normalizeExternalResult(
+                                log,
+                                hooks,
+                                frame.turn().turnId(),
+                                tool.request().executionId(),
+                                call,
+                                AgentScopeToolResults.convert(call, result),
+                                DurableJson.hash(result)));
                 continue;
             }
             String signalKey = "interaction:" + id;
@@ -379,13 +424,19 @@ public final class AgentScopeAdapter implements HarnessAdapter {
                             DurableException.Code.INVALID, "Confirmation signal must be boolean");
                 confirmations.add(new ConfirmResult(signal.get().value().asBoolean(), call));
             } else if ("external_execution".equals(request.data().get("kind"))) {
+                var value = signal.get().value();
                 results.add(
-                        ToolResultBlock.text(
-                                        signal.get().value().isTextual()
-                                                ? signal.get().value().asText()
-                                                : signal.get().value().toString())
-                                .withIdAndName(call.getId(), call.getName())
-                                .withState(ToolResultState.SUCCESS));
+                        normalizeExternalResult(
+                                log,
+                                hooks,
+                                frame.turn().turnId(),
+                                TransactionalSessionBackend.executionId(
+                                        frame.definition().key(),
+                                        frame.turn().turnId(),
+                                        call.getId()),
+                                call,
+                                manualToolResult(call, value),
+                                DurableJson.hash(value)));
             } else
                 throw new DurableException(
                         DurableException.Code.INCOMPATIBLE, "Unknown native interaction kind");
@@ -409,8 +460,8 @@ public final class AgentScopeAdapter implements HarnessAdapter {
                             .textContent("")
                             .metadata(Map.of(Msg.METADATA_CONFIRM_RESULTS, confirmations))
                             .build());
-        if (!hasInitialInput(log, frame.turn().turnId()))
-            input.add(AgentScopeMessages.input(frame.input(), "input:" + frame.turn().turnId()));
+        if (!hasAppliedInput(log, frame.turn().turnId(), frame.turn().inputMessageId()))
+            input.add(AgentScopeMessages.input(frame.input(), frame.turn().inputMessageId()));
         log.consuming(consumed);
         var runtimeContext =
                 RuntimeContext.builder()
@@ -466,6 +517,11 @@ public final class AgentScopeAdapter implements HarnessAdapter {
                     failure);
         }
         if (pauseIfRequested(context)) return;
+        if (host.yieldingForDrain()) return;
+        if (host.waitingForNativeReconciliation()) {
+            parkNativeToolOutcomes(context, JournalProjection.read(log).uncertainToolCalls());
+            return;
+        }
         if (host.waitingForModel() != null) {
             waitFor(context, host.waitingForModel());
             return;
@@ -517,6 +573,43 @@ public final class AgentScopeAdapter implements HarnessAdapter {
         }
     }
 
+    private static ToolResultBlock manualToolResult(ToolUseBlock call, JsonNode value) {
+        if (ToolResponse.matches(value)) {
+            var response = DurableJson.convert(value, ToolResponse.class);
+            return new ToolResultBlock(
+                            call.getId(),
+                            call.getName(),
+                            AgentScopeMessages.nativeContent(response.content()))
+                    .withState(response.error() ? ToolResultState.ERROR : ToolResultState.SUCCESS);
+        }
+        return ToolResultBlock.text(value.isTextual() ? value.asText() : value.toString())
+                .withIdAndName(call.getId(), call.getName())
+                .withState(ToolResultState.SUCCESS);
+    }
+
+    private static ToolResultBlock normalizeExternalResult(
+            BackendThreadJournal log,
+            ToolHookJournal hooks,
+            String turnId,
+            String executionId,
+            ToolUseBlock call,
+            ToolResultBlock source,
+            String digest) {
+        return hooks.normalize(
+                        executionId,
+                        call,
+                        source,
+                        digest,
+                        fact ->
+                                log.append(
+                                        turnId,
+                                        List.of(
+                                                Map.entry(
+                                                        DurableEventSchemas.TOOL_NORMALIZED,
+                                                        fact))))
+                .block();
+    }
+
     private record NativeInvocation(String runId, RunOutcome outcome, Msg output) {}
 
     /** Reads invocation facts only; native journals do not own the durable Turn state. */
@@ -548,14 +641,15 @@ public final class AgentScopeAdapter implements HarnessAdapter {
         return outcome == null ? null : new NativeInvocation(runId, outcome, output);
     }
 
-    private static boolean hasInitialInput(ThreadJournal log, String turnId) {
-        boolean received = false;
+    private static boolean hasAppliedInput(ThreadJournal log, String turnId, String inputId) {
+        boolean applied = false;
         for (var event : log.scanMetadata(0, log.head().seq())) {
-            if ("state/restored".equals(event.type())) received = false;
-            if ("input/received".equals(event.type()) && turnId.equals(event.turnId()))
-                received = true;
+            if ("state/restored".equals(event.type())) applied = false;
+            if ("input/applied".equals(event.type())
+                    && turnId.equals(event.turnId())
+                    && inputId.equals(event.data().get("inputId"))) applied = true;
         }
-        return received;
+        return applied;
     }
 
     private static boolean hasPendingInput(Frame frame) {
@@ -652,6 +746,123 @@ public final class AgentScopeAdapter implements HarnessAdapter {
                         null));
     }
 
+    private JournalProjection resolveNativeToolOutcomes(
+            HarnessContext context, BackendThreadJournal log, JournalProjection projection) {
+        var pending = projection.uncertainToolCalls();
+        if (pending.isEmpty()) return projection;
+        var frame = context.frame();
+        var evidence =
+                frame.signals().stream()
+                        .filter(
+                                signal ->
+                                        WaitCondition.NATIVE_TOOL_RECONCILIATION.equals(
+                                                signal.key()))
+                        .findFirst();
+        if (evidence.isEmpty()) {
+            parkNativeToolOutcomes(context, pending);
+            return null;
+        }
+        var signal = evidence.get();
+        var reconciliation = matchNativeEvidence(signal, pending);
+        if (reconciliation == null) {
+            context.rejectNativeToolReconciliation(signal);
+            parkNativeToolOutcomes(context, pending);
+            return null;
+        }
+        var calls = new LinkedHashMap<String, ToolUseBlock>();
+        for (var message : projection.restore().getContext())
+            for (var call : message.getContentBlocks(ToolUseBlock.class))
+                if (pending.contains(call.getId())) calls.put(call.getId(), call);
+        if (!calls.keySet().equals(pending)
+                || !context.lease().turnId().equals(projection.positionTurnId()))
+            throw new DurableException(
+                    DurableException.Code.CONFLICT,
+                    "Native tool request does not match the current checkpoint");
+        String turnId = frame.turn().turnId();
+        var hooks = new ToolHookJournal(toolHooks, frame.definition(), turnId, log);
+        var outcomes = new LinkedHashMap<String, ToolResultBlock>();
+        for (var result : reconciliation.outcomes()) {
+            var call = calls.get(result.getId());
+            String executionId =
+                    TransactionalSessionBackend.executionId(
+                            frame.definition().key(), turnId, call.getId());
+            outcomes.put(
+                    call.getId(),
+                    normalizeExternalResult(
+                            log,
+                            hooks,
+                            turnId,
+                            executionId,
+                            call,
+                            result.withIdAndName(call.getId(), call.getName()),
+                            DurableJson.hash(result)));
+        }
+        log.consuming(List.of(signal.id()));
+        ThreadRecovery.reconcile(log, outcomes, reconciliation.evidenceRef());
+        return JournalProjection.read(log);
+    }
+
+    private static NativeToolReconciliation matchNativeEvidence(
+            Signal signal, Set<String> pending) {
+        try {
+            var command = DurableJson.convert(signal.value(), NativeToolReconciliation.class);
+            if (command != null
+                    && command.signalId().equals(signal.id())
+                    && command.outcomes().stream()
+                            .map(ToolResultBlock::getId)
+                            .collect(Collectors.toSet())
+                            .equals(pending)) return command;
+        } catch (DurableException malformed) {
+            if (malformed.code() != DurableException.Code.INVALID) throw malformed;
+        }
+        return null;
+    }
+
+    private static void parkNativeToolOutcomes(HarnessContext context, Set<String> pending) {
+        var frame = context.frame();
+        var condition =
+                new WaitCondition(
+                        WaitCondition.NATIVE_TOOL_RECONCILIATION,
+                        0,
+                        pending.stream().sorted().toList());
+        if (condition.equals(frame.turn().waiting())) return;
+        var events =
+                pending.stream()
+                        .sorted()
+                        .map(
+                                callId ->
+                                        new EventInput(
+                                                "native-outcome-unknown:"
+                                                        + DurableJson.hash(
+                                                                List.of(
+                                                                        frame.turn().turnId(),
+                                                                        callId)),
+                                                "tool.call.updated",
+                                                DurableJson.value(
+                                                        Map.of(
+                                                                "callId",
+                                                                callId,
+                                                                "status",
+                                                                "UNKNOWN",
+                                                                "reason",
+                                                                "execution_outcome_unconfirmed"))))
+                        .toList();
+        context.commit(
+                new Commit(
+                        "native-outcome-wait:" + UUID.randomUUID(),
+                        frame.turn().revision(),
+                        frame.checkpoint(),
+                        List.of(),
+                        List.of(),
+                        List.of(),
+                        events,
+                        TurnStatus.WAITING,
+                        condition,
+                        null,
+                        null,
+                        null));
+    }
+
     @Override
     public void settle(HarnessContext context, TurnStatus status, String error) {
         if (status != TurnStatus.CANCELLED && status != TurnStatus.FAILED)
@@ -664,38 +875,71 @@ public final class AgentScopeAdapter implements HarnessAdapter {
                     "External tool outcome requires reconciliation");
         var log = new BackendThreadJournal(context, executors, bindings);
         var projection = JournalProjection.read(log);
-        var reconciled =
-                frame.tools().stream().map(tool -> tool.request().call().callId()).toList();
-        if (projection.uncertainToolCalls().stream().anyMatch(id -> !reconciled.contains(id)))
-            throw new DurableException(
-                    DurableException.Code.CONFLICT, "Native tool outcome requires reconciliation");
+        String turnId = context.lease().turnId();
+        var thread = context.lease().thread();
+        var executions =
+                frame.tools().stream()
+                        .collect(
+                                Collectors.toMap(
+                                        tool -> tool.request().call().callId(),
+                                        Function.identity()));
+        if (projection.uncertainToolCalls().stream().anyMatch(id -> !executions.containsKey(id))) {
+            projection = resolveNativeToolOutcomes(context, log, projection);
+            if (projection == null) return;
+            frame = context.frame();
+        }
         var state = projection.restore();
-        if (state == null) state = AgentState.builder().build();
+        if (state == null)
+            state =
+                    AgentState.builder()
+                            .userId(thread.session().namespace())
+                            .sessionId(thread.session().sessionId())
+                            .threadId(thread.threadId())
+                            .build();
+        var hooks = new ToolHookJournal(toolHooks, frame.definition(), turnId, log);
+        hooks.normalizeRecovered(
+                        state,
+                        fact ->
+                                log.append(
+                                        turnId,
+                                        List.of(
+                                                Map.entry(
+                                                        DurableEventSchemas.TOOL_NORMALIZED,
+                                                        fact))))
+                .block();
         var facts = new ArrayList<Map.Entry<String, Object>>();
-        var calls = new HashSet<String>();
+        var calls = new LinkedHashMap<String, ToolUseBlock>();
+        var responses = new LinkedHashMap<String, Signal>();
+        var messages = state.contextMutable();
+        if (turnId.equals(projection.positionTurnId())) {
+            var pending = MessageUtils.pendingToolUseIds(messages);
+            var assistant = MessageUtils.lastAssistantMessage(messages);
+            if (assistant != null)
+                for (var call : assistant.getContentBlocks(ToolUseBlock.class))
+                    if (pending.contains(call.getId())) calls.put(call.getId(), call);
+        }
+        var completed = new HashSet<String>();
+        for (var message : messages)
+            for (var result : message.getContentBlocks(ToolResultBlock.class))
+                if (!result.isSuspended()) completed.add(result.getId());
         for (var request : ThreadInteractions.pending(log).values()) {
-            if (!context.lease().turnId().equals(request.turnId())) continue;
+            if (!turnId.equals(request.turnId())) continue;
             var call =
                     JsonUtils.getJsonCodec()
                             .convertValue(request.data().get("call"), ToolUseBlock.class);
-            calls.add(call.getId());
-            var execution =
-                    frame.tools().stream()
-                            .filter(tool -> tool.request().call().callId().equals(call.getId()))
-                            .findFirst();
-            var result =
-                    execution.isPresent()
-                            ? AgentScopeToolResults.convert(call, execution.get().result())
-                            : ToolResultBlock.text(
-                                            "Pending interaction closed after task " + reason + ".")
-                                    .withIdAndName(call.getId(), call.getName())
-                                    .withState(ToolResultState.INTERRUPTED);
-            var message =
-                    ToolResultMessage.builder()
-                            .id("settled:" + call.getId())
-                            .result(result)
-                            .build();
-            state.contextMutable().add(message);
+            calls.put(call.getId(), call);
+            if ("external_execution".equals(request.data().get("kind"))
+                    && !executions.containsKey(call.getId())) {
+                String signalKey = "interaction:" + request.data().get("requestId");
+                frame.signals().stream()
+                        .filter(signal -> signal.key().equals(signalKey))
+                        .findFirst()
+                        .ifPresent(signal -> responses.put(call.getId(), signal));
+            }
+            boolean resolved =
+                    completed.contains(call.getId())
+                            || executions.containsKey(call.getId())
+                            || responses.containsKey(call.getId());
             facts.add(
                     Map.entry(
                             "interaction/resolved",
@@ -705,22 +949,72 @@ public final class AgentScopeAdapter implements HarnessAdapter {
                                     "kind",
                                     request.data().get("kind"),
                                     "status",
-                                    execution.isPresent() ? "resolved" : "cancelled")));
+                                    resolved ? "resolved" : "cancelled")));
+        }
+        for (var call : calls.values()) {
+            String callId = call.getId();
+            if (completed.contains(callId)) continue;
+            var execution = executions.get(callId);
+            var response = responses.get(callId);
+            ToolResultBlock result;
+            boolean synthetic = execution == null && response == null;
+            if (execution != null) {
+                var provider = execution.result();
+                result =
+                        normalizeExternalResult(
+                                log,
+                                hooks,
+                                turnId,
+                                execution.request().executionId(),
+                                call,
+                                AgentScopeToolResults.convert(call, provider),
+                                DurableJson.hash(provider));
+            } else if (response != null) {
+                result =
+                        normalizeExternalResult(
+                                log,
+                                hooks,
+                                turnId,
+                                TransactionalSessionBackend.executionId(thread, turnId, callId),
+                                call,
+                                manualToolResult(call, response.value()),
+                                DurableJson.hash(response.value()));
+            } else {
+                result =
+                        ToolResultBlock.text(
+                                        "Tool did not execute because the Turn was " + reason + ".")
+                                .withIdAndName(callId, call.getName())
+                                .withState(ToolResultState.INTERRUPTED);
+            }
+            var message =
+                    ToolResultMessage.builder()
+                            .id("settled:" + DurableJson.hash(List.of(turnId, callId)))
+                            .result(result)
+                            .build();
+            messages.add(message);
             facts.add(
                     Map.entry(
                             "tool/result",
-                            Map.of("message", message, "synthetic", execution.isEmpty())));
+                            synthetic
+                                    ? Map.of(
+                                            "message",
+                                            message,
+                                            "synthetic",
+                                            true,
+                                            "settlement",
+                                            status.name())
+                                    : Map.of("message", message)));
         }
-        var messages = state.contextMutable();
         for (int i = 0; i < messages.size(); i++) {
             var content = new ArrayList<ContentBlock>();
             for (var block : messages.get(i).getContent())
                 content.add(
-                        block instanceof ToolUseBlock call && calls.contains(call.getId())
+                        block instanceof ToolUseBlock call && calls.containsKey(call.getId())
                                 ? call.withState(ToolCallState.FINISHED)
                                 : block);
             messages.set(i, messages.get(i).withContent(content));
         }
+        AgentScopeToolResults.joinCompletedBatch(messages);
         facts.add(
                 Map.entry(
                         "state/checkpoint",
@@ -739,9 +1033,10 @@ public final class AgentScopeAdapter implements HarnessAdapter {
                                     "interruptedRuns",
                                     projection.activeRuns(),
                                     "resolvedToolCallIds",
-                                    reconciled,
+                                    executions.keySet(),
                                     "reason",
                                     reason)));
-        log.append(context.lease().turnId(), facts, status, error);
+        log.consuming(responses.values().stream().map(Signal::id).toList());
+        log.append(turnId, facts, status, error);
     }
 }

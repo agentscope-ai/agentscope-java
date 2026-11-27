@@ -19,6 +19,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import io.agentscope.durable.DurableTypes.CheckpointRestore;
 import io.agentscope.durable.DurableTypes.CommitReceipt;
 import io.agentscope.durable.DurableTypes.EventFilter;
+import io.agentscope.durable.DurableTypes.ExecutionRequest;
 import io.agentscope.durable.DurableTypes.ExecutionResult;
 import io.agentscope.durable.DurableTypes.Failure;
 import io.agentscope.durable.DurableTypes.Frame;
@@ -27,6 +28,7 @@ import io.agentscope.durable.DurableTypes.Lease;
 import io.agentscope.durable.DurableTypes.LiveEvent;
 import io.agentscope.durable.DurableTypes.PublicEvent;
 import io.agentscope.durable.DurableTypes.RecoveryPolicy;
+import io.agentscope.durable.DurableTypes.RunStepRef;
 import io.agentscope.durable.DurableTypes.SessionKey;
 import io.agentscope.durable.DurableTypes.SessionPage;
 import io.agentscope.durable.DurableTypes.SessionView;
@@ -128,11 +130,15 @@ public final class DurableRuntime implements AutoCloseable {
 
     private static final class Active {
         final AtomicBoolean stopped = new AtomicBoolean();
+        final AtomicBoolean refreshPending = new AtomicBoolean();
         final TurnDispatch dispatch;
+        final CompletableFuture<Boolean> completion = new CompletableFuture<>();
         volatile Thread thread;
+        volatile Lease lease;
         volatile boolean invoking;
-        TurnDispatch nextDispatch;
+        Active next;
         boolean wakeAgain;
+        boolean acknowledge;
 
         Active(TurnDispatch dispatch) {
             this.dispatch = dispatch;
@@ -200,7 +206,7 @@ public final class DurableRuntime implements AutoCloseable {
                         throw new IllegalArgumentException(
                                 "Managed executors require a local SessionBackend");
                     managedExecutors.add(managed);
-                    managed.bind(entry.getKey(), backend);
+                    managed.bind(entry.getKey(), backend, liveEvents);
                 }
         } catch (RuntimeException failure) {
             for (var managed : managedExecutors)
@@ -546,7 +552,8 @@ public final class DurableRuntime implements AutoCloseable {
             Wakeups wakeups = backend.wakeups();
             if (wakeups instanceof TurnScheduler scheduler) {
                 try {
-                    wakeupSubscription = scheduler.start(backend, this::offer);
+                    wakeupSubscription =
+                            scheduler.start(backend, owner, this::advance, this::refreshOwner);
                 } catch (RuntimeException error) {
                     close();
                     throw error;
@@ -598,12 +605,13 @@ public final class DurableRuntime implements AutoCloseable {
         return offer(key, null, Source.MANUAL);
     }
 
-    private boolean offer(TurnDispatch dispatch) {
+    private CompletionStage<Boolean> advance(TurnDispatch dispatch) {
         ThreadSpec definition;
         try {
             definition = backend.thread(dispatch.thread()).definition();
         } catch (DurableException error) {
-            if (error.code() == DurableException.Code.NOT_FOUND) return true;
+            if (error.code() == DurableException.Code.NOT_FOUND)
+                return CompletableFuture.completedFuture(true);
             throw error;
         }
         if (!resolvers.containsKey(definition.harness())) {
@@ -616,67 +624,111 @@ public final class DurableRuntime implements AutoCloseable {
                             .adapter()
                             .capabilities()
                             .stateVersion()
-                            .equals(definition.stateVersion())) return false;
+                            .equals(definition.stateVersion()))
+                return CompletableFuture.completedFuture(false);
         }
-        return offer(dispatch.thread(), dispatch, Source.MQ);
+        var invocation = new Active(dispatch);
+        if (!offer(dispatch.thread(), invocation, Source.MQ)) invocation.completion.complete(false);
+        return invocation.completion;
     }
 
-    private boolean offer(ThreadKey key, TurnDispatch dispatch, Source source) {
+    private void refreshOwner(TurnSignal signal) {
+        var invocation = active.get(signal.thread());
+        if (closed.get()
+                || invocation == null
+                || !signal.matches(invocation.lease)
+                || !invocation.refreshPending.compareAndSet(false, true)) return;
+        try {
+            timer.execute(
+                    () -> {
+                        invocation.refreshPending.set(false);
+                        if (active.get(signal.thread()) != invocation || !invocation.invoking)
+                            return;
+                        try {
+                            if (backend.ownerSignal(signal.thread(), signal.turnId())
+                                            .filter(signal::equals)
+                                            .isPresent()
+                                    && backend.turn(signal.thread(), signal.turnId())
+                                            .cancellationRequested())
+                                interruptActive(signal.thread(), invocation, true);
+                        } catch (RuntimeException error) {
+                            reportError(signal.thread().session(), error);
+                        }
+                    });
+        } catch (RejectedExecutionException stopped) {
+            invocation.refreshPending.set(false);
+        }
+    }
+
+    private void interruptActive(ThreadKey key, Active invocation, boolean onlyWhileInvoking) {
+        synchronized (active) {
+            if (active.get(key) != invocation || onlyWhileInvoking && !invocation.invoking) return;
+            if (invocation.stopped.compareAndSet(false, true)) invocation.thread.interrupt();
+        }
+    }
+
+    private boolean offer(ThreadKey key, Active invocation, Source source) {
         ensureExecution();
         Objects.requireNonNull(key);
-        Active invocation;
+        TurnDispatch dispatch = invocation == null ? null : invocation.dispatch;
+        Active admitted = invocation == null ? new Active(null) : invocation;
         synchronized (active) {
             if (closed.get() || !accepting.get()) return false;
             var running = active.get(key);
             if (running != null) {
                 running.wakeAgain |= source == Source.SESSION_HINT;
-                if (dispatch != null
-                        && (dispatch.equals(running.dispatch)
-                                || dispatch.equals(running.nextDispatch))) {
+                if (dispatch == null) return true;
+                if (dispatch.equals(running.dispatch)) {
                     scheduling.duplicate();
-                    return true;
+                    running.completion.thenAccept(admitted.completion::complete);
+                } else if (running.next != null && dispatch.equals(running.next.dispatch)) {
+                    scheduling.duplicate();
+                    running.next.completion.thenAccept(admitted.completion::complete);
+                } else if (running.next == null
+                        || dispatch.generation() > running.next.dispatch.generation()) {
+                    if (running.next != null) running.next.completion.complete(false);
+                    running.next = admitted;
+                } else {
+                    return false;
                 }
-                if (dispatch != null
-                        && (running.nextDispatch == null
-                                || dispatch.generation() > running.nextDispatch.generation()))
-                    running.nextDispatch = dispatch;
                 return true;
             }
             if (!capacity.tryAcquire()) return false;
-            invocation = new Active(dispatch);
-            active.put(key, invocation);
+            active.put(key, admitted);
         }
         try {
             workers.execute(
                     () -> {
                         try {
-                            process(key, invocation, dispatch, source);
+                            process(key, admitted, dispatch, source);
                         } catch (RuntimeException error) {
                             failures.put(key, error);
                             reportError(key.session(), error);
                         } finally {
-                            finished(key, invocation);
+                            finished(key, admitted);
                         }
                     });
             return true;
         } catch (RejectedExecutionException stopped) {
-            finished(key, invocation);
+            finished(key, admitted);
             return false;
         }
     }
 
     private void finished(ThreadKey key, Active invocation) {
-        TurnDispatch next;
+        Active next;
         boolean wakeAgain;
         synchronized (active) {
             if (!active.remove(key, invocation)) return;
             capacity.release();
-            next = invocation.nextDispatch;
+            next = invocation.next;
             wakeAgain = invocation.wakeAgain;
             active.notifyAll();
         }
-        if (next != null) offer(key, next, Source.MQ);
-        else if (wakeAgain) offer(key, null, Source.SESSION_HINT);
+        invocation.completion.complete(invocation.acknowledge);
+        if (next != null) {
+            if (!offer(key, next, Source.MQ)) next.completion.complete(false);
+        } else if (wakeAgain) offer(key, null, Source.SESSION_HINT);
     }
 
     /** Stops new admission and lets current invocations reach their next durable boundary. */
@@ -751,6 +803,7 @@ public final class DurableRuntime implements AutoCloseable {
         } finally {
             synchronized (active) {
                 active.remove(key, invocation);
+                if (invocation.next != null) invocation.next.completion.complete(false);
                 active.notifyAll();
             }
         }
@@ -779,7 +832,15 @@ public final class DurableRuntime implements AutoCloseable {
         }
         scheduling.claim(source, claimed);
         Lease lease = claimed.lease();
-        if (lease == null) return;
+        if (lease == null) {
+            activeCall.acknowledge =
+                    switch (claimed.status()) {
+                        case NO_WORK, STALE_DISPATCH, WAITING -> true;
+                        default -> false;
+                    };
+            return;
+        }
+        activeCall.lease = lease;
         ScheduledFuture<?> heartbeat = null;
         try {
             if (closed.get()) return;
@@ -787,16 +848,15 @@ public final class DurableRuntime implements AutoCloseable {
                     timer.scheduleWithFixedDelay(
                             () -> {
                                 try {
+                                    if (activeCall.stopped.get()) return;
                                     backend.renew(lease, leaseDuration);
                                     if (activeCall.invoking
                                             && backend.turn(key, lease.turnId())
                                                     .cancellationRequested()) {
-                                        activeCall.stopped.set(true);
-                                        activeCall.thread.interrupt();
+                                        interruptActive(key, activeCall, true);
                                     }
                                 } catch (RuntimeException e) {
-                                    activeCall.stopped.set(true);
-                                    activeCall.thread.interrupt();
+                                    interruptActive(key, activeCall, false);
                                 }
                             },
                             Math.max(25, leaseDuration.toMillis() / 3),
@@ -804,16 +864,9 @@ public final class DurableRuntime implements AutoCloseable {
                             TimeUnit.MILLISECONDS);
             Frame frame = backend.frame(lease);
             if (frame.turn().status() == TurnStatus.PAUSING) return;
-            for (ToolExecution tool : frame.tools()) {
-                if (tool.result().state().terminal()) continue;
-                if (backend.turn(key, lease.turnId()).status() == TurnStatus.PAUSING) return;
-                resolve(
-                        lease,
-                        tool,
-                        frame.turn().cancellationRequested() || recoveryStopped(frame));
-            }
+            if (!resolveTools(lease, frame.tools(), activeCall)) return;
             frame = backend.frame(lease);
-            if (frame.turn().status() == TurnStatus.PAUSING) return;
+            if (frame.turn().status() == TurnStatus.PAUSING || !accepting.get()) return;
             if (frame.turn().cancellationRequested()) {
                 if (frame.tools().stream().allMatch(t -> t.result().state().terminal()))
                     adapter(frame.definition())
@@ -824,7 +877,7 @@ public final class DurableRuntime implements AutoCloseable {
                                     null);
                 return;
             }
-            if (recoveryStopped(frame)) {
+            if (recoveryStopped(frame.turn())) {
                 settleFailure(lease, frame, activeCall);
                 return;
             }
@@ -835,7 +888,9 @@ public final class DurableRuntime implements AutoCloseable {
                     && (wait.deadline() == 0 || wait.deadline() > frame.now())
                     && frame.signals().stream()
                             .noneMatch(signal -> signal.key().equals(wait.key()))) return;
-            var context = new HarnessContext(backend, lease, activeCall.stopped, liveEvents);
+            var context =
+                    new HarnessContext(
+                            backend, lease, activeCall.stopped, liveEvents, () -> !accepting.get());
             activeCall.invoking = true;
             adapter(frame.definition()).execute(context);
             activeCall.invoking = false;
@@ -874,7 +929,8 @@ public final class DurableRuntime implements AutoCloseable {
                             backend.recordFailure(lease, failure);
                         }
                         var latest = backend.frame(lease);
-                        if (recoveryStopped(latest)) settleFailure(lease, latest, activeCall);
+                        if (recoveryStopped(latest.turn()))
+                            settleFailure(lease, latest, activeCall);
                     } catch (Exception recordingError) {
                         if (!(recordingError instanceof DurableException d
                                 && d.code() == DurableException.Code.FENCED))
@@ -888,16 +944,18 @@ public final class DurableRuntime implements AutoCloseable {
             Thread.interrupted();
             try {
                 backend.release(lease, accepting.get() ? releaseDelay : Duration.ZERO);
+                activeCall.acknowledge = true;
             } catch (DurableException e) {
-                if (e.code() != DurableException.Code.FENCED) reportError(key.session(), e);
+                if (e.code() == DurableException.Code.FENCED) activeCall.acknowledge = true;
+                else reportError(key.session(), e);
             }
             // Do not leak a cancellation interrupt into the next session on this pooled worker.
             Thread.interrupted();
         }
     }
 
-    private static boolean recoveryStopped(Frame frame) {
-        return frame.turn().recovery() != null && !frame.turn().recovery().retryAllowed();
+    private static boolean recoveryStopped(TurnView turn) {
+        return turn.recovery() != null && !turn.recovery().retryAllowed();
     }
 
     private void settleFailure(Lease lease, Frame frame, Active activeCall) throws Exception {
@@ -924,23 +982,128 @@ public final class DurableRuntime implements AutoCloseable {
         return false;
     }
 
-    private void resolve(Lease lease, ToolExecution tool, boolean cancel) {
-        Executor executor = executors.get(tool.request().call().executor());
-        if (executor == null)
-            throw new DurableException(
-                    DurableException.Code.INCOMPATIBLE, "Executor is not registered");
-        if (!cancel && !tool.dispatchAttempted()) executor.validateStart(tool.request());
-        ToolExecution before =
-                cancel ? tool : backend.beginDispatch(lease, tool.request().executionId());
-        if (before.result().state().terminal()) return;
-        ExecutionResult result =
-                ExecutionRecovery.resolve(
-                        executor,
-                        before.request(),
-                        before.result(),
-                        before.dispatchAttempted(),
-                        cancel);
+    private record DispatchGroup(String route, RunStepRef origin, String individualExecution) {
+        private static DispatchGroup of(ExecutionRequest request) {
+            var origin = request.call().origin();
+            return new DispatchGroup(
+                    request.call().executor(),
+                    origin,
+                    origin == null || origin.stepId() == null ? request.executionId() : null);
+        }
+    }
+
+    private boolean resolveTools(Lease lease, List<ToolExecution> tools, Active activeCall) {
+        var batches = new LinkedHashMap<DispatchGroup, List<ToolExecution>>();
+        var handled = new HashSet<DispatchGroup>();
+        for (var tool : tools) {
+            var request = tool.request();
+            if (!tool.result().state().terminal()
+                    && executors.get(request.call().executor()) instanceof BatchDispatchExecutor)
+                batches.computeIfAbsent(DispatchGroup.of(request), ignored -> new ArrayList<>())
+                        .add(tool);
+        }
+        for (var tool : tools) {
+            if (tool.result().state().terminal()) continue;
+            if (!accepting.get() || activeCall.stopped.get()) return false;
+            var current = backend.turn(lease.thread(), lease.turnId());
+            if (current.status() == TurnStatus.PAUSING) return false;
+            var request = tool.request();
+            var executor = executors.get(request.call().executor());
+            if (executor == null)
+                throw new DurableException(
+                        DurableException.Code.INCOMPATIBLE, "Executor is not registered");
+            boolean cancel = current.cancellationRequested() || recoveryStopped(current);
+            if (executor instanceof BatchDispatchExecutor batchExecutor) {
+                var group = DispatchGroup.of(request);
+                if (handled.contains(group)) continue;
+                if (!cancel) {
+                    handled.add(group);
+                    dispatchBatch(lease, batches.get(group), batchExecutor, activeCall);
+                    continue;
+                }
+            }
+            resolve(lease, tool, executor, cancel, activeCall);
+        }
+        return !activeCall.stopped.get();
+    }
+
+    private void dispatchBatch(
+            Lease lease,
+            List<ToolExecution> tools,
+            BatchDispatchExecutor executor,
+            Active activeCall) {
+        var requests = new ArrayList<ExecutionRequest>();
+        for (var tool : tools) {
+            if (!accepting.get() || activeCall.stopped.get()) return;
+            var before = prepareDispatch(lease, tool, executor);
+            if (before == null) return;
+            if (!before.result().state().terminal()) requests.add(before.request());
+        }
+        if (requests.isEmpty()) return;
+        activeCall.invoking = true;
+        try {
+            var current = backend.turn(lease.thread(), lease.turnId());
+            if (!accepting.get()
+                    || activeCall.stopped.get()
+                    || current.status() == TurnStatus.PAUSING
+                    || current.cancellationRequested()
+                    || recoveryStopped(current)) return;
+            executor.dispatchBatch(List.copyOf(requests));
+        } finally {
+            endProviderCall(activeCall);
+        }
+    }
+
+    private ToolExecution prepareDispatch(Lease lease, ToolExecution tool, Executor executor) {
+        if (!tool.dispatchAttempted()) executor.validateStart(tool.request());
+        try {
+            return backend.beginDispatch(
+                    lease,
+                    tool.request().executionId(),
+                    tool.dispatchAttempted() ? null : executor.capabilities());
+        } catch (DurableException conflict) {
+            if (conflict.code() == DurableException.Code.CONFLICT) {
+                var current = backend.turn(lease.thread(), lease.turnId());
+                if (current.cancellationRequested()
+                        || current.status() == TurnStatus.PAUSING
+                        || recoveryStopped(current)) return null;
+            }
+            throw conflict;
+        }
+    }
+
+    private void resolve(
+            Lease lease, ToolExecution tool, Executor executor, boolean cancel, Active activeCall) {
+        var before = cancel ? tool : prepareDispatch(lease, tool, executor);
+        if (before == null || before.result().state().terminal()) return;
+        ExecutionResult result;
+        activeCall.invoking = !cancel;
+        try {
+            // Cancellation racing the dispatch marker is visible before calling the provider.
+            if (!cancel && backend.turn(lease.thread(), lease.turnId()).cancellationRequested()) {
+                cancel = true;
+                activeCall.invoking = false;
+            }
+            if (activeCall.stopped.get() && (!cancel || before.dispatchAttempted())) return;
+            result =
+                    ExecutionRecovery.resolve(
+                            executor,
+                            before.request(),
+                            before.result(),
+                            before.dispatchAttempted(),
+                            cancel);
+        } finally {
+            endProviderCall(activeCall);
+        }
         backend.acceptResult(lease.thread(), tool.request().executionId(), result);
+    }
+
+    private void endProviderCall(Active activeCall) {
+        synchronized (active) {
+            activeCall.invoking = false;
+            // A provider can return an observation along with its interrupt flag.
+            Thread.interrupted();
+        }
     }
 
     private void ensureExecution() {

@@ -305,7 +305,8 @@ class ChatSessionsTest {
                             .filter(message -> "second".equals(message.path("requestId").asText()))
                             .findFirst()
                             .orElseThrow();
-            sessions.steerQueued("conversation", first, "convert", "second");
+            sessions.editQueued("conversation", second, "edit", 0, "keep it very brief");
+            sessions.steerQueued("conversation", first, "convert", second, 1);
             var updated = sessions.snapshot("conversation");
             assertEquals(TurnStatus.CONVERTED, status(updated, second));
             assertEquals(TurnStatus.WAITING, status(updated, first));
@@ -316,6 +317,7 @@ class ChatSessionsTest {
                             .toList();
             assertEquals(1, matching.size());
             assertEquals(original.path("messageId"), matching.get(0).path("messageId"));
+            assertEquals("keep it very brief", matching.get(0).path("text").asText());
             assertEquals(first, matching.get(0).path("turnId").asText());
             assertEquals("steer", matching.get(0).path("inputKind").asText());
             sessions.answer(
@@ -331,7 +333,7 @@ class ChatSessionsTest {
     }
 
     @Test
-    void multiStepMessagesToolsProgressAndReplaySurviveRecreation() throws Exception {
+    void multiStepMessagesAndToolResultsReplayAfterRecreation() throws Exception {
         Snapshot completed;
         try (var sessions = open()) {
             sessions.create("conversation");
@@ -342,7 +344,7 @@ class ChatSessionsTest {
             assertEquals(3, completed.projection().path("tools").size());
             for (var tool : completed.projection().path("tools")) {
                 assertEquals("SUCCEEDED", tool.path("data").path("status").asText());
-                assertEquals(4, tool.path("data").path("progress").size());
+                assertFalse(tool.path("data").has("progress"));
                 assertFalse(tool.path("data").path("content").isEmpty());
             }
             assertEquals(

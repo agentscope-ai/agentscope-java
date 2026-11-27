@@ -35,11 +35,13 @@ Broker ACL 与认证；这不是生产凭据配置。
 
 - `durable-sandbox-turn-dispatch`
 - `durable-sandbox-turn-signal`
+- `durable-sandbox-turn-owner`
 - `durable-sandbox-hands-commands`
 - `durable-sandbox-hands-controls`
 - `durable-sandbox-hands-updates`
 
-为每个父 Topic 配置 Shared wildcard 消费组及生产和消费权限。两个应用必须使用
+为每个父 Topic 配置 Shared 消费组及生产和消费权限。owner 组使用显式订阅，其余使用 wildcard。
+两个应用必须使用
 相同 MQ namespace、业务 namespace 和 session ID；不要让独立 Brain 数据库混用同一消费组。
 
 ```sh

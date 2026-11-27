@@ -2729,7 +2729,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
 
             // Permission HITL: if any pending tool is ASKING, the caller MUST supply
             // ConfirmResults (via Msg.METADATA_CONFIRM_RESULTS) before we can proceed.
-            List<ToolUseBlock> asking = askingToolCalls();
+            List<ToolUseBlock> asking = askingToolCalls(pendingIds);
             if (!asking.isEmpty()) {
                 validateAndAcceptConfirmResults(msgs, asking);
                 return resumeAgent();
@@ -4242,7 +4242,36 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                 return ungrantedEvents(ungranted, replyId).doOnNext(this::publishEvent);
             }
 
-            return evaluatePermissions(granted)
+            var host = rc.get(AgentExecutionHost.class);
+            Mono<AgentExecutionHost.ToolPlan> plan =
+                    host == null
+                            ? Mono.just(
+                                    new AgentExecutionHost.ToolPlan(granted, Set.of(), Set.of()))
+                            : host.prepareTools(rc, state, granted);
+            return plan.flatMapMany(value -> gateToolPlan(value, replyId, resultHolder, ungranted))
+                    .concatMap(
+                            event -> {
+                                if (event instanceof RequireUserConfirmEvent) {
+                                    // Commit both the ASKING state/reply identity and the native
+                                    // interaction request before subscribers can see the prompt.
+                                    // Do not record it again when forwarding after the save.
+                                    recordEvent(event);
+                                    return saveStateToSession(this)
+                                            .thenReturn(event)
+                                            .doOnNext(this::emitEvent);
+                                }
+                                publishEvent(event);
+                                return Mono.just(event);
+                            });
+        }
+
+        private Flux<AgentEvent> gateToolPlan(
+                AgentExecutionHost.ToolPlan plan,
+                String replyId,
+                AtomicReference<List<Map.Entry<ToolUseBlock, ToolResultBlock>>> resultHolder,
+                List<Map.Entry<ToolUseBlock, ToolResultBlock>> ungranted) {
+            List<ToolUseBlock> granted = plan.calls();
+            return evaluatePermissions(plan)
                     .flatMapMany(
                             gate -> {
                                 List<ToolUseBlock> pending = gate.pendingAsk();
@@ -4320,20 +4349,6 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                                 new RequestStopEvent(
                                                         "permission asking",
                                                         GenerateReason.PERMISSION_ASKING)));
-                            })
-                    .concatMap(
-                            event -> {
-                                if (event instanceof RequireUserConfirmEvent) {
-                                    // Commit both the ASKING state/reply identity and the native
-                                    // interaction request before subscribers can see the prompt.
-                                    // Do not record it again when forwarding after the save.
-                                    recordEvent(event);
-                                    return saveStateToSession(this)
-                                            .thenReturn(event)
-                                            .doOnNext(this::emitEvent);
-                                }
-                                publishEvent(event);
-                                return Mono.just(event);
                             });
         }
 
@@ -4557,7 +4572,8 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
          * and EXPLORE/ACCEPT_EDITS/BYPASS/DONT_ASK modes are honoured before execution. Legacy
          * {@link AgentTool}s that do not extend {@link ToolBase} always pass through approved.
          */
-        private Mono<PermissionGate> evaluatePermissions(List<ToolUseBlock> toolCalls) {
+        private Mono<PermissionGate> evaluatePermissions(AgentExecutionHost.ToolPlan plan) {
+            var toolCalls = plan.calls();
             if (toolCalls == null || toolCalls.isEmpty()) {
                 return Mono.just(new PermissionGate(List.of(), Set.of()));
             }
@@ -4567,7 +4583,25 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             // here would leave that session on the lightweight path where no rule is consulted.
             boolean useEngine = !permissionEngine.getContext().isTrivial();
             return Flux.fromIterable(toolCalls)
-                    .concatMap(use -> evaluateOne(use, useEngine))
+                    .concatMap(
+                            use -> {
+                                if (plan.denied().contains(use.getId()))
+                                    return Mono.just(
+                                            new PermissionVerdict(use, PermissionBehavior.DENY));
+                                return evaluateOne(use, useEngine)
+                                        .map(
+                                                verdict ->
+                                                        plan.confirm().contains(use.getId())
+                                                                        && use.getState()
+                                                                                != ToolCallState
+                                                                                        .ALLOWED
+                                                                        && verdict.behavior()
+                                                                                != PermissionBehavior
+                                                                                        .DENY
+                                                                ? new PermissionVerdict(
+                                                                        use, PermissionBehavior.ASK)
+                                                                : verdict);
+                            })
                     .collectList()
                     .map(
                             verdicts -> {
@@ -5162,7 +5196,15 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                 Map.Entry<ToolUseBlock, ToolResultBlock> entry, boolean returnDirect) {
             ToolUseBlock toolUse = entry.getKey();
             ToolResultBlock result = entry.getValue();
+            var host = rc.get(AgentExecutionHost.class);
+            return host == null
+                    ? applyToolResult(toolUse, result, returnDirect)
+                    : host.normalizeToolResult(rc, toolUse, result)
+                            .flatMap(value -> applyToolResult(toolUse, value, returnDirect));
+        }
 
+        private Mono<PostActingEvent> applyToolResult(
+                ToolUseBlock toolUse, ToolResultBlock result, boolean returnDirect) {
             // FIX: determine the final state and update ToolResultBlock before
             // adding to contextMutable(), so that history queries via
             // agent.getAgentState(ctx).contextMutable() reflect the correct
@@ -5782,17 +5824,16 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         }
 
         /** The ToolUseBlocks in the last assistant Msg that are in ASKING state (HITL pending). */
-        private List<ToolUseBlock> askingToolCalls() {
+        private List<ToolUseBlock> askingToolCalls(Set<String> pendingIds) {
             Msg last = MessageUtils.lastAssistantMessage(state.contextMutable());
             if (last == null) {
                 return List.of();
             }
-            return last.getContent().stream()
+            return last.getContentBlocks(ToolUseBlock.class).stream()
                     .filter(
-                            b ->
-                                    b instanceof ToolUseBlock t
-                                            && t.getState() == ToolCallState.ASKING)
-                    .map(ToolUseBlock.class::cast)
+                            call ->
+                                    call.getState() == ToolCallState.ASKING
+                                            && pendingIds.contains(call.getId()))
                     .toList();
         }
     }

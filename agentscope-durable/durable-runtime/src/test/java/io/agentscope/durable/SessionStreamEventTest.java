@@ -31,8 +31,13 @@ import io.agentscope.durable.DurableTypes.EventPage;
 import io.agentscope.durable.DurableTypes.LiveEvent;
 import io.agentscope.durable.DurableTypes.SessionKey;
 import io.agentscope.durable.EventStreamOptions.EventDeltaType;
+import java.time.Duration;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.Executors;
+import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.Test;
 
 class SessionStreamEventTest {
@@ -84,7 +89,7 @@ class SessionStreamEventTest {
         var liveEvents = mock(LiveEvents.class);
         when(handle.liveEvents()).thenReturn(liveEvents);
         when(handle.listEvents(eq(EventFilter.all()), eq(null), eq(100)))
-                .thenReturn(new EventPage(List.of(), "0", "0"));
+                .thenReturn(new EventPage(List.of(), "0", "0", "0", "0"));
 
         try (var ignored =
                 new SessionEventStream(handle, EventFilter.all(), EventStreamOptions.defaults())) {
@@ -92,11 +97,92 @@ class SessionStreamEventTest {
         }
     }
 
+    @Test
+    void streamsAndSubscriptionsRejectOtherSessionsOnTheSameLiveTransport() throws Exception {
+        var handle = mock(DurableSession.class);
+        var transport = LiveEvents.local();
+        when(handle.liveEvents()).thenReturn(transport);
+        when(handle.key()).thenReturn(session);
+        when(handle.wakeups()).thenReturn(Wakeups.none());
+        var filter = EventFilter.all();
+        when(handle.listEvents(eq(filter), any(), eq(100)))
+                .thenReturn(new EventPage(List.of(), "0", "0", "0", "0"));
+        var executor = Executors.newSingleThreadScheduledExecutor();
+        var push = new LinkedBlockingQueue<LiveEvent>();
+        var pulled = new ArrayList<LiveEvent>();
+        var options = EventStreamOptions.builder().deltas(EventDeltaType.MESSAGE).build();
+        try (var stream = new SessionEventStream(handle, filter, options);
+                var subscription =
+                        new SessionEventSubscription(
+                                handle,
+                                filter,
+                                null,
+                                false,
+                                snapshot -> {},
+                                event -> {},
+                                push::add,
+                                error -> {},
+                                executor,
+                                Duration.ofMillis(10),
+                                Duration.ofMillis(10),
+                                closed -> {})) {
+            subscription.start();
+            var data = Map.of("messageId", "m1", "blockId", "b1", "text", "example");
+            transport.publish(live(new SessionKey("other", "session"), "message.delta", data));
+            transport.publish(live(new SessionKey("tenant", "different"), "message.delta", data));
+            var local = live("message.delta", data);
+            transport.publish(local);
+            stream.transferTo(
+                    new SessionEventStream.Sink() {
+                        @Override
+                        public void accept(DurableTypes.PublicEvent event) {}
+
+                        @Override
+                        public void live(LiveEvent event) {
+                            pulled.add(event);
+                        }
+                    },
+                    Duration.ofMillis(20));
+            assertEquals(List.of(local), pulled);
+            assertEquals(local, push.poll(3, TimeUnit.SECONDS));
+            assertTrue(push.isEmpty());
+        } finally {
+            executor.shutdownNow();
+        }
+    }
+
+    @Test
+    void slowStreamDropsOnlyExcessPreviews() {
+        var handle = mock(DurableSession.class);
+        var transport = LiveEvents.local();
+        when(handle.liveEvents()).thenReturn(transport);
+        when(handle.key()).thenReturn(session);
+        when(handle.wakeups()).thenReturn(Wakeups.none());
+        when(handle.listEvents(eq(EventFilter.all()), any(), eq(100)))
+                .thenReturn(new EventPage(List.of(), "0", "0", "0", "0"));
+        var options = EventStreamOptions.builder().deltas(EventDeltaType.MESSAGE).build();
+        var delivered = new ArrayList<SessionStreamEvent>();
+        try (var stream = new SessionEventStream(handle, EventFilter.all(), options)) {
+            for (int index = 0; index < EventStreamOptions.LIVE_BUFFER_CAPACITY + 10; index++) {
+                transport.publish(
+                        live(
+                                "message.delta",
+                                Map.of("messageId", "m1", "blockId", "b1", "text", "" + index)));
+            }
+            stream.forEach(delivered::add, Duration.ofMillis(20));
+        }
+        assertEquals(EventStreamOptions.LIVE_BUFFER_CAPACITY, delivered.size());
+    }
+
     private LiveEvent live(String type, Map<String, ?> data) {
+        return live(session, type, data);
+    }
+
+    private LiveEvent live(SessionKey scope, String type, Map<String, ?> data) {
         return new LiveEvent(
                 "1",
                 type + "-source",
-                session,
+                scope,
                 "main",
                 "turn-1",
                 "run-1",

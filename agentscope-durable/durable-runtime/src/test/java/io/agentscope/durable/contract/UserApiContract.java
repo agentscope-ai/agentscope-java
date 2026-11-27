@@ -29,6 +29,8 @@ import io.agentscope.durable.DurableMessages;
 import io.agentscope.durable.DurableProtocol;
 import io.agentscope.durable.DurableRuntime;
 import io.agentscope.durable.DurableSession;
+import io.agentscope.durable.DurableTypes.BlockerKind;
+import io.agentscope.durable.DurableTypes.CancelTarget;
 import io.agentscope.durable.DurableTypes.Commit;
 import io.agentscope.durable.DurableTypes.EventFilter;
 import io.agentscope.durable.DurableTypes.EventInput;
@@ -43,7 +45,9 @@ import io.agentscope.durable.DurableTypes.StepChange;
 import io.agentscope.durable.DurableTypes.StepPhase;
 import io.agentscope.durable.DurableTypes.StepStatus;
 import io.agentscope.durable.DurableTypes.ThreadKey;
+import io.agentscope.durable.DurableTypes.TurnBlocker;
 import io.agentscope.durable.DurableTypes.TurnStatus;
+import io.agentscope.durable.DurableTypes.VerificationView;
 import io.agentscope.durable.DurableTypes.WaitCondition;
 import io.agentscope.durable.EventProjection;
 import io.agentscope.durable.EventStreamOptions;
@@ -634,6 +638,48 @@ public abstract class UserApiContract {
     }
 
     @Test
+    void queueEditsReplaceInputAtTheSameMessagePositionAndFenceStaleOperations() {
+        var thread = session.mainThread();
+        var active = thread.submit("first", "initial");
+        var lease = claim();
+        var queued = thread.submit("queued", "draft");
+        var input = DurableMessages.Input.text("edited");
+        String messageId = queued.status().inputMessageId();
+        var original = queued.snapshot().projection().path("messages").path(messageId);
+
+        var edit = thread.editQueuedInput("edit", queued.turnId(), 0, input);
+        assertEquals(edit, thread.editQueuedInput("edit", queued.turnId(), 0, input));
+        assertEquals(messageId, edit.messageId());
+        assertEquals(1L, edit.inputRevision());
+        assertEquals(1L, queued.status().inputRevision());
+        assertEquals(queued.turnId(), thread.submit("queued", "draft").turnId());
+        var revised = queued.snapshot().projection().path("messages").path(messageId);
+        assertEquals(original.path("sequence"), revised.path("sequence"));
+        assertEquals("edited", revised.path("text").asText());
+        code(
+                DurableException.Code.CONFLICT,
+                () -> thread.editQueuedInput("stale-edit", queued.turnId(), 0, input));
+        code(
+                DurableException.Code.CONFLICT,
+                () ->
+                        thread.convertQueuedToSteer(
+                                "stale-convert", queued.turnId(), active.turnId(), 0));
+        code(
+                DurableException.Code.CONFLICT,
+                () -> thread.editQueuedInput("running", active.turnId(), 0, input));
+        assertTrue(backend.frame(lease).signals().isEmpty());
+        assertEquals(TurnStatus.QUEUED, queued.status().status());
+
+        var receipt = thread.convertQueuedToSteer("convert", queued.turnId(), active.turnId(), 1);
+        assertEquals(queued.turnId(), receipt.sourceTurnId());
+        assertEquals(messageId, receipt.messageId());
+        assertEquals(1L, receipt.inputRevision());
+        var signal = backend.frame(lease).signals().get(0);
+        assertEquals(messageId, signal.messageId());
+        assertEquals(DurableJson.value(input), signal.value());
+    }
+
+    @Test
     void queuedSubmissionBecomesOneSteerAndPreservesQueueOrderAndProjection() {
         var thread = session.mainThread();
         var first = thread.submit("first", "active");
@@ -641,16 +687,20 @@ public abstract class UserApiContract {
         var queued = thread.submit("queued", "one input");
         var tail = thread.submit("tail", "later");
         var before = queued.snapshot().projection().path("messages").elements().next();
-        var receipt = thread.convertQueuedTurnToSteer("convert", "queued", first.turnId());
+        var receipt = thread.convertQueuedToSteer("convert", queued.turnId(), first.turnId(), 0);
         assertEquals(first.turnId(), receipt.turnId());
         assertEquals("STEER_QUEUED", receipt.operation());
-        assertEquals(receipt, thread.convertQueuedTurnToSteer("convert", "queued", first.turnId()));
+        assertEquals(
+                receipt,
+                thread.convertQueuedToSteer("convert", queued.turnId(), first.turnId(), 0));
         code(
                 DurableException.Code.CONFLICT,
-                () -> thread.convertQueuedTurnToSteer("convert", "tail", first.turnId()));
+                () -> thread.convertQueuedToSteer("convert", tail.turnId(), first.turnId(), 0));
         code(
                 DurableException.Code.CONFLICT,
-                () -> thread.convertQueuedTurnToSteer("convert-again", "queued", first.turnId()));
+                () ->
+                        thread.convertQueuedToSteer(
+                                "convert-again", queued.turnId(), first.turnId(), 0));
         assertEquals(TurnStatus.CONVERTED, queued.result().status());
         assertEquals(TurnStatus.QUEUED, tail.status().status());
         assertEquals(queued.turnId(), thread.submit("queued", "one input").turnId());
@@ -662,6 +712,7 @@ public abstract class UserApiContract {
                 DurableJson.value(DurableMessages.Input.text("one input")), steer.get(0).value());
 
         String messageId = before.path("messageId").asText();
+        assertEquals(messageId, steer.get(0).messageId());
         var after = first.snapshot().projection().path("messages").path(messageId);
         assertEquals(first.turnId(), after.path("turnId").asText());
         assertEquals("queued", after.path("requestId").asText());
@@ -695,7 +746,7 @@ public abstract class UserApiContract {
         var wait = new WaitCondition("x.result", 0);
         checkpoint(lease, TurnStatus.WAITING, wait, List.of(), List.of());
         var queued = thread.submit("queued", "steer");
-        thread.convertQueuedTurnToSteer("convert", "queued", first.turnId());
+        thread.convertQueuedToSteer("convert", queued.turnId(), first.turnId(), 0);
         assertEquals(TurnStatus.CONVERTED, queued.status().status());
         assertEquals(wait, first.status().waiting());
         assertTrue(backend.claim(thread.key(), "other", Duration.ofSeconds(5)).isEmpty());
@@ -712,13 +763,15 @@ public abstract class UserApiContract {
         checkpoint(lease, TurnStatus.SUCCEEDED, null, List.of(), List.of());
         code(
                 DurableException.Code.CONFLICT,
-                () -> thread.convertQueuedTurnToSteer("late", "queued", first.turnId()));
+                () -> thread.convertQueuedToSteer("late", queued.turnId(), first.turnId(), 0));
         assertEquals(TurnStatus.QUEUED, queued.status().status());
         var running = claim();
         assertEquals(queued.turnId(), running.turnId());
         code(
                 DurableException.Code.CONFLICT,
-                () -> thread.convertQueuedTurnToSteer("late-started", "queued", queued.turnId()));
+                () ->
+                        thread.convertQueuedToSteer(
+                                "late-started", queued.turnId(), queued.turnId(), 0));
         assertTrue(backend.frame(running).signals().isEmpty());
         assertEquals(
                 "submit",
@@ -739,7 +792,7 @@ public abstract class UserApiContract {
         var lease = backend.claim(work, "runner", Duration.ofSeconds(5)).orElseThrow();
         var queued = thread.submit("queued", "one input");
         var tail = thread.submit("tail", "later");
-        thread.convertQueuedTurnToSteer("convert", "queued", first.turnId());
+        thread.convertQueuedToSteer("convert", queued.turnId(), first.turnId(), 0);
         checkpoint(lease, TurnStatus.SUCCEEDED, null, List.of(), List.of("convert"));
         var next = backend.pendingDispatch(thread.key()).orElseThrow();
         assertEquals(tail.turnId(), next.turnId());
@@ -780,8 +833,8 @@ public abstract class UserApiContract {
                             () -> {
                                 start.await();
                                 try {
-                                    thread.convertQueuedTurnToSteer(
-                                            "convert", "queued", first.turnId());
+                                    thread.convertQueuedToSteer(
+                                            "convert", queued.turnId(), first.turnId(), 0);
                                     return true;
                                 } catch (DurableException e) {
                                     assertEquals(DurableException.Code.CONFLICT, e.code());
@@ -813,6 +866,162 @@ public abstract class UserApiContract {
         } finally {
             pool.shutdownNow();
         }
+    }
+
+    @Test
+    void reverseHistoryUsesAnExclusiveSessionCursorAndReportsPrunedPages() {
+        session.submit("one", "one");
+        session.submit("two", "two");
+        var forward = session.listEvents(null, 50).events();
+        var head = session.listEventsBefore(null, 2);
+        assertEquals(forward.get(forward.size() - 1), head.events().get(0));
+        assertEquals(forward.get(forward.size() - 2), head.events().get(1));
+        session.submit("another", "new");
+        var nextPage = session.listEventsBefore(head.cursor(), 1);
+        assertEquals(forward.get(forward.size() - 3), nextPage.events().get(0));
+        var foreign = api.createSession(new SessionKey("elsewhere", key.sessionId()), "agent");
+        code(DurableException.Code.INVALID, () -> foreign.listEventsBefore(head.cursor(), 10));
+        backend.pruneEvents(key, nextPage.cursor());
+        code(
+                DurableException.Code.CURSOR_EXPIRED,
+                () -> session.listEventsBefore(head.cursor(), 10));
+        var cutoff = session.snapshot().cursor();
+        backend.pruneEvents(key, cutoff);
+        var retained = session.listEventsBefore(null, 10);
+        assertTrue(retained.events().isEmpty());
+        assertEquals(cutoff, retained.highWatermark());
+    }
+
+    @Test
+    void sessionActivityAggregatesOpenThreadsAndUnansweredInteractions() {
+        var primary = session.submit("primary", "first");
+        var child = session.createThread("child", "agent");
+        child.submit("child", "second");
+        var primaryLease = claim();
+        var childLease = backend.claim(child.key(), "child", Duration.ofMinutes(1)).orElseThrow();
+        var approval = interaction(primary.turnId(), "approval", "confirmation", false);
+        var custom = interaction(primary.turnId(), "custom", "external_execution", false);
+        var automatic = interaction(primary.turnId(), "automatic", "external_execution", true);
+        checkpoint(
+                primaryLease,
+                TurnStatus.WAITING,
+                new WaitCondition("interaction:approval", 0),
+                List.of(approval, custom, automatic),
+                List.of());
+        assertEquals(List.of("RUNNING"), activityPhases());
+
+        checkpoint(childLease, TurnStatus.SUCCEEDED, null, List.of(), List.of());
+        assertEquals(List.of("RUNNING", "REQUIRES_ACTION"), activityPhases());
+        assertEquals(
+                DurableJson.value(List.of("approval", "custom")),
+                lastActivity().data().required("interactionIds"));
+        primary.respond("answer-approval", "approval", true);
+        assertEquals(
+                DurableJson.value(List.of("custom")),
+                lastActivity().data().required("interactionIds"));
+        primary.respond("answer-custom", "custom", DurableJson.value("result"));
+        assertEquals("RUNNING", lastActivity().data().required("phase").asText());
+
+        checkpoint(claim(), TurnStatus.SUCCEEDED, null, List.of(), List.of());
+        assertEquals(
+                List.of("RUNNING", "REQUIRES_ACTION", "REQUIRES_ACTION", "RUNNING", "IDLE"),
+                activityPhases());
+        assertEquals(
+                DurableJson.value(session.view()), session.snapshot().projection().path("session"));
+    }
+
+    private EventInput interaction(String turnId, String id, String kind, boolean automatic) {
+        return new EventInput(
+                id,
+                "interaction.requested",
+                DurableJson.value(
+                        Map.of(
+                                "id",
+                                id,
+                                "requestId",
+                                id,
+                                "turnId",
+                                turnId,
+                                "key",
+                                "interaction:" + id,
+                                "kind",
+                                kind,
+                                "status",
+                                "pending",
+                                "automatic",
+                                automatic,
+                                "call",
+                                Map.of("name", id, "arguments", Map.of()))));
+    }
+
+    private List<PublicEvent> activities() {
+        return session.listEvents(null, 100).events().stream()
+                .filter(event -> event.type().equals("session.activity_changed"))
+                .toList();
+    }
+
+    private List<String> activityPhases() {
+        return activities().stream().map(event -> event.data().required("phase").asText()).toList();
+    }
+
+    private PublicEvent lastActivity() {
+        var active = activities();
+        return active.get(active.size() - 1);
+    }
+
+    @Test
+    void cancellationSelectsStartedHeadsOnceAndPublishesApplicationAfterTheySettle() {
+        var main = session.mainThread();
+        var child = session.createThread("child", "agent");
+        var idle = session.createThread("idle", "agent");
+        session.createThread("archived", "agent").close();
+        var first = main.submit("first", "one");
+        var following = main.submit("following", "two");
+        var other = child.submit("child-task", "child");
+        var queued = idle.submit("idle-task", "wait");
+        var empty = session.cancelActiveTurns("idle-cancel", "idle");
+        assertTrue(empty.targets().isEmpty());
+
+        var mainLease = backend.claim(main.key(), "main", Duration.ofMinutes(1)).orElseThrow();
+        var childLease = backend.claim(child.key(), "child", Duration.ofMinutes(1)).orElseThrow();
+        var focused = session.cancelActiveTurns("focused", "child");
+        assertEquals(List.of(new CancelTarget("child", other.turnId())), focused.targets());
+        assertEquals(TurnStatus.RUNNING, first.status().status());
+        var all = session.cancelActiveTurns("session-cancel", null);
+        assertEquals(
+                List.of(
+                        new CancelTarget("child", other.turnId()),
+                        new CancelTarget("main", first.turnId())),
+                all.targets());
+        assertEquals(TurnStatus.CANCELLING, first.status().status());
+        assertEquals(TurnStatus.CANCELLING, other.status().status());
+        assertEquals(TurnStatus.QUEUED, following.status().status());
+        assertEquals(TurnStatus.QUEUED, queued.status().status());
+        code(
+                DurableException.Code.CONFLICT,
+                () -> session.cancelActiveTurns("session-cancel", "main"));
+        var beforeSettlement = session.snapshot().cursor();
+
+        checkpoint(childLease, TurnStatus.CANCELLED, null, List.of(), List.of());
+        assertEquals(List.of("focused"), appliedCancellations(beforeSettlement));
+        checkpoint(mainLease, TurnStatus.CANCELLED, null, List.of(), List.of());
+        assertEquals(List.of("focused", "session-cancel"), appliedCancellations(beforeSettlement));
+
+        var next = backend.claim(main.key(), "replacement", Duration.ofMinutes(1)).orElseThrow();
+        backend.claim(idle.key(), "idle", Duration.ofMinutes(1)).orElseThrow();
+        assertEquals(following.turnId(), next.turnId());
+        assertEquals(all, session.cancelActiveTurns("session-cancel", null));
+        assertEquals(empty, session.cancelActiveTurns("idle-cancel", "idle"));
+        assertFalse(following.status().cancellationRequested());
+        assertFalse(queued.status().cancellationRequested());
+        assertEquals(List.of("focused", "session-cancel"), appliedCancellations(beforeSettlement));
+    }
+
+    private List<String> appliedCancellations(String cursor) {
+        return session.listEvents(cursor, 100).events().stream()
+                .filter(event -> event.type().equals("turns.cancel_applied"))
+                .map(event -> event.data().required("requestId").asText())
+                .toList();
     }
 
     @Test
@@ -884,6 +1093,100 @@ public abstract class UserApiContract {
     }
 
     @Test
+    void progressKeepsVerificationSeparateFromTurnOutcomeAfterEventRetention() {
+        var turn = session.submit("submit", "produce artifact");
+        var check =
+                new VerificationView(
+                        "check-1",
+                        "columns",
+                        "action",
+                        "csv",
+                        "FAILED",
+                        "task",
+                        2,
+                        "artifact@3",
+                        100);
+        var superseded =
+                new VerificationView(
+                        "check-old",
+                        "columns",
+                        "action",
+                        "csv",
+                        "PASSED",
+                        "task",
+                        2,
+                        "artifact@3",
+                        99);
+        var lease = claim();
+        assertTrue(turn.progress().leaseHeld());
+        checkpoint(
+                lease,
+                TurnStatus.SUCCEEDED,
+                null,
+                List.of(
+                        new EventInput(
+                                "old", VerificationView.EVENT_TYPE, DurableJson.value(superseded)),
+                        new EventInput(
+                                "latest", VerificationView.EVENT_TYPE, DurableJson.value(check))),
+                List.of());
+        var progress = turn.progress();
+        assertEquals(TurnStatus.SUCCEEDED, progress.turn().status());
+        assertFalse(progress.leaseHeld());
+        assertTrue(progress.blockers().isEmpty());
+        assertEquals(List.of(check), progress.verifications());
+        assertEquals(session.snapshot().cursor(), progress.cursor());
+        code(
+                DurableException.Code.NOT_FOUND,
+                () ->
+                        backend.turnProgress(
+                                session.createThread("other", "agent").key(), turn.turnId()));
+        backend.pruneEvents(key, session.snapshot().cursor());
+        assertEquals(List.of(check), turn.progress().verifications());
+    }
+
+    @Test
+    void progressShowsTheRemainingApprovalAfterTheFirstAnswerIsAccepted() {
+        var turn = session.submit("submit", "two approvals");
+        var events =
+                Stream.of("first", "second")
+                        .map(
+                                id ->
+                                        new EventInput(
+                                                id,
+                                                "interaction.requested",
+                                                DurableJson.value(
+                                                        Map.of(
+                                                                "id",
+                                                                id,
+                                                                "requestId",
+                                                                id,
+                                                                "turnId",
+                                                                turn.turnId(),
+                                                                "key",
+                                                                "interaction:" + id,
+                                                                "kind",
+                                                                "confirmation",
+                                                                "status",
+                                                                "pending",
+                                                                "automatic",
+                                                                false))))
+                        .toList();
+        checkpoint(
+                claim(),
+                TurnStatus.WAITING,
+                new WaitCondition("interaction:first", 0),
+                events,
+                List.of());
+        assertEquals(
+                List.of("first", "second"),
+                turn.progress().blockers().stream().map(TurnBlocker::targetId).toList());
+        turn.respond("approve-first", "first", true);
+        assertEquals(
+                List.of(new TurnBlocker(BlockerKind.APPROVAL, "second", null)),
+                turn.progress().blockers());
+    }
+
+    @Test
     void responsesAreScopedTypedAndCannotForgeAutomaticHandsResults() {
         var turn = session.submit("one", "one");
         var lease = claim();
@@ -930,6 +1233,9 @@ public abstract class UserApiContract {
                         new EventInput("tool", "interaction.requested", automatic)),
                 List.of());
         assertEquals(2, turn.pendingInteractions().size());
+        assertEquals(
+                List.of(new TurnBlocker(BlockerKind.APPROVAL, "approval", null)),
+                turn.progress().blockers());
         code(
                 DurableException.Code.INVALID,
                 () -> turn.respond("bad", "approval", DurableJson.value("yes")));
@@ -938,6 +1244,9 @@ public abstract class UserApiContract {
                 () -> turn.respond("forge", "tool", DurableJson.value("done")));
         code(DurableException.Code.CONFLICT, () -> turn.resume("skip", turn.status().revision()));
         turn.pause("pause-approval");
+        assertEquals(
+                List.of(new TurnBlocker(BlockerKind.PAUSED, turn.turnId(), null)),
+                turn.progress().blockers());
         var accepted = turn.respond("answer", "approval", true);
         assertEquals(accepted, turn.respond("answer", "approval", true));
         code(DurableException.Code.CONFLICT, () -> turn.respond("answer", "approval", false));
@@ -947,6 +1256,9 @@ public abstract class UserApiContract {
                 backend.claim(session.mainThread().key(), "paused-answer", Duration.ofSeconds(1))
                         .isEmpty());
         var other = session.submit("two", "two");
+        assertEquals(
+                List.of(new TurnBlocker(BlockerKind.QUEUE_HEAD, turn.turnId(), null)),
+                other.progress().blockers());
         code(DurableException.Code.NOT_FOUND, () -> other.respond("cross-turn", "approval", true));
         assertEquals(
                 "respond", session.history(null, 10).items().get(1).path("inputKind").asText());

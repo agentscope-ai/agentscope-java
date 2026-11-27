@@ -25,6 +25,8 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.networknt.schema.SchemaLocation;
 import com.networknt.schema.SchemaRegistry;
 import com.networknt.schema.SpecificationVersion;
+import io.agentscope.durable.DurableTypes.ExecutionRequest;
+import io.agentscope.durable.DurableTypes.SessionKey;
 import io.agentscope.durable.DurableTypes.ThreadKey;
 import java.net.URL;
 import java.net.URLClassLoader;
@@ -34,6 +36,79 @@ import java.util.Map;
 import org.junit.jupiter.api.Test;
 
 class DurableProtocolTest {
+    @Test
+    void toolExecutionLookupRequiresExactlyOneSelector() {
+        var session = new SessionKey("tenant", "session");
+        var endpoint = DurableProtocol.Endpoint.USER;
+        String operation = "getToolExecution";
+        var call =
+                Map.of("session", session, "threadId", "main", "turnId", "turn", "callId", "call");
+        var execution =
+                Map.of(
+                        "session",
+                        session,
+                        "threadId",
+                        "main",
+                        "turnId",
+                        "turn",
+                        "executionId",
+                        "execution");
+        DurableProtocol.request(endpoint, operation, call);
+        DurableProtocol.request(endpoint, operation, execution);
+        assertThrows(
+                DurableException.class,
+                () ->
+                        DurableProtocol.request(
+                                endpoint,
+                                operation,
+                                Map.of("session", session, "threadId", "main", "turnId", "turn")));
+        assertThrows(
+                DurableException.class,
+                () ->
+                        DurableProtocol.request(
+                                endpoint,
+                                operation,
+                                Map.of(
+                                        "session",
+                                        session,
+                                        "threadId",
+                                        "main",
+                                        "turnId",
+                                        "turn",
+                                        "callId",
+                                        "call",
+                                        "executionId",
+                                        "execution")));
+    }
+
+    @Test
+    void queuedInputVectorsCarryTheObservedVersionAndPreserveMessageIdentity() throws Exception {
+        try (var input = getClass().getResourceAsStream("/durable-protocol/vectors.json")) {
+            var vectors =
+                    DurableJson.parse(new String(input.readAllBytes(), StandardCharsets.UTF_8))
+                            .required("queuedInput");
+            for (var vector : vectors) {
+                var request = vector.required("request");
+                String operation = request.required("operation").asText();
+                DurableProtocol.validateRequest(DurableProtocol.Endpoint.USER, request);
+                var response =
+                        DurableProtocol.response(
+                                DurableProtocol.Endpoint.USER,
+                                operation,
+                                vector.required("response"));
+                assertEquals("input-2", response.path("messageId").asText());
+                assertEquals(1, response.path("inputRevision").asLong());
+                var missing = request.deepCopy();
+                ((ObjectNode) missing.required("payload")).remove("expectedInputRevision");
+                assertThrows(
+                        DurableException.class,
+                        () ->
+                                DurableProtocol.validateRequest(
+                                        DurableProtocol.Endpoint.USER, missing));
+            }
+        }
+    }
+
     @Test
     void delegationProtocolDistinguishesFrozenChildrenFromCancellationBeforeAdmission()
             throws Exception {
@@ -90,7 +165,8 @@ class DurableProtocolTest {
                                 "threadId",
                                 "turnId",
                                 "sequence",
-                                "cursor"));
+                                "cursor",
+                                "occurredAt"));
                 DurableProtocol.validate("eventInput", intent);
             }
             for (var event : vectors.required("invalid"))
@@ -270,6 +346,31 @@ class DurableProtocolTest {
                             vectors.required("executionCommand"), ExecutionMessages.Command.class);
             ExecutionMessages.validate(command);
             var request = command.request();
+            var batch =
+                    DurableJson.convert(
+                            vectors.required("executionBatch"),
+                            ExecutionMessages.ExecuteBatch.class);
+            ExecutionMessages.validate(batch);
+            assertEquals(request, batch.requests().get(0));
+            assertEquals(
+                    List.of("call-1", "call-2"),
+                    batch.requests().stream().map(child -> child.call().callId()).toList());
+            assertThrows(
+                    DurableException.class,
+                    () ->
+                            ExecutionMessages.validate(
+                                    ExecutionMessages.batch(List.of(request, request))));
+            var foreign =
+                    new ExecutionRequest(
+                            "foreign",
+                            new ThreadKey(new SessionKey("another", "session"), "main"),
+                            request.turnId(),
+                            batch.requests().get(1).call());
+            assertThrows(
+                    DurableException.class,
+                    () ->
+                            ExecutionMessages.validate(
+                                    ExecutionMessages.batch(List.of(request, foreign))));
             assertEquals(
                     "exec_"
                             + DurableJson.hash(
@@ -486,7 +587,7 @@ class DurableProtocolTest {
                             DurableJson.parse(
                                     """
                                     {"schemaVersion":"1","eventId":"e","session":{"namespace":"n","sessionId":"s"},
-                                     "threadId":"main","turnId":"r","runId":null,"stepId":null,"sequence":"1","cursor":"opaque","type":"message.completed",
+                                     "threadId":"main","turnId":"r","runId":null,"stepId":null,"sequence":"1","cursor":"opaque","occurredAt":1794484800000,"type":"message.completed",
                                      "data":{"messageId":"m","attempt":1,"revision":0,"text":"ok"}}
                                     """);
             assertTrue(schema.validate(event).isEmpty());

@@ -81,7 +81,8 @@ public final class SessionEventHandler implements HttpHandler {
                                                 "cursor",
                                                 "threadId",
                                                 "turnId",
-                                                "runId")
+                                                "runId",
+                                                "deltas")
                                         .contains(name)
                                 || query.putIfAbsent(
                                                 name,
@@ -98,13 +99,18 @@ public final class SessionEventHandler implements HttpHandler {
                                 query.get("threadId"), query.get("turnId"), query.get("runId"));
                 String cursor = exchange.getRequestHeaders().getFirst("Last-Event-ID");
                 if (cursor == null || cursor.isBlank()) cursor = query.get("cursor");
-                var stream =
-                        handle.streamEvents(
-                                filter,
-                                EventStreamOptions.builder()
-                                        .after(cursor)
-                                        .deltas(EventDeltaType.values())
-                                        .build());
+                var options = EventStreamOptions.builder().after(cursor);
+                String requestedDeltas = query.get("deltas");
+                if (requestedDeltas != null)
+                    for (String delta : requestedDeltas.split(",", -1)) {
+                        try {
+                            options.deltas(EventDeltaType.valueOf(delta));
+                        } catch (IllegalArgumentException invalid) {
+                            throw new DurableException(
+                                    DurableException.Code.INVALID, "Unsupported SSE delta type");
+                        }
+                    }
+                var stream = handle.streamEvents(filter, options.build());
                 exchange.getResponseHeaders()
                         .set("Content-Type", "text/event-stream; charset=utf-8");
                 exchange.getResponseHeaders().set("Cache-Control", "no-cache");

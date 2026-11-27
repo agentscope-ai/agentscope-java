@@ -44,6 +44,65 @@
     },
     "afterSequence": 37
   },
+  "executionBatch": {
+    "version": "durable.v1",
+    "batchId": "14b0158db3cad9eff7f5cdcdaaa7776e24c428cb14b863be30db129c52a53697",
+    "requests": [
+      {
+        "executionId": "exec_849bf630a5ce46376717717d141ed2bc80c05ad250ca0a6a158726c7a8fd7d83",
+        "turnId": "turn-1",
+        "call": {
+          "callId": "call-1",
+          "executor": "hands",
+          "name": "job",
+          "arguments": {
+            "amount": "9223372036854775807",
+            "parts": [
+              1.25,
+              null,
+              "text"
+            ]
+          },
+          "binding": null,
+          "origin": {
+            "runId": "run-original",
+            "stepId": "step-original"
+          }
+        },
+        "thread": {
+          "session": {
+            "namespace": "tenant",
+            "sessionId": "session"
+          },
+          "threadId": "main"
+        }
+      },
+      {
+        "executionId": "exec_60d753357be80281c7e9291ab8f1f25d97447f786932dc8b763de472e6f52aa0",
+        "turnId": "turn-1",
+        "call": {
+          "callId": "call-2",
+          "executor": "hands",
+          "name": "job",
+          "arguments": {
+            "amount": "7"
+          },
+          "binding": null,
+          "origin": {
+            "runId": "run-original",
+            "stepId": "step-original"
+          }
+        },
+        "thread": {
+          "session": {
+            "namespace": "tenant",
+            "sessionId": "session"
+          },
+          "threadId": "main"
+        }
+      }
+    ]
+  },
   "invalidJson": [
     "{\"id\":1,\"id\":2}",
     "{} {}",
@@ -53,6 +112,63 @@
     "9007199254740993",
     "9223372036854775807",
     "0.100000000000000001"
+  ],
+  "queuedInput": [
+    {
+      "request": {
+        "version": "durable.v1",
+        "operation": "editQueuedInput",
+        "payload": {
+          "session": { "namespace": "tenant", "sessionId": "session" },
+          "threadId": "main",
+          "turnId": "turn-2",
+          "requestId": "edit-1",
+          "expectedInputRevision": 0,
+          "input": { "schemaVersion": "1", "content": [{ "type": "text", "text": "Revised input" }] }
+        }
+      },
+      "response": {
+        "version": "durable.v1",
+        "result": {
+          "requestId": "edit-1",
+          "turnId": "turn-2",
+          "operation": "EDIT_QUEUED",
+          "status": "accepted",
+          "acceptedAt": 1794484800000,
+          "cursor": "session-cursor-after-edit",
+          "messageId": "input-2",
+          "inputRevision": 1
+        }
+      }
+    },
+    {
+      "request": {
+        "version": "durable.v1",
+        "operation": "convertQueuedToSteer",
+        "payload": {
+          "session": { "namespace": "tenant", "sessionId": "session" },
+          "threadId": "main",
+          "sourceTurnId": "turn-2",
+          "targetTurnId": "turn-1",
+          "requestId": "move-1",
+          "expectedInputRevision": 1
+        }
+      },
+      "response": {
+        "version": "durable.v1",
+        "result": {
+          "requestId": "move-1",
+          "turnId": "turn-1",
+          "sourceTurnId": "turn-2",
+          "operation": "STEER_QUEUED",
+          "status": "accepted",
+          "acceptedAt": 1794484800001,
+          "cursor": "session-cursor-after-move",
+          "messageId": "input-2",
+          "inputRevision": 1
+        }
+      }
+    }
   ],
   "recovery": {
     "request": {
@@ -160,6 +276,7 @@
         "stepId": null,
         "sequence": "1",
         "cursor": "cursor-1",
+        "occurredAt": 1794484800001,
         "type": "session.created",
         "data": {
           "key": {
@@ -184,6 +301,7 @@
         "stepId": null,
         "sequence": "2",
         "cursor": "cursor-2",
+        "occurredAt": 1794484800002,
         "type": "session.closed",
         "data": {
           "key": {
@@ -208,6 +326,7 @@
         "stepId": null,
         "sequence": "3",
         "cursor": "cursor-3",
+        "occurredAt": 1794484800003,
         "type": "thread.created",
         "data": {
           "definition": {
@@ -240,6 +359,7 @@
         "stepId": null,
         "sequence": "4",
         "cursor": "cursor-4",
+        "occurredAt": 1794484800004,
         "type": "thread.closed",
         "data": {
           "definition": {
@@ -274,6 +394,7 @@
         "stepId": null,
         "sequence": "1",
         "cursor": "cursor-1",
+        "occurredAt": 1794484800001,
         "type": "session.created",
         "data": {
           "key": {
@@ -298,6 +419,7 @@
         "stepId": null,
         "sequence": "1",
         "cursor": "cursor-1",
+        "occurredAt": 1794484800001,
         "type": "session.created",
         "data": {
           "key": {
@@ -322,6 +444,7 @@
         "stepId": null,
         "sequence": "3",
         "cursor": "cursor-3",
+        "occurredAt": 1794484800003,
         "type": "thread.created",
         "data": {
           "definition": {
@@ -354,6 +477,7 @@
         "stepId": null,
         "sequence": "3",
         "cursor": "cursor-3",
+        "occurredAt": 1794484800003,
         "type": "thread.created",
         "data": {
           "definition": {
@@ -386,6 +510,7 @@
         "stepId": null,
         "sequence": "1",
         "cursor": "cursor-1",
+        "occurredAt": 1794484800001,
         "type": "session.created",
         "data": {
           "key": {
@@ -410,6 +535,7 @@
         "stepId": null,
         "sequence": "3",
         "cursor": "cursor-3",
+        "occurredAt": 1794484800003,
         "type": "thread.created",
         "data": {
           "status": "OPEN"
@@ -742,7 +868,8 @@
           },
           "input": {
             "prompt": "work"
-          }
+          },
+          "detached": false
         }
       }
     },

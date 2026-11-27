@@ -15,6 +15,7 @@
  */
 package io.agentscope.extensions.durable.rocketmq;
 
+import io.agentscope.durable.BatchDispatchExecutor;
 import io.agentscope.durable.DurableException;
 import io.agentscope.durable.DurableJson;
 import io.agentscope.durable.DurableProtocol;
@@ -22,12 +23,13 @@ import io.agentscope.durable.DurableTypes.ExecutionRequest;
 import io.agentscope.durable.DurableTypes.ExecutionResult;
 import io.agentscope.durable.DurableTypes.OutputPage;
 import io.agentscope.durable.ExecutionMessages.Event;
-import io.agentscope.durable.ExecutionMessages.Kind;
+import io.agentscope.durable.LiveEvents;
 import io.agentscope.durable.ManagedExecutor;
 import io.agentscope.durable.SessionBackend;
 import io.agentscope.durable.worker.QueuedExecutor;
 import io.agentscope.extensions.durable.rocketmq.RocketMqLoop.Subscription;
 import java.time.Duration;
+import java.util.List;
 import java.util.Objects;
 import java.util.function.Consumer;
 import org.apache.rocketmq.client.apis.ClientConfiguration;
@@ -35,7 +37,7 @@ import org.apache.rocketmq.client.apis.ClientServiceProvider;
 import org.apache.rocketmq.client.apis.producer.Producer;
 
 /** Brain-side remote execution over RocketMQ, bound and managed by DurableRuntime. */
-public final class RocketMqRemoteExecutor implements ManagedExecutor {
+public final class RocketMqRemoteExecutor implements ManagedExecutor, BatchDispatchExecutor {
     private final Builder configuration;
     private RocketMqLoop loop;
     private QueuedExecutor executor;
@@ -51,7 +53,7 @@ public final class RocketMqRemoteExecutor implements ManagedExecutor {
     }
 
     @Override
-    public synchronized void bind(String route, SessionBackend backend) {
+    public synchronized void bind(String route, SessionBackend backend, LiveEvents liveEvents) {
         if (executor != null) throw new IllegalStateException("RocketMQ executor is already bound");
         var storage =
                 backend.localStorage()
@@ -104,16 +106,22 @@ public final class RocketMqRemoteExecutor implements ManagedExecutor {
                         route,
                         storage.records(),
                         backend,
+                        batch ->
+                                loop.send(
+                                        topology.commands(),
+                                        RocketMqLiteRouting.session(
+                                                batch.requests().get(0).session()),
+                                        batch.batchId(),
+                                        batch),
                         command ->
                                 loop.send(
-                                        command.kind() == Kind.EXECUTE
-                                                ? topology.commands()
-                                                : topology.controls(),
+                                        topology.controls(),
                                         RocketMqLiteRouting.session(command.request().session()),
                                         command.commandId(),
                                         command),
                         configuration.retry,
-                        configuration.responseTimeout);
+                        configuration.responseTimeout,
+                        liveEvents);
     }
 
     @Override
@@ -147,6 +155,13 @@ public final class RocketMqRemoteExecutor implements ManagedExecutor {
         var result = executor.startExecution(request);
         wake(request);
         return result;
+    }
+
+    @Override
+    public void dispatchBatch(List<ExecutionRequest> requests) {
+        bound().ensureOpen();
+        executor.stageBatch(requests);
+        requests.forEach(this::wake);
     }
 
     @Override

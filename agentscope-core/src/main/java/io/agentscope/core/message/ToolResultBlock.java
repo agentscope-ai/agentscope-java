@@ -113,6 +113,12 @@ public final class ToolResultBlock extends ContentBlock {
         return executionDetails;
     }
 
+    /** An explicit provider observation that the external effect cannot be confirmed. */
+    public boolean hasUnknownOutcome() {
+        return executionDetails != null
+                && executionDetails.outcome() == ToolExecutionDetails.Outcome.UNKNOWN;
+    }
+
     public ToolResultBlock withExecutionDetails(ToolExecutionDetails details) {
         return new ToolResultBlock(id, name, output, metadata, state, details);
     }

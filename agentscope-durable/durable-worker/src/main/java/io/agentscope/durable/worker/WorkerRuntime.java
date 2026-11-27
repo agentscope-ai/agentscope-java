@@ -29,6 +29,7 @@ import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
@@ -52,6 +53,7 @@ import java.util.function.Function;
 public final class WorkerRuntime implements AutoCloseable {
     private final ExecutionStore store;
     private final Function<ExecutionRequest, Executor> resolver;
+    private final Function<ExecutionRequest, Optional<String>> authorizeStart;
     private final Duration lease;
     private final Duration poll;
     private final Duration discovery;
@@ -137,6 +139,7 @@ public final class WorkerRuntime implements AutoCloseable {
     private WorkerRuntime(Builder builder) {
         store = Objects.requireNonNull(builder.store, "store");
         resolver = Objects.requireNonNull(builder.resolver, "resolver");
+        authorizeStart = builder.authorizeStart;
         lease = builder.lease;
         poll = builder.poll;
         discovery = builder.discovery == null ? poll : builder.discovery;
@@ -353,6 +356,13 @@ public final class WorkerRuntime implements AutoCloseable {
         }
         boolean retry = false;
         try {
+            if (!work.attempted() && !work.cancellationRequested()) {
+                var denial = authorizeStart.apply(work.request());
+                if (denial.isPresent()) {
+                    store.denyStart(work, denial.get());
+                    return;
+                }
+            }
             Executor provider = resolver.apply(work.request());
             if (provider == null)
                 throw new DurableException(
@@ -529,6 +539,8 @@ public final class WorkerRuntime implements AutoCloseable {
     public static final class Builder {
         private ExecutionStore store;
         private Function<ExecutionRequest, Executor> resolver;
+        private Function<ExecutionRequest, Optional<String>> authorizeStart =
+                request -> Optional.empty();
         private Duration lease = Duration.ofSeconds(30);
         private Duration poll = Duration.ofMillis(100);
         private Duration discovery;
@@ -566,6 +578,12 @@ public final class WorkerRuntime implements AutoCloseable {
 
         public Builder resolver(Function<ExecutionRequest, Executor> value) {
             resolver = Objects.requireNonNull(value);
+            return this;
+        }
+
+        /** Return a display-safe reason to deny a new start. Errors leave work retryable. */
+        public Builder authorizeStart(Function<ExecutionRequest, Optional<String>> value) {
+            authorizeStart = Objects.requireNonNull(value);
             return this;
         }
 

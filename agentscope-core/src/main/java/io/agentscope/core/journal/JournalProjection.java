@@ -18,6 +18,7 @@ package io.agentscope.core.journal;
 import io.agentscope.core.agent.AgentExecutionPosition;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolResultMessage;
+import io.agentscope.core.message.ToolResultState;
 import io.agentscope.core.state.AgentState;
 import io.agentscope.core.util.JsonUtils;
 import io.agentscope.core.util.MessageUtils;
@@ -78,11 +79,18 @@ public record JournalProjection(
                 case "action/end" -> {
                     if (data.get("result") != null) {
                         String id = (String) data.get("toolCallId");
-                        uncertain.remove(id);
-                        results.put(
-                                id,
+                        var result =
                                 JsonUtils.getJsonCodec()
-                                        .convertValue(data.get("result"), ToolResultBlock.class));
+                                        .convertValue(data.get("result"), ToolResultBlock.class);
+                        if (result.hasUnknownOutcome()
+                                || uncertain.contains(id)
+                                        && result.getState() == ToolResultState.INTERRUPTED) {
+                            uncertain.add(id);
+                            results.remove(id);
+                        } else {
+                            uncertain.remove(id);
+                            results.put(id, result);
+                        }
                     }
                 }
                 case "recovery/applied" -> {

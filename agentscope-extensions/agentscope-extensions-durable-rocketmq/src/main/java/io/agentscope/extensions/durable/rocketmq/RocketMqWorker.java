@@ -22,16 +22,20 @@ import io.agentscope.durable.DurableProtocol;
 import io.agentscope.durable.DurableTypes.ExecutionRequest;
 import io.agentscope.durable.ExecutionMessages;
 import io.agentscope.durable.ExecutionMessages.Command;
+import io.agentscope.durable.ExecutionMessages.ExecuteBatch;
 import io.agentscope.durable.ExecutionMessages.Kind;
 import io.agentscope.durable.Executor;
 import io.agentscope.durable.store.ObjectStore;
 import io.agentscope.durable.store.RecordStore;
 import io.agentscope.durable.worker.ExecutionStore;
 import io.agentscope.durable.worker.TransactionalExecutionStore;
+import io.agentscope.durable.worker.TransactionalExecutionStore.Received;
 import io.agentscope.durable.worker.WorkerRuntime;
 import io.agentscope.extensions.durable.rocketmq.RocketMqLoop.Subscription;
 import java.time.Duration;
+import java.util.List;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.function.Consumer;
 import java.util.function.Function;
 import org.apache.rocketmq.client.apis.ClientConfiguration;
@@ -129,6 +133,7 @@ public final class RocketMqWorker implements AutoCloseable {
                 WorkerRuntime.builder()
                         .executionStore(store)
                         .resolver(builder.resolver)
+                        .authorizeStart(builder.authorizeStart)
                         .leaseDuration(builder.lease)
                         .discoveryInterval(builder.discoveryInterval)
                         .pollInterval(builder.providerPollInterval)
@@ -148,32 +153,55 @@ public final class RocketMqWorker implements AutoCloseable {
         loop.ensureOpen();
         worker.start();
         try {
-            loop.start(
-                    (value, message) -> receive(value, message, false),
-                    this::publishPending,
-                    interval);
-            controls.start((value, message) -> receive(value, message, true), null, interval);
+            loop.start(this::receiveBatch, this::publishPending, interval);
+            controls.start(this::receiveControl, null, interval);
         } catch (RuntimeException failure) {
             close();
             throw failure;
         }
     }
 
-    private void receive(JsonNode value, MessageView message, boolean control) {
+    private void receiveBatch(JsonNode value, MessageView message) {
+        DurableProtocol.validate("executionBatch", value);
+        var batch = DurableJson.convert(value, ExecuteBatch.class);
+        ExecutionMessages.validate(batch);
+        RocketMqLiteRouting.require(
+                message,
+                RocketMqLiteRouting.session(batch.requests().get(0).session()),
+                batch.batchId());
+        var commands =
+                batch.requests().stream()
+                        .map(request -> ExecutionMessages.command(Kind.EXECUTE, request))
+                        .toList();
+        commands.forEach(this::authorize);
+        // Broker acknowledgement follows admission of the last child. Replays reuse each ledger.
+        List<Received> admissions = commands.stream().map(store::receive).toList();
+        admissions.forEach(this::offer);
+    }
+
+    private void receiveControl(JsonNode value, MessageView message) {
         DurableProtocol.validate("executionCommand", value);
         var command = DurableJson.convert(value, Command.class);
         ExecutionMessages.validate(command);
-        if (control == (command.kind() == Kind.EXECUTE))
+        if (command.kind() == Kind.EXECUTE)
             throw new IllegalArgumentException("Execution command is on the wrong parent Topic");
         RocketMqLiteRouting.require(
                 message,
                 RocketMqLiteRouting.session(command.request().session()),
                 command.commandId());
+        authorize(command);
+        var received = store.receive(command);
+        if (command.kind() == Kind.CANCEL) worker.wakeCancellation(received.key());
+        offer(received);
+    }
+
+    private void authorize(Command command) {
         if (!name.equals(command.request().call().executor()))
             throw new DurableException(DurableException.Code.INCOMPATIBLE, "Worker route differs");
         authorizer.accept(command);
-        var received = store.receive(command);
-        if (command.kind() == Kind.CANCEL) worker.wakeCancellation(received.key());
+    }
+
+    private void offer(Received received) {
         if (received.runnable()) worker.offer(received.key(), received.recovery());
     }
 
@@ -261,6 +289,8 @@ public final class RocketMqWorker implements AutoCloseable {
         private Subscription consumer;
         private Subscription controlConsumer;
         private Consumer<Command> authorizer;
+        private Function<ExecutionRequest, Optional<String>> authorizeStart =
+                request -> Optional.empty();
         private int receiveBatchSize = 16;
         private int controlCacheSize;
         private Duration discoveryInterval = Duration.ofSeconds(2);
@@ -328,9 +358,15 @@ public final class RocketMqWorker implements AutoCloseable {
             return this;
         }
 
-        /** Called for every command before any ledger access; throw to reject unauthorized work. */
+        /** Validates command intake and scope before ledger access. */
         public Builder authorize(Consumer<Command> value) {
             authorizer = Objects.requireNonNull(value);
+            return this;
+        }
+
+        /** Checks current business permission for each admitted call before its first start. */
+        public Builder authorizeStart(Function<ExecutionRequest, Optional<String>> value) {
+            authorizeStart = Objects.requireNonNull(value);
             return this;
         }
 

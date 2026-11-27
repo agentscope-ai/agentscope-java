@@ -27,9 +27,12 @@ import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.state.AgentState;
+import io.agentscope.core.state.TaskVerification;
 import io.agentscope.core.util.JsonUtils;
 import io.agentscope.durable.DurableException;
 import io.agentscope.durable.DurableJson;
+import io.agentscope.durable.DurableMessages.Input;
+import io.agentscope.durable.DurableMessages.Message;
 import io.agentscope.durable.DurableTypes.AppliedResult;
 import io.agentscope.durable.DurableTypes.Commit;
 import io.agentscope.durable.DurableTypes.EventInput;
@@ -44,6 +47,7 @@ import io.agentscope.durable.DurableTypes.StepStatus;
 import io.agentscope.durable.DurableTypes.TokenUsage;
 import io.agentscope.durable.DurableTypes.ToolCall;
 import io.agentscope.durable.DurableTypes.TurnStatus;
+import io.agentscope.durable.DurableTypes.VerificationView;
 import io.agentscope.durable.HarnessContext;
 import io.agentscope.durable.ToolBinding;
 import io.agentscope.durable.codec.agentscope.AgentScopeCheckpointCodec;
@@ -63,6 +67,8 @@ final class BackendThreadJournal implements ThreadJournal {
     private final HarnessContext context;
     private final Map<String, String> executors;
     private final Map<String, ToolBinding> bindings;
+    private final String initialInputId;
+    private final JsonNode initialInput;
     private final Set<String> sealed = new HashSet<>();
     private final List<String> signalsToApply = new ArrayList<>();
     private String owner;
@@ -84,6 +90,8 @@ final class BackendThreadJournal implements ThreadJournal {
         this.context = context;
         this.executors = executors;
         var frame = context.frame();
+        initialInputId = frame.turn().inputMessageId();
+        initialInput = frame.input();
         var checkpoint = frame.checkpoint();
         if (!checkpoint.isNull()
                 && !AgentScopeCheckpointCodec.STATE_VERSION.equals(
@@ -149,6 +157,14 @@ final class BackendThreadJournal implements ThreadJournal {
 
     synchronized void consuming(List<String> signals) {
         signalsToApply.addAll(signals);
+    }
+
+    synchronized boolean hasUnsettledNativeTools(String turnId) {
+        return toolEvents.hasUnsettledTools(turnId);
+    }
+
+    synchronized boolean unsettledNativeTool(String turnId, String callId) {
+        return toolEvents.unsettled(turnId, callId);
     }
 
     private ObjectNode checkpoint() {
@@ -262,6 +278,29 @@ final class BackendThreadJournal implements ThreadJournal {
             var data = event.data();
             var modelEvent = modelEvent(event);
             if (modelEvent != null) publicEvents.add(modelEvent);
+            if ("verification/result".equals(event.type()) && data.get("verification") != null) {
+                var check =
+                        JsonUtils.getJsonCodec()
+                                .convertValue(data.get("verification"), TaskVerification.class);
+                var evidence = check.binding();
+                publicEvents.add(
+                        new EventInput(
+                                event.eventId(),
+                                VerificationView.EVENT_TYPE,
+                                DurableJson.value(
+                                        new VerificationView(
+                                                check.id(),
+                                                check.requirementId(),
+                                                check.actionId(),
+                                                check.verifierId(),
+                                                check.outcome().name(),
+                                                evidence.taskId(),
+                                                evidence.contractVersion(),
+                                                evidence.subjectVersion(),
+                                                check.recordedAt()))));
+            }
+            if ("input/applied".equals(event.type()) && initialInputId.equals(data.get("inputId")))
+                publicEvents.add(initialInputApplication());
             if ("run/start".equals(event.type())) {
                 runChange = new RunChange(event.executionRunId(), RunStatus.RUNNING, null, null);
             } else if ("run/end".equals(event.type())) {
@@ -366,6 +405,8 @@ final class BackendThreadJournal implements ThreadJournal {
             if (message.durable() != null) publicEvents.add(message.durable());
             liveEvents.addAll(message.live());
             publicEvents.addAll(nextToolEvents.accept(event, nextMessages));
+            var toolPreview = nextToolEvents.preview(event, context.lease().epoch());
+            if (toolPreview != null) liveEvents.add(toolPreview);
             if (data.get("stepId") instanceof String stepId) {
                 for (int i = firstPublicEvent; i < publicEvents.size(); i++) {
                     var output = publicEvents.get(i);
@@ -430,6 +471,17 @@ final class BackendThreadJournal implements ThreadJournal {
         if (hasCheckpoint) signalsToApply.clear();
         context.publish(liveEvents);
         return result;
+    }
+
+    private EventInput initialInputApplication() {
+        var input =
+                initialInput.isTextual()
+                        ? Input.text(initialInput.asText())
+                        : DurableJson.convert(initialInput, Input.class);
+        return new EventInput(
+                "input-applied:" + initialInputId,
+                "input.applied",
+                DurableJson.value(new Message("1", initialInputId, "user", input.content())));
     }
 
     private static TokenUsage usage(JsonNode value) {

@@ -18,6 +18,10 @@ package io.agentscope.durable;
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import io.agentscope.durable.DurableMessages.ToolResponse;
+import io.agentscope.durable.DurableTypes.ActiveTurnCancellation;
+import io.agentscope.durable.DurableTypes.BlockerKind;
+import io.agentscope.durable.DurableTypes.CancelTarget;
 import io.agentscope.durable.DurableTypes.CheckpointMetadata;
 import io.agentscope.durable.DurableTypes.CheckpointView;
 import io.agentscope.durable.DurableTypes.CommandReceipt;
@@ -39,18 +43,22 @@ import io.agentscope.durable.DurableTypes.Frame;
 import io.agentscope.durable.DurableTypes.HarnessSelector;
 import io.agentscope.durable.DurableTypes.HistoryPage;
 import io.agentscope.durable.DurableTypes.Interaction;
+import io.agentscope.durable.DurableTypes.JobView;
 import io.agentscope.durable.DurableTypes.Lease;
 import io.agentscope.durable.DurableTypes.Lifecycle;
 import io.agentscope.durable.DurableTypes.ModelCallPage;
 import io.agentscope.durable.DurableTypes.ModelCallView;
+import io.agentscope.durable.DurableTypes.OutputPage;
 import io.agentscope.durable.DurableTypes.PublicEvent;
 import io.agentscope.durable.DurableTypes.RecoveryView;
 import io.agentscope.durable.DurableTypes.Restoration;
 import io.agentscope.durable.DurableTypes.RunPage;
 import io.agentscope.durable.DurableTypes.RunStepRef;
 import io.agentscope.durable.DurableTypes.RunView;
+import io.agentscope.durable.DurableTypes.SessionActivity;
 import io.agentscope.durable.DurableTypes.SessionKey;
 import io.agentscope.durable.DurableTypes.SessionPage;
+import io.agentscope.durable.DurableTypes.SessionPhase;
 import io.agentscope.durable.DurableTypes.SessionSpec;
 import io.agentscope.durable.DurableTypes.SessionView;
 import io.agentscope.durable.DurableTypes.Signal;
@@ -63,10 +71,16 @@ import io.agentscope.durable.DurableTypes.ThreadSpec;
 import io.agentscope.durable.DurableTypes.ThreadView;
 import io.agentscope.durable.DurableTypes.ToolCall;
 import io.agentscope.durable.DurableTypes.ToolExecution;
+import io.agentscope.durable.DurableTypes.ToolExecutionStatus;
+import io.agentscope.durable.DurableTypes.ToolExecutionView;
+import io.agentscope.durable.DurableTypes.ToolOutputView;
+import io.agentscope.durable.DurableTypes.TurnBlocker;
 import io.agentscope.durable.DurableTypes.TurnPage;
+import io.agentscope.durable.DurableTypes.TurnProgress;
 import io.agentscope.durable.DurableTypes.TurnReceipt;
 import io.agentscope.durable.DurableTypes.TurnStatus;
 import io.agentscope.durable.DurableTypes.TurnView;
+import io.agentscope.durable.DurableTypes.VerificationView;
 import io.agentscope.durable.DurableTypes.WaitCondition;
 import io.agentscope.durable.store.ObjectStore;
 import io.agentscope.durable.store.ObjectStore.Reference;
@@ -81,12 +95,14 @@ import java.util.Base64;
 import java.util.Comparator;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
+import java.util.TreeSet;
 import java.util.UUID;
 import java.util.function.BiFunction;
 import java.util.stream.Collectors;
@@ -98,6 +114,7 @@ import java.util.stream.LongStream;
  */
 public final class TransactionalSessionBackend implements SessionBackend {
     private static final String DISPATCH_QUEUE = "turn-dispatch";
+    private static final int STATE_FORMAT = 21;
     private final RecordStore store;
     private final ObjectStore objects;
     private final CommitPolicy policy;
@@ -203,12 +220,15 @@ public final class TransactionalSessionBackend implements SessionBackend {
     }
 
     public static final class State {
-        public int format = 14;
+        public int format = STATE_FORMAT;
         public SessionView session;
         public String creationDigest;
         public long admitted;
         public long sequence;
         public long retainedAfter;
+        public SessionActivity activity = new SessionActivity(SessionPhase.IDLE, List.of());
+        @JsonIgnore public boolean activityChanged;
+        @JsonIgnore public boolean retriesExhausted;
         @JsonIgnore public RecordStore.Transaction tx;
         @JsonIgnore public RecordStore.Transaction threadTx;
         @JsonIgnore public ThreadData thread;
@@ -240,6 +260,7 @@ public final class TransactionalSessionBackend implements SessionBackend {
         public long epoch;
         public long dispatchGeneration;
         public long dispatchReadyAt = -1;
+        public long dispatchLeaseEpoch;
         public Long dispatchEligibleAt;
         public long dispatchPublicationAt;
         public TurnDispatch dispatch;
@@ -258,6 +279,8 @@ public final class TransactionalSessionBackend implements SessionBackend {
         public DelegationParent parent;
         public long invocationCount;
         public JsonNode input;
+        public String inputRequestId;
+        public long inputRevision;
         public TurnStatus status = TurnStatus.QUEUED;
         public long revision;
         public String owner;
@@ -270,8 +293,12 @@ public final class TransactionalSessionBackend implements SessionBackend {
         public WaitCondition waiting;
         public RecoveryView recovery;
         public long failedEpoch;
+        public boolean jobWaitRegistered;
+        public Set<String> activeCancellationRequests = new LinkedHashSet<>();
+        public Set<String> pendingInteractions = new LinkedHashSet<>();
         @JsonIgnore public Map<String, ToolData> tools = new LinkedHashMap<>();
         @JsonIgnore public Map<String, Signal> signals = new LinkedHashMap<>();
+        @JsonIgnore public Map<String, VerificationView> verifications = new LinkedHashMap<>();
         public List<String> consumed = new ArrayList<>();
         public List<String> withdrawn = new ArrayList<>();
         @JsonIgnore public Map<String, CommitReceipt> receipts = new LinkedHashMap<>();
@@ -280,16 +307,19 @@ public final class TransactionalSessionBackend implements SessionBackend {
     public static final class ToolData {
         public ExecutionRequest request;
         public boolean attempted;
+        public Executor.Capabilities executorCapabilities;
         public long resultRevision;
         public long sourceSequence;
         public long outputOffset;
         public boolean hasOutput;
         public boolean outputSealed;
+        public boolean outputHasGaps;
         public ExecutionResult result =
                 new ExecutionResult(ExecutionState.PENDING, null, null, null);
         public boolean applied;
         public RunStepRef appliedAt;
         public DelegationData delegation;
+        public JobWait jobWait;
 
         public ToolExecution view() {
             return new ToolExecution(
@@ -311,6 +341,8 @@ public final class TransactionalSessionBackend implements SessionBackend {
             return new DelegationView(parent, child, cancelRequested);
         }
     }
+
+    public record JobWait(String jobId, long deadline, ExecutionResult outcome) {}
 
     private static String positionKey(long value) {
         return String.format(Locale.ROOT, "%020d", value);
@@ -356,11 +388,15 @@ public final class TransactionalSessionBackend implements SessionBackend {
     }
 
     private static TurnData current(State s) {
-        while (s.thread.settled < s.thread.admitted) {
-            var id = s.threadTx.get("queue:" + positionKey(s.thread.settled + 1));
-            var turn = requireTurn(s, id.asText());
+        return current(s, s.thread, s.threadTx);
+    }
+
+    private static TurnData current(State state, ThreadData thread, RecordStore.Transaction tx) {
+        while (thread.settled < thread.admitted) {
+            var id = tx.get("queue:" + positionKey(thread.settled + 1));
+            var turn = requireTurn(state, id.asText(), thread.definition.key().threadId());
             if (!turn.status.terminal()) return turn;
-            s.thread.settled++;
+            thread.settled++;
         }
         return null;
     }
@@ -370,8 +406,13 @@ public final class TransactionalSessionBackend implements SessionBackend {
         if (turn == null) return -1;
         if (turn.status == TurnStatus.PAUSED) return -1;
         if (turn.owner != null && turn.expiresAt > now) return turn.expiresAt;
-        if (turn.cancel || turn.status == TurnStatus.PAUSING) return turn.nextAttemptAt;
-        long ready = turn.nextAttemptAt;
+        boolean waitingForNativeEvidence = awaitingNativeToolReconciliation(turn);
+        if (waitingForNativeEvidence
+                && !waitSatisfied(turn, turn.waiting, now)
+                && turn.tools.values().stream().allMatch(tool -> tool.result.state().terminal()))
+            return -1;
+        long ready = Math.max(turn.nextAttemptAt, turn.expiresAt);
+        if (turn.cancel || turn.status == TurnStatus.PAUSING) return ready;
         if (turn.recovery != null) {
             if (!turn.recovery.retryAllowed()) return ready;
             ready = Math.max(ready, turn.recovery.retryAt());
@@ -379,6 +420,7 @@ public final class TransactionalSessionBackend implements SessionBackend {
         if (!turn.cancel
                 && turn.status != TurnStatus.PAUSING
                 && turn.waiting != null
+                && !waitingForNativeEvidence
                 && turn.signals.values().stream()
                         .noneMatch(
                                 v ->
@@ -386,6 +428,15 @@ public final class TransactionalSessionBackend implements SessionBackend {
                                                 && !turn.withdrawn.contains(v.id())
                                                 && v.key().equals(turn.waiting.key()))) {
             return turn.waiting.deadline() == 0 ? -1 : Math.max(ready, turn.waiting.deadline());
+        }
+        if (turn.jobWaitRegistered) {
+            long nextJobDeadline = Long.MAX_VALUE;
+            for (var tool : turn.tools.values()) {
+                if (tool.result.state().terminal()) continue;
+                if (tool.jobWait == null || tool.jobWait.outcome() != null) return ready;
+                nextJobDeadline = Math.min(nextJobDeadline, tool.jobWait.deadline());
+            }
+            if (nextJobDeadline != Long.MAX_VALUE) return Math.max(ready, nextJobDeadline);
         }
         return ready;
     }
@@ -405,21 +456,8 @@ public final class TransactionalSessionBackend implements SessionBackend {
 
     private static void save(State state) {
         var tx = state.tx;
-        if (state.thread != null) {
-            var definition = state.thread.definition;
-            long next = state.thread.status == Lifecycle.OPEN ? readyAt(state, tx.now()) : -1;
-            tx.schedule(
-                    readyQueue(HarnessSelector.all(definition.harness())),
-                    definition.key().threadId(),
-                    next,
-                    DurableJson.value(definition));
-            tx.schedule(
-                    readyQueue(HarnessSelector.exact(definition)),
-                    definition.key().threadId(),
-                    next,
-                    DurableJson.value(definition));
-            updateDispatch(state, definition.key(), next);
-        }
+        if (state.thread != null) scheduleThread(state);
+        if (state.activityChanged) updateActivity(state);
         for (var map :
                 List.of(
                         state.threads,
@@ -435,6 +473,91 @@ public final class TransactionalSessionBackend implements SessionBackend {
                         state.projectedSignals)) ((TransactionMap<?>) map).flush();
         state.details.forEach(TransactionMap::flush);
         tx.put("", DurableJson.value(state));
+    }
+
+    private static void scheduleThread(State state) {
+        var tx = state.tx;
+        var definition = state.thread.definition;
+        long next = state.thread.status == Lifecycle.OPEN ? readyAt(state, tx.now()) : -1;
+        tx.schedule(
+                readyQueue(HarnessSelector.all(definition.harness())),
+                definition.key().threadId(),
+                next,
+                DurableJson.value(definition));
+        tx.schedule(
+                readyQueue(HarnessSelector.exact(definition)),
+                definition.key().threadId(),
+                next,
+                DurableJson.value(definition));
+        updateDispatch(state, definition.key(), next);
+    }
+
+    private static void updateActivity(State state) {
+        var next = activity(state);
+        if (next.equals(state.activity)) return;
+        state.activity = next;
+        append(
+                state,
+                null,
+                new EventInput(
+                        "session-activity:" + (state.sequence + 1),
+                        "session.activity_changed",
+                        DurableJson.value(next)),
+                null);
+    }
+
+    private static SessionActivity activity(State state) {
+        var pending = new TreeSet<String>();
+        for (var thread : state.threads.values()) {
+            if (thread.status != Lifecycle.OPEN) continue;
+            var key = thread.definition.key();
+            var turn = current(state, thread, threadTransaction(state.tx, key));
+            if (turn == null || turn.epoch == 0 || turn.status == TurnStatus.PAUSED) continue;
+            var blockers = interactionBlockers(state, turn);
+            if (blockers.isEmpty()) return new SessionActivity(SessionPhase.RUNNING, List.of());
+            blockers.stream().map(TurnBlocker::targetId).forEach(pending::add);
+        }
+        if (!pending.isEmpty())
+            return new SessionActivity(SessionPhase.REQUIRES_ACTION, List.copyOf(pending));
+        return new SessionActivity(
+                state.retriesExhausted ? SessionPhase.RETRIES_EXHAUSTED : SessionPhase.IDLE,
+                List.of());
+    }
+
+    private static List<TurnBlocker> interactionBlockers(State state, TurnData turn) {
+        if (!waitsForInteraction(turn)
+                || turn.waiting.deadline() > 0 && turn.waiting.deadline() <= state.tx.now())
+            return List.of();
+        var waiting =
+                turn.pendingInteractions.stream()
+                        .map(state.interactions::get)
+                        .filter(view -> !view.path("automatic").asBoolean())
+                        .toList();
+        if (waiting.stream()
+                .noneMatch(view -> turn.waiting.key().equals(view.path("key").asText())))
+            return List.of();
+        var answered =
+                turn.signals.values().stream()
+                        .filter(signal -> !turn.withdrawn.contains(signal.id()))
+                        .map(Signal::key)
+                        .collect(Collectors.toSet());
+        return waiting.stream()
+                .filter(view -> !answered.contains(view.required("key").asText()))
+                .map(
+                        view ->
+                                new TurnBlocker(
+                                        "confirmation".equals(view.path("kind").asText())
+                                                ? BlockerKind.APPROVAL
+                                                : BlockerKind.MANUAL_TOOL_RESULT,
+                                        view.required("id").asText(),
+                                        deadline(turn.waiting)))
+                .toList();
+    }
+
+    private static boolean waitsForInteraction(TurnData turn) {
+        return turn.status == TurnStatus.WAITING
+                && turn.waiting != null
+                && turn.waiting.key().startsWith("interaction:");
     }
 
     private <T> T change(ThreadKey key, BiFunction<State, Long, T> action) {
@@ -504,7 +627,7 @@ public final class TransactionalSessionBackend implements SessionBackend {
 
     private static State decode(JsonNode value) {
         if (value == null || value.isNull()) return null;
-        if (value.path("format").asInt() != 14)
+        if (value.path("format").asInt() != STATE_FORMAT)
             throw error(DurableException.Code.INCOMPATIBLE, "Unsupported backend state version");
         return DurableJson.convert(value, State.class);
     }
@@ -641,6 +764,7 @@ public final class TransactionalSessionBackend implements SessionBackend {
         turn.id = id;
         turn.threadId = key.threadId();
         turn.input = frozen;
+        turn.inputRequestId = requestId;
         // Order new admissions by storage time, not lexical Session/Thread identity.
         turn.nextAttemptAt = state.tx.now();
         state.turns.put(id, turn);
@@ -781,12 +905,9 @@ public final class TransactionalSessionBackend implements SessionBackend {
         return change(
                 key,
                 (s, n) -> {
-                    requireTurn(s, turnId);
-                    return s.interactions.values().stream()
-                            .filter(
-                                    v ->
-                                            turnId.equals(v.path("turnId").asText())
-                                                    && "pending".equals(v.path("status").asText()))
+                    var turn = requireTurn(s, turnId);
+                    return turn.pendingInteractions.stream()
+                            .map(s.interactions::get)
                             .map(v -> DurableJson.convert(v, Interaction.class))
                             .toList();
                 });
@@ -826,6 +947,7 @@ public final class TransactionalSessionBackend implements SessionBackend {
                         equal(s.commands.get(identity), digest, "Command identity/content changed");
                         return DurableJson.convert(s.tx.get(receiptKey), CommandReceipt.class);
                     }
+                    TurnData editedInput = null;
                     if (command.kind() == ControlKind.CANCEL) {
                         cancel(s, turn.id, command.requestId());
                     } else {
@@ -840,7 +962,7 @@ public final class TransactionalSessionBackend implements SessionBackend {
                                             DurableException.Code.CONFLICT,
                                             "Input adjustment requires the active Turn");
                                 if (command.kind() == ControlKind.STEER_QUEUED) {
-                                    convertQueuedTurn(s, turn, command);
+                                    editedInput = convertQueuedTurn(s, turn, command);
                                     break;
                                 }
                                 String kind =
@@ -851,13 +973,28 @@ public final class TransactionalSessionBackend implements SessionBackend {
                                         new Signal(
                                                 command.requestId(),
                                                 "input:" + kind,
-                                                command.value()));
+                                                command.value(),
+                                                inputMessageId(
+                                                        turn.id, command.requestId(), kind)));
                                 inputMessage(s, turn, command.requestId(), kind, command.value());
                             }
+                            case EDIT_QUEUED -> {
+                                requireEditableInput(s, turn, command.expectedRevision());
+                                turn.input = command.value();
+                                turn.inputRevision++;
+                                turn.revision++;
+                                inputMessage(s, turn, turn.inputRequestId, "submit", turn.input);
+                                editedInput = turn;
+                            }
                             case WITHDRAW -> {
-                                if (!turn.signals.containsKey(command.target()))
+                                var signal = turn.signals.get(command.target());
+                                if (signal == null)
                                     throw error(
                                             DurableException.Code.NOT_FOUND, "Signal not found");
+                                if (WaitCondition.NATIVE_TOOL_RECONCILIATION.equals(signal.key()))
+                                    throw error(
+                                            DurableException.Code.INVALID,
+                                            "Native reconciliation is host-managed");
                                 withdraw(s, turn.id, command.target(), command.requestId());
                             }
                             case RESPOND -> {
@@ -881,6 +1018,9 @@ public final class TransactionalSessionBackend implements SessionBackend {
                                     throw error(
                                             DurableException.Code.INCOMPATIBLE,
                                             "Unsupported interaction kind");
+                                var value = command.value();
+                                boolean structuredTool = ToolResponse.matches(value);
+                                if (structuredTool) DurableProtocol.validate("toolResponse", value);
                                 String waitKey = interaction.path("key").asText();
                                 if (turn.signals.values().stream()
                                         .anyMatch(
@@ -895,17 +1035,18 @@ public final class TransactionalSessionBackend implements SessionBackend {
                                         s,
                                         turn,
                                         new Signal(command.requestId(), waitKey, command.value()));
-                                var input =
-                                        DurableMessages.Input.text(
-                                                command.value().isTextual()
-                                                        ? command.value().asText()
-                                                        : command.value().toString());
                                 inputMessage(
                                         s,
                                         turn,
                                         command.requestId(),
                                         "respond",
-                                        DurableJson.value(input),
+                                        structuredTool
+                                                ? value
+                                                : DurableJson.value(
+                                                        DurableMessages.Input.text(
+                                                                value.isTextual()
+                                                                        ? value.asText()
+                                                                        : value.toString())),
                                         command.target());
                             }
                             case PAUSE -> pause(s, turn, command.requestId(), n);
@@ -935,7 +1076,13 @@ public final class TransactionalSessionBackend implements SessionBackend {
                                     turn.id,
                                     command.kind().name(),
                                     "accepted",
-                                    cursor(s, s.sequence));
+                                    cursor(s, s.sequence),
+                                    editedInput == null || editedInput == turn
+                                            ? null
+                                            : editedInput.id,
+                                    editedInput == null ? null : submissionMessageId(editedInput),
+                                    editedInput == null ? null : editedInput.inputRevision,
+                                    n);
                     s.dispatchReason =
                             switch (command.kind()) {
                                 case STEER, STEER_QUEUED -> TurnDispatch.Reason.STEER;
@@ -950,24 +1097,28 @@ public final class TransactionalSessionBackend implements SessionBackend {
                 });
     }
 
-    private static void convertQueuedTurn(State s, TurnData active, ControlCommand command) {
-        String queuedRequestId = command.target();
-        Admission admission = s.admissions.get(queuedRequestId);
-        if (admission == null)
-            throw error(DurableException.Code.NOT_FOUND, "Queued submission not found");
-        TurnData queued = requireTurn(s, admission.receipt().turnId());
-        if (queued.status != TurnStatus.QUEUED || queued.epoch != 0 || queued.parent != null)
-            throw error(DurableException.Code.CONFLICT, "Source must be an unstarted user Turn");
-        String messageId = inputMessageId(queued.id, queuedRequestId, "submit");
-        var original = s.messages.get(messageId);
-        if (!(original instanceof ObjectNode message))
+    private static ObjectNode requireEditableInput(State s, TurnData turn, long revision) {
+        if (turn.status != TurnStatus.QUEUED
+                || turn.epoch != 0
+                || turn.parent != null
+                || turn.inputRevision != revision)
+            throw error(DurableException.Code.CONFLICT, "Queued Turn or input revision changed");
+        if (!(s.messages.get(submissionMessageId(turn)) instanceof ObjectNode message))
             throw error(DurableException.Code.CONFLICT, "Queued submission has no user input");
+        return message;
+    }
+
+    private static TurnData convertQueuedTurn(State s, TurnData active, ControlCommand command) {
+        TurnData queued = requireTurn(s, command.target());
+        var message = requireEditableInput(s, queued, command.expectedRevision());
+        String messageId = submissionMessageId(queued);
         ObjectNode reassigned = message.deepCopy();
         reassigned.put("turnId", active.id);
         reassigned.put("inputKind", "steer");
         queued.status = TurnStatus.CONVERTED;
         queued.revision++;
-        acceptSignal(s, active, new Signal(command.requestId(), "input:steer", queued.input));
+        acceptSignal(
+                s, active, new Signal(command.requestId(), "input:steer", queued.input, messageId));
         append(
                 s,
                 queued,
@@ -980,6 +1131,11 @@ public final class TransactionalSessionBackend implements SessionBackend {
                                         command.requestId(),
                                         "message",
                                         reassigned))));
+        return queued;
+    }
+
+    private static String submissionMessageId(TurnData turn) {
+        return inputMessageId(turn.id, turn.inputRequestId, "submit");
     }
 
     private static String inputMessageId(String turnId, String requestId, String kind) {
@@ -999,10 +1155,19 @@ public final class TransactionalSessionBackend implements SessionBackend {
             JsonNode input,
             String interactionId) {
         String id = inputMessageId(turn.id, requestId, kind);
-        var content = DurableJson.convert(input, DurableMessages.Input.class);
-        var message = new DurableMessages.Message("1", id, "user", content.content());
+        long revision = "submit".equals(kind) ? turn.inputRevision : 0;
+        var toolResult =
+                "respond".equals(kind) && ToolResponse.matches(input)
+                        ? DurableJson.convert(input, ToolResponse.class)
+                        : null;
+        var content =
+                toolResult == null
+                        ? DurableJson.convert(input, DurableMessages.Input.class).content()
+                        : toolResult.content();
+        var message =
+                new DurableMessages.Message("1", id, toolResult == null ? "user" : "tool", content);
         String text =
-                content.content().stream()
+                content.stream()
                         .filter(v -> v instanceof DurableMessages.Text)
                         .map(v -> ((DurableMessages.Text) v).text())
                         .collect(Collectors.joining());
@@ -1015,7 +1180,7 @@ public final class TransactionalSessionBackend implements SessionBackend {
                                         "attempt",
                                         0,
                                         "revision",
-                                        0,
+                                        revision,
                                         "text",
                                         text,
                                         "message",
@@ -1025,7 +1190,9 @@ public final class TransactionalSessionBackend implements SessionBackend {
                                         "inputKind",
                                         kind));
         if (interactionId != null) data.put("interactionId", interactionId);
-        append(s, turn, new EventInput(id, "message.completed", data));
+        if (toolResult != null) data.put("toolError", toolResult.error());
+        String eventId = revision == 0 ? id : id + ":" + revision;
+        append(s, turn, new EventInput(eventId, "message.completed", data));
     }
 
     @Override
@@ -1040,6 +1207,82 @@ public final class TransactionalSessionBackend implements SessionBackend {
     @Override
     public TurnView turn(ThreadKey key, String id) {
         return change(key, (s, n) -> view(s, requireTurn(s, id)));
+    }
+
+    @Override
+    public TurnProgress turnProgress(ThreadKey key, String id) {
+        return change(
+                key,
+                (s, now) -> {
+                    var turn = requireTurn(s, id);
+                    return new TurnProgress(
+                            view(s, turn),
+                            cursor(s, s.sequence),
+                            turn.owner != null && turn.expiresAt > now,
+                            blockers(s, turn, now),
+                            turn.verifications.values().stream()
+                                    .sorted(
+                                            Comparator.comparingLong(VerificationView::recordedAt)
+                                                    .thenComparing(
+                                                            VerificationView::verificationId))
+                                    .toList());
+                });
+    }
+
+    private static List<TurnBlocker> blockers(State state, TurnData turn, long now) {
+        if (turn.status.terminal()) return List.of();
+        var head = current(state);
+        if (head != null && !turn.id.equals(head.id))
+            return List.of(new TurnBlocker(BlockerKind.QUEUE_HEAD, head.id, null));
+        if (turn.status == TurnStatus.PAUSED)
+            return List.of(new TurnBlocker(BlockerKind.PAUSED, turn.id, null));
+        var blockers = new ArrayList<TurnBlocker>();
+        if (waitsForInteraction(turn)) {
+            blockers.addAll(interactionBlockers(state, turn));
+        } else if (turn.waiting != null && !waitSatisfied(turn, turn.waiting, now)) {
+            var wait = turn.waiting;
+            if (awaitingNativeToolReconciliation(turn)) {
+                var targets = wait.targets().isEmpty() ? List.of(turn.id) : wait.targets();
+                for (var target : targets)
+                    blockers.add(
+                            new TurnBlocker(BlockerKind.NATIVE_TOOL_RECONCILIATION, target, null));
+            } else if (wait.key().startsWith("x.model:")) {
+                blockers.add(new TurnBlocker(BlockerKind.MODEL_REPLY, null, deadline(wait)));
+            } else if (!turn.cancel) {
+                blockers.add(new TurnBlocker(BlockerKind.SIGNAL, wait.key(), deadline(wait)));
+            }
+        }
+        for (var tool : turn.tools.values()) {
+            var result = tool.result.state();
+            if (result.terminal()) continue;
+            if (tool.jobWait != null) {
+                if (tool.jobWait.outcome() == null && tool.jobWait.deadline() > now)
+                    blockers.add(
+                            new TurnBlocker(
+                                    BlockerKind.JOB,
+                                    tool.jobWait.jobId(),
+                                    tool.jobWait.deadline()));
+                continue;
+            }
+            var kind =
+                    result == ExecutionState.UNKNOWN
+                            ? BlockerKind.TOOL_OUTCOME_UNCONFIRMED
+                            : tool.attempted
+                                    ? BlockerKind.TOOL_EXECUTION
+                                    : BlockerKind.TOOL_DISPATCH;
+            blockers.add(new TurnBlocker(kind, tool.request.executionId(), null));
+        }
+        if (!turn.cancel
+                && turn.recovery != null
+                && turn.recovery.retryAllowed()
+                && turn.recovery.retryAt() > now)
+            blockers.add(
+                    new TurnBlocker(BlockerKind.RETRY_BACKOFF, turn.id, turn.recovery.retryAt()));
+        return blockers;
+    }
+
+    private static Long deadline(WaitCondition wait) {
+        return wait.deadline() > 0 ? wait.deadline() : null;
     }
 
     private static InvocationRecords invocations(State state, TurnData turn) {
@@ -1140,21 +1383,28 @@ public final class TransactionalSessionBackend implements SessionBackend {
     private static void updateDispatch(State state, ThreadKey key, long readyAt) {
         ThreadData thread = state.thread;
         var turn = readyAt < 0 ? null : current(state);
-        if (turn != null
-                && thread.dispatch != null
-                && thread.dispatch.turnId().equals(turn.id)
-                && thread.dispatchReadyAt == readyAt) return;
+        long leaseEpoch = turn == null || turn.owner == null ? 0 : turn.epoch;
+        boolean samePhase =
+                turn != null
+                        && thread.dispatch != null
+                        && thread.dispatch.turnId().equals(turn.id)
+                        && thread.dispatchLeaseEpoch == leaseEpoch
+                        && (leaseEpoch != 0 || thread.dispatchReadyAt == readyAt);
+        if (samePhase && thread.dispatchReadyAt == readyAt) return;
         if (turn == null && thread.dispatch == null) return;
-        thread.dispatch =
-                turn == null
-                        ? null
-                        : new TurnDispatch(
-                                TurnDispatch.VERSION,
-                                key,
-                                turn.id,
-                                ++thread.dispatchGeneration,
-                                turn.revision,
-                                state.dispatchReason);
+        if (!samePhase) {
+            thread.dispatch =
+                    turn == null
+                            ? null
+                            : new TurnDispatch(
+                                    TurnDispatch.VERSION,
+                                    key,
+                                    turn.id,
+                                    ++thread.dispatchGeneration,
+                                    turn.revision,
+                                    state.dispatchReason);
+        }
+        thread.dispatchLeaseEpoch = leaseEpoch;
         thread.dispatchReadyAt = readyAt;
         thread.dispatchEligibleAt = turn == null ? null : Math.max(state.tx.now(), readyAt);
         thread.dispatchPublicationAt = readyAt;
@@ -1178,6 +1428,38 @@ public final class TransactionalSessionBackend implements SessionBackend {
                         s.thread.dispatchPublicationAt > now
                                 ? Optional.empty()
                                 : Optional.ofNullable(s.thread.dispatch));
+    }
+
+    @Override
+    public Optional<DispatchSchedule> dispatchSchedule(ThreadKey key) {
+        return change(
+                key,
+                (s, now) -> {
+                    long ready = s.thread.status == Lifecycle.OPEN ? readyAt(s, now) : -1;
+                    updateDispatch(s, key, ready);
+                    return Optional.ofNullable(s.thread.dispatch)
+                            .map(
+                                    dispatch ->
+                                            new DispatchSchedule(
+                                                    dispatch,
+                                                    Math.max(
+                                                            0,
+                                                            s.thread.dispatchPublicationAt - now)));
+                });
+    }
+
+    @Override
+    public Optional<TurnSignal> ownerSignal(ThreadKey key, String turnId) {
+        return change(
+                key,
+                (s, now) -> {
+                    var turn = current(s);
+                    if (turn == null
+                            || !turn.id.equals(turnId)
+                            || turn.owner == null
+                            || turn.expiresAt <= now) return Optional.empty();
+                    return Optional.of(new TurnSignal(key, turn.id, turn.owner, turn.epoch));
+                });
     }
 
     @Override
@@ -1552,6 +1834,7 @@ public final class TransactionalSessionBackend implements SessionBackend {
                                                             id,
                                                             "status",
                                                             "applied"))));
+                            appendApprovalApplied(s, r, r.signals.get(id));
                         }
                     }
                     TurnStatus next = command.status();
@@ -1641,14 +1924,16 @@ public final class TransactionalSessionBackend implements SessionBackend {
                     TurnStatus previousStatus = r.status;
                     r.revision++;
                     r.waiting = ModelReplyProtocol.waiting(r.signals.values(), command.waiting());
-                    r.output = DurableJson.copy(command.output());
-                    r.error = command.error();
                     if (r.cancel)
                         next = next.terminal() ? TurnStatus.CANCELLED : TurnStatus.CANCELLING;
+                    r.output = DurableJson.copy(r.cancel ? null : command.output());
+                    r.error = r.cancel ? null : command.error();
                     r.status = next;
                     for (EventInput event : command.events()) {
                         if (event.type().startsWith("session.")
-                                || event.type().startsWith("thread."))
+                                || event.type().startsWith("thread.")
+                                || event.type().startsWith("turns.")
+                                || event.type().equals("confirmation.applied"))
                             throw error(
                                     DurableException.Code.INVALID,
                                     "Resource events belong to lifecycle operations");
@@ -1698,6 +1983,8 @@ public final class TransactionalSessionBackend implements SessionBackend {
                                         "turn." + next.name().toLowerCase(Locale.ROOT),
                                         lifecycle(r)));
                     }
+                    if (next == TurnStatus.CANCELLED) settleActiveCancellations(s, r);
+                    if (next.terminal()) completeJobWaits(s, r, now);
                     CommitReceipt receipt =
                             new CommitReceipt(
                                     command.commitId(), digest, r.revision, cursor(s, s.sequence));
@@ -1779,6 +2066,8 @@ public final class TransactionalSessionBackend implements SessionBackend {
             throw error(
                     DurableException.Code.INVALID,
                     "Delegation requires another Thread in the same Session");
+        if (target.detached() && !DelegationExecutor.childThread(parent).equals(child))
+            throw error(DurableException.Code.INVALID, "Job requires its dedicated child Thread");
         return change(
                 parent.thread(),
                 (state, now) -> {
@@ -1806,7 +2095,13 @@ public final class TransactionalSessionBackend implements SessionBackend {
                         throw error(
                                 DurableException.Code.CONFLICT,
                                 "Delegation admission identity is already in use");
-                    rejectDelegationCycle(state, parent.thread().threadId(), child.threadId());
+                    if (target.detached()) {
+                        if (state.threads.containsKey(child.threadId()))
+                            throw error(
+                                    DurableException.Code.CONFLICT,
+                                    "Job child Thread already exists");
+                    } else
+                        rejectDelegationCycle(state, parent.thread().threadId(), child.threadId());
                     selectThread(state, child, target.child());
                     var receipt = submit(state, child, requestId, target.input());
                     var childTurn = requireTurn(state, receipt.turnId());
@@ -1850,6 +2145,139 @@ public final class TransactionalSessionBackend implements SessionBackend {
                 });
     }
 
+    @Override
+    public JobView job(ThreadKey owner, String jobId) {
+        DurableJson.text(jobId, "jobId");
+        return change(owner, (state, now) -> jobView(state, jobId, jobChild(state, jobId)));
+    }
+
+    private static TurnData jobChild(State state, String jobId) {
+        String turnId = state.executions.get(jobId);
+        if (turnId == null) throw error(DurableException.Code.NOT_FOUND, "Job not found");
+        var delegation = requireTool(requireTurn(state, turnId), jobId).delegation;
+        if (delegation == null
+                || delegation.target == null
+                || !delegation.target.detached()
+                || delegation.child == null)
+            throw error(DurableException.Code.NOT_FOUND, "Job not found");
+        return requireTurn(state, delegation.child.turnId(), delegation.child.thread().threadId());
+    }
+
+    private static JobView jobView(State state, String jobId, TurnData child) {
+        var key = state.threads.get(child.threadId).definition.key();
+        return new JobView(
+                jobId, new DelegationLink(key, child.id), child.status, child.output, child.error);
+    }
+
+    @Override
+    public ExecutionResult awaitJob(ExecutionRequest waiter, String jobId, long timeoutMillis) {
+        DurableJson.text(jobId, "jobId");
+        return change(
+                waiter.thread(),
+                (state, now) -> {
+                    var turn = requireTurn(state, waiter.turnId());
+                    var tool = delegationParent(state, waiter);
+                    if (tool.result.state().terminal()) return tool.result;
+                    if (!tool.attempted)
+                        throw error(
+                                DurableException.Code.CONFLICT, "Job wait has not been dispatched");
+                    var arguments = tool.request.call().arguments();
+                    if (!DelegatedJobExecutor.AWAIT.equals(tool.request.call().name())
+                            || !jobId.equals(arguments.path("jobId").asText())
+                            || !arguments.path("timeoutMillis").isIntegralNumber()
+                            || timeoutMillis != arguments.path("timeoutMillis").asLong()
+                            || timeoutMillis <= 0
+                            || tool.jobWait == null && timeoutMillis > 9007199254740991L - now)
+                        throw error(DurableException.Code.INVALID, "Invalid job wait arguments");
+                    var child = jobChild(state, jobId);
+                    var wait = tool.jobWait;
+                    if (wait != null && wait.outcome() != null) return wait.outcome();
+                    if (turn.cancel
+                            || turn.status.terminal()
+                            || turn.recovery != null && !turn.recovery.retryAllowed())
+                        return new ExecutionResult(ExecutionState.CANCELLED, jobId, null, null);
+                    long deadline =
+                            wait == null ? Math.addExact(now, timeoutMillis) : wait.deadline();
+                    var outcome = jobWaitOutcome(state, jobId, child, deadline, now);
+                    if (wait == null && outcome == null) {
+                        try {
+                            rejectDelegationCycle(state, turn.threadId, child.threadId);
+                        } catch (DurableException error) {
+                            if (error.code() != DurableException.Code.CONFLICT) throw error;
+                            return new ExecutionResult(
+                                    ExecutionState.FAILED, jobId, null, error.getMessage());
+                        }
+                    }
+                    turn.jobWaitRegistered = true;
+                    tool.jobWait = new JobWait(jobId, deadline, outcome);
+                    return outcome == null
+                            ? new ExecutionResult(
+                                    ExecutionState.RUNNING,
+                                    jobId,
+                                    DurableJson.value(Map.of("jobId", jobId, "deadline", deadline)),
+                                    null)
+                            : outcome;
+                });
+    }
+
+    private static ExecutionResult jobWaitOutcome(
+            State state, String jobId, TurnData child, long deadline, long now) {
+        if (now >= deadline)
+            return new ExecutionResult(ExecutionState.FAILED, jobId, null, "Job wait timed out");
+        var terminal =
+                switch (child.status) {
+                    case SUCCEEDED -> ExecutionState.SUCCEEDED;
+                    case FAILED -> ExecutionState.FAILED;
+                    case CANCELLED, CONVERTED -> ExecutionState.CANCELLED;
+                    default -> null;
+                };
+        return terminal == null
+                ? null
+                : new ExecutionResult(
+                        terminal,
+                        jobId,
+                        DurableJson.value(jobView(state, jobId, child)),
+                        child.error);
+    }
+
+    /** An awaiting operation belongs to the current head of the Job owner's Thread. */
+    private static void completeJobWaits(State state, TurnData child, long now) {
+        if (child.parent == null) return;
+        var parent = child.parent;
+        var owner = state.threads.get(parent.thread().threadId());
+        if (owner == null) return;
+        var ownerTx = threadTransaction(state.tx, parent.thread());
+        var turn = current(state, owner, ownerTx);
+        if (turn == null || !turn.jobWaitRegistered || turn.cancel) return;
+        boolean woke = false;
+        for (var tool : turn.tools.values()) {
+            var wait = tool.jobWait;
+            if (tool.result.state().terminal()
+                    || wait == null
+                    || wait.outcome() != null
+                    || !parent.executionId().equals(wait.jobId())) continue;
+            tool.jobWait =
+                    new JobWait(
+                            wait.jobId(),
+                            wait.deadline(),
+                            jobWaitOutcome(state, wait.jobId(), child, wait.deadline(), now));
+            woke = true;
+        }
+        if (woke) {
+            var priorThread = state.thread;
+            var priorTx = state.threadTx;
+            var priorReason = state.dispatchReason;
+            state.thread = owner;
+            state.threadTx = ownerTx;
+            state.dispatchReason = TurnDispatch.Reason.TOOL_RESULT;
+            turn.nextAttemptAt = 0;
+            scheduleThread(state);
+            state.thread = priorThread;
+            state.threadTx = priorTx;
+            state.dispatchReason = priorReason;
+        }
+    }
+
     /** Only unfinished parent/child pairs contribute wait edges; settled history cannot block reuse. */
     private static void rejectDelegationCycle(
             State state, String parentThread, String childThread) {
@@ -1865,16 +2293,24 @@ public final class TransactionalSessionBackend implements SessionBackend {
                                     "turn-data:" + DurableJson.hash(turn.id) + ":tool:",
                                     ToolData.class);
             for (var tool : tools.values()) {
-                if (tool.result.state().terminal()
-                        || tool.delegation == null
-                        || tool.delegation.child == null) continue;
-                var child = tool.delegation.child;
-                var task = state.turns.get(child.turnId());
+                if (tool.result.state().terminal()) continue;
+                TurnData task;
+                if (tool.jobWait != null && tool.jobWait.outcome() == null) {
+                    String owner = state.executions.get(tool.jobWait.jobId());
+                    var start =
+                            requireTool(
+                                    requireTurn(state, owner, turn.threadId), tool.jobWait.jobId());
+                    task = state.turns.get(start.delegation.child.turnId());
+                } else if (tool.delegation != null
+                        && tool.delegation.child != null
+                        && !tool.delegation.target.detached()) {
+                    task = state.turns.get(tool.delegation.child.turnId());
+                } else continue;
                 if (task == null)
                     throw error(DurableException.Code.CONFLICT, "Delegated child Turn is missing");
                 if (!task.status.terminal())
                     edges.computeIfAbsent(turn.threadId, ignored -> new HashSet<>())
-                            .add(child.thread().threadId());
+                            .add(task.threadId);
             }
         }
         var visited = new HashSet<String>();
@@ -1908,6 +2344,7 @@ public final class TransactionalSessionBackend implements SessionBackend {
         if (childTurnId != null
                 && (data == null || data.child == null || !childTurnId.equals(data.child.turnId())))
             throw error(DurableException.Code.CONFLICT, "Child Turn handle changed");
+        if (data != null && data.child != null && data.target.detached()) return data.view(parent);
         if (data == null) {
             if (tool.result.state().terminal() && tool.result.state() != ExecutionState.CANCELLED)
                 throw error(
@@ -1944,7 +2381,7 @@ public final class TransactionalSessionBackend implements SessionBackend {
     }
 
     @Override
-    public ToolExecution beginDispatch(Lease lease, String id) {
+    public ToolExecution beginDispatch(Lease lease, String id, Executor.Capabilities capabilities) {
         return change(
                 lease.thread(),
                 (s, n) -> {
@@ -1958,6 +2395,7 @@ public final class TransactionalSessionBackend implements SessionBackend {
                     ToolExecution previous = t.view();
                     if (!t.attempted && !r.cancel) {
                         t.attempted = true;
+                        t.executorCapabilities = capabilities;
                         append(
                                 s,
                                 r,
@@ -2080,23 +2518,27 @@ public final class TransactionalSessionBackend implements SessionBackend {
                         t.hasOutput = true;
                         t.outputOffset = page.nextOffset();
                         t.outputSealed = page.terminal();
-                        append(
-                                s,
-                                r,
-                                toolEvent(
-                                        event.eventId(),
-                                        page.gap() != null ? "tool.output.gap" : "tool.output",
-                                        DurableJson.value(
-                                                Map.of(
-                                                        "executionId",
-                                                        request.executionId(),
-                                                        "callId",
-                                                        request.call().callId(),
-                                                        "sourceSequence",
-                                                        event.sequence(),
-                                                        "output",
-                                                        page)),
-                                        request.call().origin()));
+                        t.outputHasGaps |= page.gap() != null;
+                        s.tx.put(
+                                outputPart(request.executionId(), page.offset()),
+                                DurableJson.value(page));
+                        if (page.terminal() || page.gap() != null) {
+                            var range = (ObjectNode) DurableJson.value(page);
+                            range.remove("data");
+                            append(
+                                    s,
+                                    r,
+                                    toolEvent(
+                                            event.eventId(),
+                                            page.gap() != null ? "tool.output.gap" : "tool.output",
+                                            DurableJson.value(
+                                                    Map.of(
+                                                            "executionId", request.executionId(),
+                                                            "callId", request.call().callId(),
+                                                            "sourceSequence", event.sequence(),
+                                                            "output", range)),
+                                            request.call().origin()));
+                        }
                     } else {
                         if (event.result().state().terminal() && t.hasOutput && !t.outputSealed)
                             throw error(DurableException.Code.CONFLICT, "Output is not sealed");
@@ -2106,6 +2548,106 @@ public final class TransactionalSessionBackend implements SessionBackend {
                     s.tx.put(part, DurableJson.value(DurableJson.hash(event)));
                     return null;
                 });
+    }
+
+    @Override
+    public ToolExecutionView toolExecution(
+            ThreadKey key, String turnId, String callId, String requestedId) {
+        if ((callId == null) == (requestedId == null))
+            throw error(DurableException.Code.INVALID, "Select exactly one tool ID");
+        String id =
+                requestedId == null
+                        ? executionId(key, turnId, DurableJson.text(callId, "callId"))
+                        : DurableJson.text(requestedId, "executionId");
+        return change(
+                key,
+                (s, now) -> {
+                    var turn = requireTurn(s, turnId);
+                    var tool = requestedId != null ? requireTool(turn, id) : turn.tools.get(id);
+                    var resolvedCall = tool == null ? callId : tool.request.call().callId();
+                    var projection =
+                            s.projectedTools.get(
+                                    EventProjection.toolId(key.threadId(), turnId, resolvedCall));
+                    if (projection == null)
+                        throw error(DurableException.Code.NOT_FOUND, "Tool not found");
+                    var data = projection.path("data");
+                    long updatedAt = projection.path("updatedAt").asLong();
+                    if (tool == null) {
+                        var status = ToolExecutionStatus.valueOf(data.path("status").asText());
+                        return new ToolExecutionView(
+                                resolvedCall,
+                                null,
+                                data.path("name").asText(null),
+                                status,
+                                data.path("applied").asBoolean(),
+                                DurableJson.convert(data.get("origin"), RunStepRef.class),
+                                DurableJson.convert(data.get("appliedAt"), RunStepRef.class),
+                                status == ToolExecutionStatus.WAITING
+                                                || status == ToolExecutionStatus.UNKNOWN
+                                        ? data.path("reason").asText(null)
+                                        : null,
+                                updatedAt,
+                                null,
+                                data.get("progress"),
+                                null);
+                    }
+                    var status =
+                            tool.result.state() == ExecutionState.PENDING
+                                    ? (tool.attempted
+                                            ? ToolExecutionStatus.DISPATCHED
+                                            : ToolExecutionStatus.REQUESTED)
+                                    : ToolExecutionStatus.valueOf(tool.result.state().name());
+                    var output =
+                            tool.hasOutput
+                                            || tool.executorCapabilities != null
+                                                    && tool.executorCapabilities.output()
+                                    ? new ToolOutputView(
+                                            tool.outputOffset,
+                                            tool.outputSealed || tool.result.state().terminal(),
+                                            tool.outputHasGaps)
+                                    : null;
+                    return new ToolExecutionView(
+                            resolvedCall,
+                            id,
+                            tool.request.call().name(),
+                            status,
+                            tool.applied,
+                            tool.request.call().origin(),
+                            tool.appliedAt,
+                            tool.result.error(),
+                            updatedAt,
+                            tool.executorCapabilities,
+                            data.get("providerProgress"),
+                            output);
+                });
+    }
+
+    @Override
+    public OutputPage toolOutput(ThreadKey key, String turnId, String executionId, long offset) {
+        return change(
+                key,
+                (s, now) -> {
+                    var tool = requireTool(requireTurn(s, turnId), executionId);
+                    if (offset >= 0 && offset <= tool.outputOffset) {
+                        var data = s.tx.get(outputPart(executionId, offset));
+                        if (data != null && !data.isNull())
+                            return DurableJson.convert(data, OutputPage.class);
+                        if (offset == tool.outputOffset)
+                            return new OutputPage(
+                                    offset,
+                                    offset,
+                                    "",
+                                    offset,
+                                    tool.outputSealed || tool.result.state().terminal(),
+                                    null);
+                    }
+                    throw error(
+                            DurableException.Code.INVALID, "Offset must identify an output page");
+                });
+    }
+
+    private static String outputPart(String executionId, long offset) {
+        return "output:" + DurableJson.hash(executionId) + ":" + positionKey(offset);
     }
 
     private record ResourceReceipt(String digest, JsonNode result) {}
@@ -2292,6 +2834,12 @@ public final class TransactionalSessionBackend implements SessionBackend {
         if (r.withdrawn.contains(signal.id()))
             throw error(DurableException.Code.CONFLICT, "Input was withdrawn");
         if (r.status.terminal()) throw error(DurableException.Code.CONFLICT, "Turn is terminal");
+        if (WaitCondition.NATIVE_TOOL_RECONCILIATION.equals(signal.key())
+                && (!awaitingNativeToolReconciliation(r)
+                        || waitSatisfied(r, r.waiting, s.tx.now())))
+            throw error(
+                    DurableException.Code.CONFLICT,
+                    "Turn is not accepting native tool reconciliation");
         if (signal.key().startsWith("x.model:")
                 && "begin".equals(signal.value().path("modelOperation").asText())) {
             var value = (com.fasterxml.jackson.databind.node.ObjectNode) signal.value().deepCopy();
@@ -2332,7 +2880,36 @@ public final class TransactionalSessionBackend implements SessionBackend {
         change(
                 key,
                 (s, n) -> {
+                    var signal = requireTurn(s, turnId).signals.get(signalId);
+                    if (signal != null
+                            && WaitCondition.NATIVE_TOOL_RECONCILIATION.equals(signal.key()))
+                        throw error(
+                                DurableException.Code.INVALID,
+                                "Native reconciliation requires a lease to reject");
                     withdraw(s, turnId, signalId, requestId);
+                    return null;
+                });
+    }
+
+    @Override
+    public void rejectNativeToolReconciliation(Lease lease, String signalId) {
+        DurableJson.text(signalId, "signalId");
+        change(
+                lease.thread(),
+                (s, n) -> {
+                    var turn = owned(s, lease, n);
+                    var signal = turn.signals.get(signalId);
+                    if (signal == null
+                            || !WaitCondition.NATIVE_TOOL_RECONCILIATION.equals(signal.key()))
+                        throw error(
+                                DurableException.Code.INVALID,
+                                "Native reconciliation signal required");
+                    withdraw(
+                            s,
+                            turn.id,
+                            signalId,
+                            "native-reconciliation-rejected:"
+                                    + DurableJson.hash(List.of(turn.id, signalId)));
                     return null;
                 });
     }
@@ -2414,10 +2991,9 @@ public final class TransactionalSessionBackend implements SessionBackend {
             throw error(DurableException.Code.CONFLICT, "Observed pause has changed");
         // An invocation can stop after recording an interaction but before choosing its wait.
         if (turn.waiting == null) {
-            for (var interaction : s.interactions.values()) {
-                if (turn.id.equals(interaction.path("turnId").asText())
-                        && "pending".equals(interaction.path("status").asText())
-                        && !interaction.path("automatic").asBoolean()) {
+            for (String id : turn.pendingInteractions) {
+                var interaction = s.interactions.get(id);
+                if (!interaction.path("automatic").asBoolean()) {
                     var condition = new WaitCondition(interaction.path("key").asText(), 0);
                     if (!waitSatisfied(turn, condition, now)) {
                         turn.waiting = condition;
@@ -2453,6 +3029,11 @@ public final class TransactionalSessionBackend implements SessionBackend {
                                                 && !turn.withdrawn.contains(signal.id()));
     }
 
+    private static boolean awaitingNativeToolReconciliation(TurnData turn) {
+        return turn.waiting != null
+                && WaitCondition.NATIVE_TOOL_RECONCILIATION.equals(turn.waiting.key());
+    }
+
     private static void cancel(State s, String turnId, String requestId) {
         String command = "cancel:" + requestId;
         String old = s.commands.get(command);
@@ -2460,23 +3041,141 @@ public final class TransactionalSessionBackend implements SessionBackend {
             equal(old, turnId, "Cancel request belongs to another turn");
             return;
         }
-        TurnData r = requireTurn(s, turnId);
+        TurnData turn = requireTurn(s, turnId);
         s.commands.put(command, turnId);
-        if (!r.status.terminal()) {
-            r.cancel = true;
-            boolean queued = r.epoch == 0;
-            r.status = queued ? TurnStatus.CANCELLED : TurnStatus.CANCELLING;
-            r.nextAttemptAt = 0;
+        requestCancellation(s, turn, requestId);
+    }
+
+    private static void requestCancellation(State state, TurnData turn, String requestId) {
+        if (turn.status.terminal() || turn.cancel) return;
+        turn.cancel = true;
+        boolean queued = turn.epoch == 0;
+        turn.status = queued ? TurnStatus.CANCELLED : TurnStatus.CANCELLING;
+        turn.nextAttemptAt = 0;
+        append(
+                state,
+                turn,
+                new EventInput(
+                        "cancel:" + turn.id,
+                        "turn.cancel_requested",
+                        DurableJson.value(Map.of("requestId", requestId))));
+        if (queued) {
             append(
-                    s,
-                    r,
-                    new EventInput(
-                            "cancel:" + turnId,
-                            "turn.cancel_requested",
-                            DurableJson.value(Map.of("requestId", requestId))));
-            if (queued)
-                append(s, r, new EventInput("cancelled:" + r.id, "turn.cancelled", lifecycle(r)));
+                    state,
+                    turn,
+                    new EventInput("cancelled:" + turn.id, "turn.cancelled", lifecycle(turn)));
+            completeJobWaits(state, turn, state.tx.now());
         }
+    }
+
+    private static void appendApprovalApplied(State state, TurnData turn, Signal signal) {
+        if (!signal.key().startsWith("interaction:") || !signal.value().isBoolean()) return;
+        var response = state.messages.get(inputMessageId(turn.id, signal.id(), "respond"));
+        if (response == null || !response.hasNonNull("interactionId")) return;
+        String interactionId = response.required("interactionId").asText();
+        var interaction = state.interactions.get(interactionId);
+        if (interaction == null || !"confirmation".equals(interaction.path("kind").asText()))
+            return;
+        append(
+                state,
+                turn,
+                new EventInput(
+                        "confirmation-applied:" + DurableJson.hash(List.of(turn.id, signal.id())),
+                        "confirmation.applied",
+                        DurableJson.value(
+                                Map.of(
+                                        "interactionId",
+                                        interactionId,
+                                        "requestId",
+                                        signal.id(),
+                                        "allowed",
+                                        signal.value().asBoolean()))));
+    }
+
+    @Override
+    public ActiveTurnCancellation cancelActiveTurns(
+            SessionKey session, String requestId, String threadId) {
+        DurableJson.text(requestId, "requestId");
+        String command = "control:" + requestId;
+        String digest = DurableJson.hash(List.of("cancelActiveTurns", DurableJson.value(threadId)));
+        String operationId = DurableJson.hash(requestId);
+        String receiptKey = "control-receipt:" + operationId;
+        return change(
+                session,
+                (state, now) -> {
+                    if (state.admissions.containsKey(requestId))
+                        throw error(
+                                DurableException.Code.CONFLICT,
+                                "Request identity belongs to a submission");
+                    String previous = state.commands.get(command);
+                    if (previous != null) {
+                        equal(previous, digest, "Command identity/content changed");
+                        return DurableJson.convert(
+                                state.tx.get(receiptKey), ActiveTurnCancellation.class);
+                    }
+                    requireOpen(state.session.status(), "Session");
+                    var keys =
+                            threadId == null
+                                    ? state.threads.values().stream()
+                                            .filter(thread -> thread.status == Lifecycle.OPEN)
+                                            .map(thread -> thread.definition.key())
+                                            .sorted(Comparator.comparing(ThreadKey::threadId))
+                                            .toList()
+                                    : List.of(new ThreadKey(session, threadId));
+                    var targets = new ArrayList<CancelTarget>();
+                    state.dispatchReason = TurnDispatch.Reason.CONTROL;
+                    for (var key : keys) {
+                        selectThread(state, key, null);
+                        requireOpen(state.thread.status, "Thread");
+                        var turn = current(state);
+                        if (turn == null || turn.epoch == 0) continue;
+                        requestCancellation(state, turn, requestId);
+                        turn.activeCancellationRequests.add(operationId);
+                        scheduleThread(state);
+                        targets.add(new CancelTarget(key.threadId(), turn.id));
+                    }
+                    var receipt = new ActiveTurnCancellation(requestId, threadId, targets, now);
+                    var data = DurableJson.value(receipt);
+                    append(
+                            state,
+                            null,
+                            new EventInput(
+                                    "active-cancel:" + operationId, "turns.cancel_requested", data),
+                            threadId);
+                    if (targets.isEmpty())
+                        appendActiveCancellationApplied(state, operationId, data);
+                    else
+                        state.tx.put(
+                                "active-cancel-remaining:" + operationId,
+                                DurableJson.value(targets.size()));
+                    state.thread = null;
+                    state.commands.put(command, digest);
+                    state.tx.put(receiptKey, data);
+                    return receipt;
+                });
+    }
+
+    private static void settleActiveCancellations(State state, TurnData turn) {
+        for (String operationId : turn.activeCancellationRequests) {
+            String key = "active-cancel-remaining:" + operationId;
+            int remaining = state.tx.get(key).asInt();
+            if (remaining == 1) {
+                appendActiveCancellationApplied(
+                        state, operationId, state.tx.get("control-receipt:" + operationId));
+                state.tx.put(key, null);
+            } else state.tx.put(key, DurableJson.value(remaining - 1));
+        }
+        turn.activeCancellationRequests.clear();
+    }
+
+    private static void appendActiveCancellationApplied(
+            State state, String operationId, JsonNode receipt) {
+        append(
+                state,
+                null,
+                new EventInput(
+                        "active-cancel-applied:" + operationId, "turns.cancel_applied", receipt),
+                receipt.path("threadId").asText(null));
     }
 
     @Override
@@ -2517,14 +3216,43 @@ public final class TransactionalSessionBackend implements SessionBackend {
                                 "Cursor expired; load a snapshot");
                     var page = new ArrayList<PublicEvent>();
                     for (long seq = pos + 1; seq <= s.sequence && page.size() < limit; seq++)
-                        page.add(
-                                DurableJson.convert(
-                                        s.tx.get("event:" + positionKey(seq)), PublicEvent.class));
+                        page.add(readEvent(s, seq));
                     return new EventPage(
                             page,
                             page.isEmpty() ? cursor(s, pos) : page.get(page.size() - 1).cursor(),
-                            cursor(s, s.sequence));
+                            cursor(s, s.sequence),
+                            Long.toString(pos + page.size()),
+                            Long.toString(s.sequence));
                 });
+    }
+
+    @Override
+    public EventPage eventsBefore(SessionKey key, String before, int limit) {
+        limit(limit);
+        return change(
+                key,
+                (s, n) -> {
+                    long pos = before == null ? s.sequence + 1 : position(s, before);
+                    if (before != null && s.retainedAfter > 0 && pos - 1 <= s.retainedAfter)
+                        throw error(
+                                DurableException.Code.CURSOR_EXPIRED,
+                                "Earlier events have expired");
+                    var page = new ArrayList<PublicEvent>();
+                    for (long seq = pos - 1; seq > s.retainedAfter && page.size() < limit; seq--)
+                        page.add(readEvent(s, seq));
+                    long scanned = page.isEmpty() ? 0 : pos - page.size();
+                    return new EventPage(
+                            page,
+                            cursor(s, scanned),
+                            cursor(s, s.sequence),
+                            Long.toString(scanned),
+                            Long.toString(s.sequence));
+                });
+    }
+
+    private static PublicEvent readEvent(State state, long sequence) {
+        return DurableJson.convert(
+                state.tx.get("event:" + positionKey(sequence)), PublicEvent.class);
     }
 
     @Override
@@ -2772,6 +3500,14 @@ public final class TransactionalSessionBackend implements SessionBackend {
     }
 
     private static void append(State s, TurnData r, EventInput input) {
+        String threadId =
+                r != null
+                        ? r.threadId
+                        : s.thread == null ? null : s.thread.definition.key().threadId();
+        append(s, r, input, threadId);
+    }
+
+    private static void append(State s, TurnData r, EventInput input, String threadId) {
         DurableProtocol.validate("eventInput", input);
         if (input.runId() != null) {
             if (r == null) throw error(DurableException.Code.INVALID, "Run event requires a Turn");
@@ -2786,7 +3522,31 @@ public final class TransactionalSessionBackend implements SessionBackend {
             return;
         }
         s.eventDigests.put(input.eventId(), digest);
+        if (r != null && r.epoch > 0) {
+            switch (input.type()) {
+                case "turn.started",
+                        "turn.waiting",
+                        "turn.resumed",
+                        "turn.paused",
+                        "turn.pause_requested",
+                        "turn.cancel_requested",
+                        "turn.cancelled",
+                        "turn.succeeded" ->
+                        s.activityChanged = true;
+                case "interaction.requested",
+                        "interaction.resolved",
+                        "signal.accepted",
+                        "signal.withdrawn" ->
+                        s.activityChanged |= waitsForInteraction(r);
+                case "turn.failed" -> {
+                    s.activityChanged = true;
+                    s.retriesExhausted = r.recovery != null && !r.recovery.retryAllowed();
+                }
+                default -> {}
+            }
+        }
         long seq = ++s.sequence;
+        long occurredAt = s.tx.now();
         s.tx.put(
                 "event:" + positionKey(seq),
                 DurableJson.value(
@@ -2794,19 +3554,16 @@ public final class TransactionalSessionBackend implements SessionBackend {
                                 "1",
                                 input.eventId(),
                                 s.session.key(),
-                                r == null
-                                        ? (s.thread == null
-                                                ? null
-                                                : s.thread.definition.key().threadId())
-                                        : r.threadId,
+                                threadId,
                                 r == null ? null : r.id,
                                 input.runId(),
                                 input.stepId(),
                                 Long.toString(seq),
                                 cursor(s, seq),
+                                occurredAt,
                                 input.type(),
                                 DurableJson.copy(input.data()))));
-        project(s, input, r == null ? null : r.id, Long.toString(seq));
+        project(s, input, r == null ? null : r.id, Long.toString(seq), occurredAt);
     }
 
     private static ObjectNode projection(State s) {
@@ -2822,12 +3579,25 @@ public final class TransactionalSessionBackend implements SessionBackend {
         return result;
     }
 
-    private static void project(State s, EventInput event, String turnId, String sequence) {
+    private static void project(
+            State s, EventInput event, String turnId, String sequence, long occurredAt) {
         var data = event.data();
         String category;
         String id;
         TransactionMap<JsonNode> records;
-        if ("turn.converted".equals(event.type())) {
+        if (VerificationView.EVENT_TYPE.equals(event.type())) {
+            var turn = requireTurn(s, turnId);
+            var check = DurableJson.convert(data, VerificationView.class);
+            var criterion =
+                    DurableJson.hash(
+                            List.of(
+                                    check.taskId(),
+                                    check.contractVersion(),
+                                    check.subjectVersion(),
+                                    check.requirementId()));
+            turn.verifications.put(criterion, check);
+            return;
+        } else if ("turn.converted".equals(event.type())) {
             category = "messages";
             id = data.path("message").path("messageId").asText();
             records = s.messages;
@@ -2865,9 +3635,14 @@ public final class TransactionalSessionBackend implements SessionBackend {
                 turnId == null
                         ? (s.thread == null ? null : s.thread.definition.key().threadId())
                         : requireTurn(s, turnId).threadId;
-        EventProjection.apply(view, event, threadId, turnId, sequence);
+        EventProjection.apply(view, event, threadId, turnId, sequence, occurredAt);
         JsonNode projected = view.path(category).get(id);
         records.put(id, projected);
+        if (records == s.interactions && turnId != null) {
+            var pending = requireTurn(s, turnId).pendingInteractions;
+            if ("pending".equals(projected.path("status").asText())) pending.add(id);
+            else pending.remove(id);
+        }
         if (category.equals("messages") && old == null && threadId != null)
             threadTransaction(s.tx, new ThreadKey(s.session.key(), threadId))
                     .put(
@@ -2911,6 +3686,8 @@ public final class TransactionalSessionBackend implements SessionBackend {
                 r.id,
                 r.status,
                 r.revision,
+                r.inputRevision,
+                submissionMessageId(r),
                 r.cancel,
                 DurableJson.copy(r.output),
                 r.error,
@@ -2920,19 +3697,25 @@ public final class TransactionalSessionBackend implements SessionBackend {
     }
 
     private static TurnData requireTurn(State s, String id) {
+        return requireTurn(s, id, s.thread == null ? null : s.thread.definition.key().threadId());
+    }
+
+    private static TurnData requireTurn(State s, String id, String threadId) {
         TurnData r = s.turns.get(id);
-        if (r == null
-                || (s.thread != null && !s.thread.definition.key().threadId().equals(r.threadId)))
+        if (r == null || (threadId != null && !threadId.equals(r.threadId)))
             throw error(DurableException.Code.NOT_FOUND, "Turn not found in this Thread");
         if (!(r.tools instanceof TransactionMap)) {
             String prefix = "turn-data:" + DurableJson.hash(id) + ":";
             var tools = new TransactionMap<>(s.tx, prefix + "tool:", ToolData.class);
             var signals = new TransactionMap<>(s.tx, prefix + "signal:", Signal.class);
             var receipts = new TransactionMap<>(s.tx, prefix + "receipt:", CommitReceipt.class);
+            var verifications =
+                    new TransactionMap<>(s.tx, prefix + "verification:", VerificationView.class);
             r.tools = tools;
             r.signals = signals;
             r.receipts = receipts;
-            s.details.addAll(List.of(tools, signals, receipts));
+            r.verifications = verifications;
+            s.details.addAll(List.of(tools, signals, receipts, verifications));
         }
         return r;
     }
