@@ -731,6 +731,48 @@ class ResponsesMultiAgentFormatterTest {
         }
 
         @Test
+        @DisplayName("Assistant with encrypted reasoning and phase preserves phase on replay")
+        void encryptedReasoningWithPhasePreservesPhase() {
+            Msg user1 = user("Alice", text("Summarize"));
+            Msg assistant1 =
+                    Msg.builder()
+                            .role(MsgRole.ASSISTANT)
+                            .name("Bob")
+                            .content(
+                                    List.of(
+                                            ThinkingBlock.builder()
+                                                    .thinking("Thinking...")
+                                                    .metadata(
+                                                            Map.of(
+                                                                    OpenAIOfficialConstants
+                                                                            .MD_REASONING_ENCRYPTED_CONTENT,
+                                                                    "enc456"))
+                                                    .build(),
+                                            text("Final summary")))
+                            .metadata(
+                                    Map.of(
+                                            OpenAIOfficialConstants.MD_MESSAGE_PHASE,
+                                            "final_answer"))
+                            .build();
+            Msg user2 = user("Alice", text("Thanks"));
+
+            List<ResponseInputItem> result =
+                    formatter.formatHistory(List.of(user1, assistant1, user2));
+
+            EasyInputMessage assistantMessage = null;
+            for (ResponseInputItem item : result) {
+                if (item.isEasyInputMessage()
+                        && item.asEasyInputMessage().role() == EasyInputMessage.Role.ASSISTANT) {
+                    assistantMessage = item.asEasyInputMessage();
+                }
+            }
+            assertNotNull(assistantMessage, "Expected assistant EasyInputMessage");
+            assertEquals("Final summary", assistantMessage.content().asTextInput());
+            assertEquals(
+                    EasyInputMessage.Phase.FINAL_ANSWER, assistantMessage.phase().orElseThrow());
+        }
+
+        @Test
         @DisplayName("Assistant without encrypted reasoning is merged into history as before")
         void plainAssistantStillMerged() {
             Msg user1 = user("Alice", text("Hi"));

@@ -96,7 +96,7 @@ agentscope:
 
 ## 推理
 
-通过 `GenerateOptions.reasoningEffort` 控制推理力度（`low` / `medium` / `high` / `minimal`）。要在响应中看到推理内容，需显式开启 `reasoning.summary`：
+通过 `GenerateOptions.reasoningEffort` 控制推理力度（`none` / `minimal` / `low` / `medium` / `high` / `xhigh` / `max`，具体可用档位因模型而异）。要在响应中看到推理内容，需显式开启 `reasoning.summary`：
 
 ```java
 GenerateOptions options = GenerateOptions.builder()
@@ -105,14 +105,21 @@ GenerateOptions options = GenerateOptions.builder()
     .build();
 ```
 
-前序轮次的加密推理内容会通过 `Msg.metadata` 自动在多轮对话中回放，无需手动管理。
+前序轮次的加密推理内容和 assistant 消息阶段（`commentary` / `final_answer`，记录在 `Msg.metadata` 的 `openai.message.phase`）会自动在多轮对话中回放，无需手动管理。使用 `ResponsesMultiAgentFormatter` 时，仅直通的 assistant 消息（工具调用序列、加密推理或 bypass 消息）会保留 `phase`；合并进 `<history>` 文本的普通消息不保留 `phase`。
 
 ## 兼容性说明
 
 本模块通过 OpenAI Java SDK 集成，暂时只支持 Responses API，未来会考虑支持 Chat Completions API。以下选项**不支持**，设置非空值时会 fail-fast：`frequencyPenalty`、`presencePenalty`、`topK`、`seed`、`cacheControl`、`thinkingBudget`、`endpointPath`、每请求级 `additionalHeaders` 和 `additionalQueryParams`。
 
-Responses 专有参数通过 `GenerateOptions.additionalBodyParams` 白名单键透传：`reasoning.summary`、`reasoning.context`、`reasoning.mode`、`service_tier`、`prompt_cache_key`、`prompt_cache_options`、`max_tool_calls`、`safety_identifier`、`store`、`previous_response_id`。
+Responses 专有参数通过 `GenerateOptions.additionalBodyParams` 白名单键透传：`text.verbosity`（`low` / `medium` / `high`）、`reasoning.summary`、`reasoning.context`、`reasoning.mode`、`service_tier`、`prompt_cache_key`、`prompt_cache_options`、`max_tool_calls`、`safety_identifier`、`store`、`previous_response_id`。
 
 `store` 控制服务端响应存储，默认为 `false`。如需使用 OpenAI 服务端会话续链，先存储第一轮响应，从响应 metadata 的 `openai.response.id` 读取 ID，并在后续请求中传入 `previous_response_id`。使用 `previous_response_id` 时应只发送本轮新增 input，不要重复完整会话历史。
 
 原生结构化输出默认开启（`supportsNativeStructuredOutput()` 返回 `true`）。SDK 重试已禁用（`maxRetries=0`），重试由 AgentScope 管理。
+
+### GPT-6.2 注意事项
+
+- **工具调用**：`gpt-6.2-astra` 和 `gpt-6.2-sol` 的工具调用必须使用 Responses API（即 `openai-official` 模块）；Chat Completions 模块（`openai`）在这类模型上仅支持纯对话。
+- **采样参数**：设置 `temperature` 和 `top_p` 时会原样透传；调用 GPT-6.2 模型时请勿设置这两个参数，否则 OpenAI API 会返回 HTTP 400 错误。
+- **推理力度与服务层级**：GPT-6.2 不支持将 `reasoningEffort` 设为 `none` 或 `minimal`，也不支持 `service_tier: flex`（请使用 `low` 及以上档位，官方建议默认从 `medium` 起步）。
+- **前缀不可变与 Prompt Caching**：自 GPT-6.2 起，若修改前序对话历史（例如上下文压缩改写前缀），Responses API 会丢弃缓存的 reasoning items。系统提示词会以 `system` 角色作为前缀 `input` 消息发送（而非顶层 `instructions`）；请尽量保持对话前缀稳定以利于命中 prompt caching，如需调整输出详略度可通过 `text.verbosity` 控制。

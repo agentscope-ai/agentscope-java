@@ -360,6 +360,23 @@ public final class TestSdkFixtures {
         return ResponseOutputItem.ofMessage(msg);
     }
 
+    /** Builds a ResponseOutputMessage with a single OutputText part and an explicit phase. */
+    public static ResponseOutputItem messageItemWithPhase(
+            String text, ResponseOutputMessage.Phase phase) {
+        ResponseOutputMessage msg =
+                ResponseOutputMessage.builder()
+                        .id(DEFAULT_MSG_ID)
+                        .addContent(
+                                ResponseOutputText.builder()
+                                        .text(text)
+                                        .annotations(List.of())
+                                        .build())
+                        .phase(phase)
+                        .status(ResponseOutputMessage.Status.COMPLETED)
+                        .build();
+        return ResponseOutputItem.ofMessage(msg);
+    }
+
     /** Builds a ResponseOutputMessage with multiple OutputText content parts. */
     public static ResponseOutputItem messageItemMultiText(String... texts) {
         ResponseOutputMessage.Builder builder =

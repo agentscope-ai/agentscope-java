@@ -88,7 +88,64 @@ final class ResponsesHelper {
             metadata.put(OpenAIOfficialConstants.MD_RESPONSE_CITATIONS, citations);
         }
 
+        extractAssistantMessagePhases(response, metadata);
+
         return metadata;
+    }
+
+    private static void extractAssistantMessagePhases(
+            Response response, Map<String, Object> metadata) {
+        List<Map<String, Object>> entries = new ArrayList<>();
+        String lastPhase = null;
+        boolean hasAnyPhase = false;
+
+        for (ResponseOutputItem item : response.output()) {
+            if (!item.isMessage()) {
+                continue;
+            }
+            ResponseOutputMessage message = item.asMessage();
+            StringBuilder messageText = new StringBuilder();
+            for (ResponseOutputMessage.Content content : message.content()) {
+                if (content.isOutputText()) {
+                    messageText.append(content.asOutputText().text());
+                }
+            }
+            if (messageText.length() == 0) {
+                continue;
+            }
+
+            String phase = null;
+            Optional<ResponseOutputMessage.Phase> phaseOpt = message.phase();
+            if (phaseOpt.isPresent()) {
+                try {
+                    String value = phaseOpt.get().asString();
+                    if (value != null && !value.isBlank()) {
+                        phase = value;
+                    }
+                } catch (RuntimeException ignored) {
+                    // Ignore non-string phase for forward compatibility
+                }
+            }
+            if (phase != null) {
+                lastPhase = phase;
+                hasAnyPhase = true;
+            }
+
+            Map<String, Object> entry = new LinkedHashMap<>();
+            entry.put("text", messageText.toString());
+            if (phase != null) {
+                entry.put("phase", phase);
+            }
+            entries.add(entry);
+        }
+
+        if (!hasAnyPhase) {
+            return;
+        }
+        metadata.put(OpenAIOfficialConstants.MD_MESSAGE_PHASE, lastPhase);
+        if (entries.size() > 1) {
+            metadata.put(OpenAIOfficialConstants.MD_ASSISTANT_MESSAGES, entries);
+        }
     }
 
     private static List<Map<String, Object>> extractCitations(Response response) {
