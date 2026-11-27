@@ -297,13 +297,13 @@ Events are grouped below; unless noted otherwise, every event also carries `getR
 
 <Accordion title="Tool-result streaming events">
 
-**ToolResultStartEvent** — tool starts executing (carries `toolCallId`, `toolCallName`).
+**ToolResultStartEvent** — the tool starts executing (carries `toolCallId`, `toolCallName`); in sequential batches it fires when the tool's turn arrives, not when the batch is admitted.
 
     **ToolResultTextDeltaEvent** — incremental text output from the tool; `getDelta()` returns a text fragment.
 
     **ToolResultDataDeltaEvent** — incremental binary output from the tool; similar to `DataBlockDeltaEvent` with `mediaType` / `data` / `url`.
 
-    **ToolResultEndEvent** — tool completes.
+    **ToolResultEndEvent** — the final tool result is available. Its text/data deltas and end event are delivered without waiting for other tools in the batch. Results may arrive in completion order; correlate them by `replyId` and `toolCallId`. PostActing, context updates, and the next model call still wait for the whole batch, with results kept in the original call order.
 
     | Method | Type | Description |
     |--------|------|-------------|

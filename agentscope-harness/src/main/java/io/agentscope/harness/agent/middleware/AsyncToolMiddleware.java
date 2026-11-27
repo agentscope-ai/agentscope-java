@@ -18,10 +18,13 @@ package io.agentscope.harness.agent.middleware;
 import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.event.AgentEvent;
+import io.agentscope.core.event.ToolResultDataDeltaEvent;
 import io.agentscope.core.event.ToolResultEndEvent;
 import io.agentscope.core.event.ToolResultStartEvent;
 import io.agentscope.core.event.ToolResultTextDeltaEvent;
+import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.Msg;
+import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolResultState;
 import io.agentscope.core.message.ToolUseBlock;
@@ -33,12 +36,15 @@ import io.agentscope.harness.agent.bus.AsyncToolRegistry;
 import io.agentscope.harness.agent.bus.MessageBus;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
-import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Function;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -98,52 +104,78 @@ public class AsyncToolMiddleware implements HarnessRuntimeMiddleware {
 
         return Flux.create(
                 sink -> {
-                    AtomicBoolean completed = new AtomicBoolean(false);
-                    AtomicBoolean timedOut = new AtomicBoolean(false);
-                    List<AgentEvent> backgroundBuffer = new CopyOnWriteArrayList<>();
+                    OffloadState offloadState = new OffloadState();
 
                     Disposable sub =
                             next.apply(input)
                                     .subscribe(
                                             event -> {
-                                                if (!timedOut.get()) {
-                                                    sink.next(event);
-                                                } else {
-                                                    backgroundBuffer.add(event);
+                                                synchronized (offloadState) {
+                                                    if (!offloadState.timedOut) {
+                                                        recordPreTimeoutEvent(
+                                                                offloadState.preTimeoutStates,
+                                                                event);
+                                                        sink.next(event);
+                                                    } else {
+                                                        offloadState.backgroundBuffer.add(event);
+                                                    }
                                                 }
                                             },
                                             error -> {
-                                                if (!timedOut.get()) {
-                                                    sink.error(error);
-                                                } else {
-                                                    log.warn(
-                                                            "Background tool execution failed"
-                                                                    + " after timeout",
-                                                            error);
-                                                    if (asyncToolRegistry != null) {
-                                                        String errMsg =
-                                                                error.getMessage() != null
-                                                                        ? error.getMessage()
-                                                                        : error.getClass()
-                                                                                .getSimpleName();
-                                                        for (ToolUseBlock tc : input.toolCalls()) {
-                                                            asyncToolRegistry
-                                                                    .fail(tc.getId(), errMsg)
-                                                                    .subscribe();
-                                                        }
+                                                List<ToolUseBlock> offloadedSnapshot = null;
+                                                boolean forwardError = false;
+                                                synchronized (offloadState) {
+                                                    if (!offloadState.timedOut) {
+                                                        offloadState.completed = true;
+                                                        forwardError = true;
+                                                    } else if (!offloadState.offloadPublished) {
+                                                        offloadState.pendingBackgroundError = error;
+                                                    } else {
+                                                        offloadedSnapshot = offloadState.offloaded;
                                                     }
+                                                }
+                                                if (forwardError) {
+                                                    sink.error(error);
+                                                } else if (offloadedSnapshot != null) {
+                                                    failOffloadedTools(error, offloadedSnapshot);
                                                 }
                                             },
                                             () -> {
-                                                if (completed.compareAndSet(false, true)) {
-                                                    if (!timedOut.get()) {
-                                                        sink.complete();
-                                                    } else {
-                                                        deliverBackgroundResult(
-                                                                backgroundBuffer,
-                                                                input.toolCalls(),
-                                                                ctx);
+                                                boolean completeSink = false;
+                                                List<AgentEvent> bgEvents = null;
+                                                Map<String, String> preTimeoutText = null;
+                                                List<ToolUseBlock> offloadedSnapshot = null;
+                                                synchronized (offloadState) {
+                                                    if (offloadState.completed) {
+                                                        return;
                                                     }
+                                                    offloadState.completed = true;
+                                                    if (!offloadState.timedOut) {
+                                                        completeSink = true;
+                                                    } else if (!offloadState.offloadPublished) {
+                                                        offloadState.pendingBackgroundComplete =
+                                                                true;
+                                                    } else {
+                                                        bgEvents =
+                                                                List.copyOf(
+                                                                        offloadState
+                                                                                .backgroundBuffer);
+                                                        offloadedSnapshot = offloadState.offloaded;
+                                                        preTimeoutText =
+                                                                snapshotPreTimeoutText(
+                                                                        offloadState
+                                                                                .preTimeoutStates,
+                                                                        offloadedSnapshot);
+                                                    }
+                                                }
+                                                if (completeSink) {
+                                                    sink.complete();
+                                                } else if (bgEvents != null) {
+                                                    deliverBackgroundResult(
+                                                            bgEvents,
+                                                            preTimeoutText,
+                                                            offloadedSnapshot,
+                                                            ctx);
                                                 }
                                             });
 
@@ -151,18 +183,80 @@ public class AsyncToolMiddleware implements HarnessRuntimeMiddleware {
                             Schedulers.parallel()
                                     .schedule(
                                             () -> {
-                                                if (!completed.get()
-                                                        && timedOut.compareAndSet(false, true)) {
-                                                    log.info(
-                                                            "Tool execution timed out after {}s,"
-                                                                    + " offloading to background:"
-                                                                    + " session={}",
-                                                            offloadTimeout.getSeconds(),
-                                                            ctx != null
-                                                                    ? ctx.getSessionId()
-                                                                    : "null");
-                                                    emitPlaceholderAndComplete(
-                                                            sink, input.toolCalls(), agent, ctx);
+                                                List<ToolUseBlock> offloaded;
+                                                Map<String, ToolResultBlock> completedResults;
+                                                synchronized (offloadState) {
+                                                    if (offloadState.completed
+                                                            || offloadState.timedOut
+                                                            || offloadState.disposed) {
+                                                        return;
+                                                    }
+                                                    offloaded =
+                                                            input.toolCalls().stream()
+                                                                    .filter(
+                                                                            tc ->
+                                                                                    !isCompletedBeforeTimeout(
+                                                                                            offloadState
+                                                                                                    .preTimeoutStates,
+                                                                                            tc
+                                                                                                    .getId()))
+                                                                    .toList();
+                                                    if (offloaded.isEmpty()) {
+                                                        return;
+                                                    }
+                                                    offloadState.timedOut = true;
+                                                    offloadState.offloaded = offloaded;
+                                                    completedResults =
+                                                            snapshotCompletedResults(
+                                                                    input.toolCalls(),
+                                                                    offloadState.preTimeoutStates);
+                                                }
+
+                                                log.info(
+                                                        "Tool execution timed out after {}s,"
+                                                                + " offloading to background:"
+                                                                + " session={}",
+                                                        offloadTimeout.getSeconds(),
+                                                        ctx != null ? ctx.getSessionId() : "null");
+                                                emitPlaceholderAndComplete(
+                                                        sink,
+                                                        input.toolCalls(),
+                                                        completedResults,
+                                                        agent,
+                                                        ctx);
+
+                                                List<AgentEvent> bgEvents = null;
+                                                Map<String, String> preTimeoutText = null;
+                                                Throwable pendingError = null;
+                                                synchronized (offloadState) {
+                                                    offloadState.offloadPublished = true;
+                                                    if (offloadState.pendingBackgroundComplete) {
+                                                        offloadState.pendingBackgroundComplete =
+                                                                false;
+                                                        bgEvents =
+                                                                List.copyOf(
+                                                                        offloadState
+                                                                                .backgroundBuffer);
+                                                        preTimeoutText =
+                                                                snapshotPreTimeoutText(
+                                                                        offloadState
+                                                                                .preTimeoutStates,
+                                                                        offloaded);
+                                                    } else if (offloadState.pendingBackgroundError
+                                                            != null) {
+                                                        pendingError =
+                                                                offloadState.pendingBackgroundError;
+                                                        offloadState.pendingBackgroundError = null;
+                                                    }
+                                                }
+                                                if (bgEvents != null) {
+                                                    deliverBackgroundResult(
+                                                            bgEvents,
+                                                            preTimeoutText,
+                                                            offloaded,
+                                                            ctx);
+                                                } else if (pendingError != null) {
+                                                    failOffloadedTools(pendingError, offloaded);
                                                 }
                                             },
                                             offloadTimeout.toMillis(),
@@ -171,7 +265,12 @@ public class AsyncToolMiddleware implements HarnessRuntimeMiddleware {
                     sink.onDispose(
                             () -> {
                                 timer.dispose();
-                                if (!timedOut.get()) {
+                                boolean cancelSub;
+                                synchronized (offloadState) {
+                                    offloadState.disposed = true;
+                                    cancelSub = !offloadState.timedOut;
+                                }
+                                if (cancelSub) {
                                     sub.dispose();
                                 }
                             });
@@ -179,9 +278,77 @@ public class AsyncToolMiddleware implements HarnessRuntimeMiddleware {
                 FluxSink.OverflowStrategy.BUFFER);
     }
 
+    private static void recordPreTimeoutEvent(
+            Map<String, PreTimeoutToolState> states, AgentEvent event) {
+        if (event instanceof ToolResultTextDeltaEvent delta && delta.getToolCallId() != null) {
+            states.computeIfAbsent(delta.getToolCallId(), k -> new PreTimeoutToolState())
+                    .appendText(delta.getDelta(), delta.getMetadata());
+        } else if (event instanceof ToolResultDataDeltaEvent delta
+                && delta.getToolCallId() != null) {
+            states.computeIfAbsent(delta.getToolCallId(), k -> new PreTimeoutToolState())
+                    .appendData(delta.getData(), delta.getMetadata());
+        } else if (event instanceof ToolResultEndEvent end && end.getToolCallId() != null) {
+            states.computeIfAbsent(end.getToolCallId(), k -> new PreTimeoutToolState())
+                    .markEnd(end.getState(), end.getMetadata());
+        }
+    }
+
+    private static boolean isCompletedBeforeTimeout(
+            Map<String, PreTimeoutToolState> states, String toolCallId) {
+        if (toolCallId == null) {
+            return false;
+        }
+        PreTimeoutToolState state = states.get(toolCallId);
+        return state != null && state.isCompleted();
+    }
+
+    private static Map<String, ToolResultBlock> snapshotCompletedResults(
+            List<ToolUseBlock> toolCalls, Map<String, PreTimeoutToolState> states) {
+        Map<String, ToolResultBlock> completed = new HashMap<>();
+        for (ToolUseBlock tc : toolCalls) {
+            if (tc.getId() == null) {
+                continue;
+            }
+            PreTimeoutToolState state = states.get(tc.getId());
+            if (state != null && state.isCompleted()) {
+                completed.put(tc.getId(), state.toToolResultBlock(tc));
+            }
+        }
+        return completed;
+    }
+
+    private static Map<String, String> snapshotPreTimeoutText(
+            Map<String, PreTimeoutToolState> states, List<ToolUseBlock> offloadedTools) {
+        Map<String, String> textById = new HashMap<>();
+        for (ToolUseBlock tc : offloadedTools) {
+            if (tc.getId() == null) {
+                continue;
+            }
+            PreTimeoutToolState state = states.get(tc.getId());
+            if (state != null && state.textBuffer.length() > 0) {
+                textById.put(tc.getId(), state.textBuffer.toString());
+            }
+        }
+        return textById;
+    }
+
+    private void failOffloadedTools(Throwable error, List<ToolUseBlock> offloadedTools) {
+        log.warn("Background tool execution failed after timeout", error);
+        if (asyncToolRegistry != null) {
+            String errMsg =
+                    error.getMessage() != null
+                            ? error.getMessage()
+                            : error.getClass().getSimpleName();
+            for (ToolUseBlock tc : offloadedTools) {
+                asyncToolRegistry.fail(tc.getId(), errMsg).subscribe();
+            }
+        }
+    }
+
     private void emitPlaceholderAndComplete(
             FluxSink<AgentEvent> sink,
             List<ToolUseBlock> toolCalls,
+            Map<String, ToolResultBlock> completedResults,
             Agent agent,
             RuntimeContext ctx) {
         String replyId = UUID.randomUUID().toString().replace("-", "");
@@ -189,6 +356,19 @@ public class AsyncToolMiddleware implements HarnessRuntimeMiddleware {
 
         String sessionId = ctx != null ? ctx.getSessionId() : null;
         for (ToolUseBlock toolCall : toolCalls) {
+            ToolResultBlock completedResult = completedResults.get(toolCall.getId());
+            if (completedResult != null) {
+                // Fast tool already emitted its real events before timeout; preserve its real
+                // result in context order and skip placeholder events and registry tracking.
+                if (state != null) {
+                    Msg resultMsg =
+                            ToolResultMessageBuilder.buildToolResultMsg(
+                                    completedResult, toolCall, agent.getName());
+                    state.contextMutable().add(resultMsg);
+                }
+                continue;
+            }
+
             if (asyncToolRegistry != null && sessionId != null) {
                 asyncToolRegistry
                         .register(
@@ -235,22 +415,41 @@ public class AsyncToolMiddleware implements HarnessRuntimeMiddleware {
     }
 
     private void deliverBackgroundResult(
-            List<AgentEvent> backgroundBuffer, List<ToolUseBlock> toolCalls, RuntimeContext ctx) {
+            List<AgentEvent> backgroundBuffer,
+            Map<String, String> preTimeoutTextByToolId,
+            List<ToolUseBlock> offloadedTools,
+            RuntimeContext ctx) {
         String sessionId = ctx != null ? ctx.getSessionId() : null;
         if (sessionId == null) {
             log.warn("Cannot deliver background tool result: no sessionId in RuntimeContext");
             return;
         }
 
+        Set<String> offloadedIds = new HashSet<>();
+        for (ToolUseBlock tc : offloadedTools) {
+            if (tc.getId() != null) {
+                offloadedIds.add(tc.getId());
+            }
+        }
+
         StringBuilder resultText = new StringBuilder();
+        for (ToolUseBlock tc : offloadedTools) {
+            String preText = preTimeoutTextByToolId.get(tc.getId());
+            if (preText != null) {
+                resultText.append(preText);
+            }
+        }
         for (AgentEvent event : backgroundBuffer) {
-            if (event instanceof ToolResultTextDeltaEvent delta) {
+            if (event instanceof ToolResultTextDeltaEvent delta
+                    && delta.getDelta() != null
+                    && (delta.getToolCallId() == null
+                            || offloadedIds.contains(delta.getToolCallId()))) {
                 resultText.append(delta.getDelta());
             }
         }
 
         String toolNames =
-                toolCalls.stream()
+                offloadedTools.stream()
                         .map(ToolUseBlock::getName)
                         .reduce((a, b) -> a + ", " + b)
                         .orElse("unknown");
@@ -267,7 +466,7 @@ public class AsyncToolMiddleware implements HarnessRuntimeMiddleware {
 
         if (asyncToolRegistry != null) {
             String resultStr = resultText.length() > 0 ? resultText.toString() : "(no output)";
-            for (ToolUseBlock tc : toolCalls) {
+            for (ToolUseBlock tc : offloadedTools) {
                 asyncToolRegistry.complete(tc.getId(), resultStr).subscribe();
             }
         }
@@ -291,5 +490,68 @@ public class AsyncToolMiddleware implements HarnessRuntimeMiddleware {
                 "Background tool '{}' completed, pushed result to inbox: session={}",
                 toolNames,
                 sessionId);
+    }
+
+    private static final class OffloadState {
+        private boolean completed;
+        private boolean timedOut;
+        private boolean disposed;
+        private boolean offloadPublished;
+        private boolean pendingBackgroundComplete;
+        private Throwable pendingBackgroundError;
+        private final Map<String, PreTimeoutToolState> preTimeoutStates = new HashMap<>();
+        private final List<AgentEvent> backgroundBuffer = new ArrayList<>();
+        private List<ToolUseBlock> offloaded = List.of();
+    }
+
+    private static final class PreTimeoutToolState {
+        private final List<ContentBlock> blocks = new ArrayList<>();
+        private final StringBuilder textBuffer = new StringBuilder();
+        private final Map<String, Object> metadata = new LinkedHashMap<>();
+        private ToolResultState finalState = ToolResultState.SUCCESS;
+        private boolean completed;
+
+        private void appendText(String delta, Map<String, Object> deltaMetadata) {
+            mergeMetadata(deltaMetadata);
+            if (delta != null && !delta.isEmpty()) {
+                blocks.add(TextBlock.builder().text(delta).build());
+                textBuffer.append(delta);
+            }
+        }
+
+        private void appendData(ContentBlock data, Map<String, Object> deltaMetadata) {
+            mergeMetadata(deltaMetadata);
+            if (data != null) {
+                blocks.add(data);
+            }
+        }
+
+        private void markEnd(ToolResultState state, Map<String, Object> endMetadata) {
+            mergeMetadata(endMetadata);
+            if (state != ToolResultState.RUNNING) {
+                this.finalState = state != null ? state : ToolResultState.SUCCESS;
+                this.completed = true;
+            }
+        }
+
+        private boolean isCompleted() {
+            return completed;
+        }
+
+        private void mergeMetadata(Map<String, Object> extra) {
+            if (extra != null && !extra.isEmpty()) {
+                metadata.putAll(extra);
+            }
+        }
+
+        private ToolResultBlock toToolResultBlock(ToolUseBlock toolCall) {
+            return ToolResultBlock.builder()
+                    .id(toolCall.getId())
+                    .name(toolCall.getName())
+                    .output(List.copyOf(blocks))
+                    .metadata(metadata.isEmpty() ? null : Map.copyOf(metadata))
+                    .state(finalState)
+                    .build();
+        }
     }
 }
