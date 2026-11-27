@@ -24,12 +24,15 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import io.agentscope.core.rag.model.Document;
 import io.agentscope.core.rag.model.RetrieveConfig;
 import java.io.IOException;
+import java.time.Duration;
 import java.util.List;
 import okhttp3.mockwebserver.MockResponse;
 import okhttp3.mockwebserver.MockWebServer;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 /**
  * Unit tests for HayStackKnowledge.
@@ -170,6 +173,66 @@ class HayStackKnowledgeTest {
     }
 
     // ========= Retrieve Tests =========
+
+    @ParameterizedTest
+    @ValueSource(strings = {"documents", "context_documents"})
+    void retrievalLimitIsAppliedAfterConversionAndScoreFiltering(String field) {
+        mockWebServer.enqueue(
+                new MockResponse()
+                        .setHeader("Content-Type", "application/json")
+                        .setBody(
+                                """
+                                {"%s":[
+                                  {"id":"below-threshold","content":"low","score":0.1},
+                                  {"id":"blank","content":" ","score":1.0},
+                                  {"id":"first","content":"first result","score":0.9,"meta":{"file_path":"first.txt"}},
+                                  {"id":"second","content":"second result","score":0.8}
+                                ]}
+                                """
+                                        .formatted(field)));
+        HayStackKnowledge knowledge = HayStackKnowledge.builder().config(createConfig()).build();
+        List<Document> documents =
+                knowledge
+                        .retrieve(
+                                "query",
+                                RetrieveConfig.builder().limit(1).scoreThreshold(0.5).build())
+                        .block(Duration.ofSeconds(10));
+
+        assertEquals(1, documents.size());
+        assertEquals("first", documents.get(0).getMetadata().getChunkId());
+        assertEquals("first.txt", documents.get(0).getMetadata().getDocId());
+        assertEquals("first result", documents.get(0).getMetadata().getContentText());
+        assertEquals(0.9, documents.get(0).getScore());
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"documents", "context_documents"})
+    void unscoredWindowResultsKeepOrderButRespectLimit(String field) {
+        mockWebServer.enqueue(
+                new MockResponse()
+                        .setHeader("Content-Type", "application/json")
+                        .setBody(
+                                """
+                                {"%s":[
+                                  {"id":"window-1","content":"first window"},
+                                  {"id":"window-2","content":"second window"},
+                                  {"id":"window-3","content":"third window"}
+                                ]}
+                                """
+                                        .formatted(field)));
+        HayStackKnowledge knowledge = HayStackKnowledge.builder().config(createConfig()).build();
+        List<Document> documents =
+                knowledge
+                        .retrieve(
+                                "query",
+                                RetrieveConfig.builder().limit(2).scoreThreshold(1.0).build())
+                        .block(Duration.ofSeconds(10));
+
+        assertEquals(
+                List.of("window-1", "window-2"),
+                documents.stream().map(doc -> doc.getMetadata().getChunkId()).toList());
+        assertTrue(documents.stream().allMatch(doc -> doc.getScore() == null));
+    }
 
     @Test
     void testRetrieveSuccess() {

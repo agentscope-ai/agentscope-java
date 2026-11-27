@@ -70,3 +70,5 @@ ReActAgent agent = ReActAgent.builder()
 | `filterPolicy` | 过滤策略（见 `FilterPolicy`） |
 
 `HayStackConfig` 还提供超时、自定义 header、API Key 等扩展项，按 HayStack 部署侧的鉴权方案配置即可。
+
+`RetrieveConfig.limit` 不仅会作为 `top_k` 传给服务端，还会在结果转换和分数过滤之后限制返回数量。即使自定义流水线或句子窗口检索器扩展出更多文档，应用拿到的上下文也不会超过此限制。适配器保留服务端的结果顺序；没有分数的窗口文档仍不参与分数过滤，但同样占用返回数量。

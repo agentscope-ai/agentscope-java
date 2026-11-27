@@ -70,3 +70,5 @@ This separation prevents inconsistent indexing states across two sides.
 | `filterPolicy` | Filter policy (see `FilterPolicy`) |
 
 `HayStackConfig` also exposes timeouts, custom headers, and API keys to fit your HayStack deployment's auth scheme.
+
+`RetrieveConfig.limit` is sent to the service as `top_k` and also caps the converted results after score filtering. This keeps the returned context bounded if a custom pipeline or sentence-window retriever returns more documents. The adapter preserves the service's order, and unscored window documents retain their existing exemption from score filtering while still counting toward the limit.
