@@ -119,6 +119,21 @@ Harness 默认使用 `WorkspaceThreadJournalStore`，跟随 Workspace Filesystem
 
 对执行结果不确定的工具，先查原操作，取得真实结果后再调用 `agent.reconcileToolOutcomes(ctx, outcomes, reason)` 或 `ThreadRecovery.reconcile`。核实结果与 checkpoint 一起提交，保留原执行来源。工具结果未知时不能通过重新执行有副作用的工具来猜测结果。
 
+### 取消请求后继续直接调用会话
+
+停止请求意味着不再等待回答，并不证明所有外部工具都在产生副作用之前停止了。例如，服务端可能已经接受写入，但调用者尚未收到响应。原生日志会保留这次已派发调用的不确定状态，在结果得到确认之前阻止后续会话状态修改。对话中的合成中断消息不能证明外部操作的结果。
+
+对于直接调用的 `HarnessAgent`，先等待被取消调用的清理流程释放日志 writer，再使用原来的用户、会话和 Thread 身份调用 `agent.inspectThread(ctx).uncertainToolCalls()`。这个只读接口返回需要核实的调用 ID，不要求应用取得内部日志。不要在 `doOnCancel` 中立即执行核实写入，因为此时清理流程或外部操作可能还没有结束。
+
+通过原服务的回执或状态查询取得终态结果，不要重新提交操作。将已确认结果组成 `Map<String, ToolResultBlock>` 类型的 `confirmedOutcomes`，键集合必须与待核实 ID 完全一致，每个结果也必须保留原调用 ID 和真实输出。然后通过公开的 Harness API 记录结果：
+
+```java
+agent.reconcileToolOutcomes(ctx, confirmedOutcomes,
+        "Verified terminal results from the original operations");
+```
+
+回执查询和真实性核实由应用负责，该方法不会替应用完成这些步骤。它会拒绝挂起或明确标记为未知的结果、不匹配的调用 ID，以及不完整的结果集合。如果无法确认结果，应保持会话待恢复状态并向用户说明，不能清空日志或声称取消已经回滚了操作。成功核实后，可以继续修改会话状态和发起下一次调用，而无需重跑同批次中已经完成的其他工具。此流程仅用于直接调用；Durable 管理的执行必须通过其受管恢复路径处理。
+
 ## 导出到其他系统
 
 `ThreadTranscriptExport` 可导出消息视图；`JournalExporter` 配合 `JournalExportSink` 导出原生事件。sink 确认成功后才推进持久游标，失败后可重新 drain，因此目标系统需要按事件身份去重。

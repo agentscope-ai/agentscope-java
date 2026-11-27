@@ -120,6 +120,21 @@ Direct-call recovery uses the saved native phase, input and tool results. A new 
 
 For uncertain tool outcomes, query the original operation and obtain real results before invoking `agent.reconcileToolOutcomes(ctx, outcomes, reason)` or `ThreadRecovery.reconcile`. Reconciliation commits results and checkpoint together while preserving execution provenance. Re-executing a side effect is not a way to discover an unknown result.
 
+### Continue a direct session after cancellation
+
+Stopping a request stops waiting for its answer; it does not prove that every external tool stopped before producing an effect. For example, a service may have accepted a write before the caller lost its response. The native journal keeps that dispatched call uncertain, and subsequent session-state changes remain blocked until its outcome is confirmed. A synthetic interruption message in the conversation does not confirm the external outcome.
+
+For a direct `HarnessAgent`, wait for the cancelled invocation's cleanup to release its journal writer, then call `agent.inspectThread(ctx).uncertainToolCalls()` with the original user, session and thread identity. This read-only API returns the call IDs that need confirmation; the application does not need to retrieve an internal journal. Do not reconcile immediately from `doOnCancel`, because that callback can run before cleanup or external work has finished.
+
+Use the original service's receipt or status lookup to obtain terminal results without submitting the operations again. Build `confirmedOutcomes` as a `Map<String, ToolResultBlock>` containing exactly the pending IDs. Each result must carry its original call ID and the verified output. Then record those results through the public Harness API:
+
+```java
+agent.reconcileToolOutcomes(ctx, confirmedOutcomes,
+        "Verified terminal results from the original operations");
+```
+
+The receipt lookup and verification are application responsibilities; this method does not perform them. It rejects suspended or explicitly unknown outcomes, mismatched call IDs and an incomplete set of results. If the outcome cannot be confirmed, keep the session in a recovery-required state and explain that to the user rather than clearing the journal or claiming cancellation rolled the operation back. After successful reconciliation, session-state updates and the next call can proceed without replaying already completed sibling tools. Use this procedure only for direct calls; Durable-managed executions must use their managed recovery path.
+
 ## Export records to another system
 
 `ThreadTranscriptExport` exports message views. `JournalExporter` and `JournalExportSink` export native events. The persistent cursor advances only after sink acknowledgment; failures can be drained again, so destinations deduplicate by event identity.
