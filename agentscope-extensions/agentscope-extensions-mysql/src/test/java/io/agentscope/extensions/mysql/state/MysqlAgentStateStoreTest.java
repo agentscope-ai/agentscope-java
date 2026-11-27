@@ -255,4 +255,37 @@ class MysqlAgentStateStoreTest {
         assertTrue(ddl.contains("state_data LONGTEXT NOT NULL"));
         assertFalse(ddl.contains("LONGTEXT COLLATE"));
     }
+
+    @Test
+    void listSessionIdsEscapesWildcardsInUserSegment() throws SQLException {
+        MysqlAgentStateStore store = newStore();
+        when(resultSet.next()).thenReturn(false);
+
+        store.listSessionIds("50%off");
+
+        // '%' and '_' are LIKE wildcards in the user segment and must not widen the match
+        verify(preparedStatement).setString(1, "50\\%off:%");
+    }
+
+    @Test
+    void listSessionIdsEscapesAnonymousUserUnderscores() throws SQLException {
+        MysqlAgentStateStore store = newStore();
+        when(resultSet.next()).thenReturn(false);
+
+        store.listSessionIds(null);
+
+        // "__anon__" must become a literal prefix, not an 8-character wildcard run
+        verify(preparedStatement).setString(1, "\\_\\_anon\\_\\_:%");
+    }
+
+    @Test
+    void listSessionIdsEscapesBackslashInUserSegment() throws SQLException {
+        MysqlAgentStateStore store = newStore();
+        when(resultSet.next()).thenReturn(false);
+
+        store.listSessionIds("a\\b");
+
+        // the LIKE escape character itself must be escaped first
+        verify(preparedStatement).setString(1, "a\\\\b:%");
+    }
 }
