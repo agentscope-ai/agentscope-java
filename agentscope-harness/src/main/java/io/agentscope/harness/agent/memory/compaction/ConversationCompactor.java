@@ -20,6 +20,7 @@ import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.message.ThinkingBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolResultState;
 import io.agentscope.core.message.ToolUseBlock;
@@ -420,7 +421,7 @@ public class ConversationCompactor {
                 for (ContentBlock block : response.getContent()) {
                     if (block instanceof TextBlock tb) {
                         text.append(tb.getText());
-                    } else {
+                    } else if (!(block instanceof ThinkingBlock)) {
                         sawNonText = true;
                     }
                 }
