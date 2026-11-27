@@ -17,6 +17,8 @@
 package io.agentscope.core.training.runner;
 
 import io.agentscope.core.agent.Agent;
+import io.agentscope.core.agent.AgentBase;
+import io.agentscope.core.hook.ErrorEvent;
 import io.agentscope.core.hook.Hook;
 import io.agentscope.core.hook.HookEvent;
 import io.agentscope.core.hook.PostCallEvent;
@@ -36,6 +38,7 @@ import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Scheduler;
 import reactor.core.scheduler.Schedulers;
+import reactor.util.context.ContextView;
 
 /**
  * Training Router Hook
@@ -75,8 +78,14 @@ public class TrainingRouter implements Hook {
     private final TrainingSelectionStrategy selectionStrategy;
     private final Scheduler asyncScheduler;
 
-    // Save PreCallEvent inputs for retrieval during PostCallEvent
-    private final Map<String, List<Msg>> callInputs = new ConcurrentHashMap<>();
+    // Save PreCallEvent inputs for retrieval during PostCallEvent.
+    //
+    // Keyed by the per-call scope the framework publishes on the Reactor Context (see
+    // AgentBase#CALL_SCOPE_KEY) rather than by agent id: an agent id is shared by every
+    // concurrent call on that agent, and AgentBase#callSerializationKey only serializes
+    // calls that share a session, so overlapping calls would overwrite each other.
+    // Agent types that keep no per-call scope fall back to the agent id.
+    private final Map<Object, List<Msg>> callInputs = new ConcurrentHashMap<>();
 
     public TrainingRouter(
             TrainingConfig config,
@@ -103,6 +112,9 @@ public class TrainingRouter implements Hook {
         } else if (event instanceof PostCallEvent) {
             PostCallEvent e = (PostCallEvent) event;
             return handlePostCall(e).thenReturn((T) e);
+        } else if (event instanceof ErrorEvent) {
+            ErrorEvent e = (ErrorEvent) event;
+            return handleError(e).thenReturn((T) e);
         } else {
             return Mono.just(event);
         }
@@ -118,12 +130,53 @@ public class TrainingRouter implements Hook {
      * Save input messages for use in PostCallEvent
      */
     private Mono<Void> handlePreCall(PreCallEvent event) {
-        return Mono.fromRunnable(
-                () -> {
-                    String agentId = event.getAgent().getAgentId();
-                    callInputs.put(agentId, event.getInputMessages());
-                    logger.debug("Saved input messages for agent: {}", agentId);
-                });
+        return Mono.deferContextual(
+                context ->
+                        Mono.fromRunnable(
+                                () -> {
+                                    Object callId = callKey(event.getAgent(), context);
+                                    if (callId == null) {
+                                        return;
+                                    }
+                                    callInputs.put(callId, event.getInputMessages());
+                                    logger.debug(
+                                            "Saved input messages for agent: {} (call {})",
+                                            event.getAgent().getAgentId(),
+                                            callId);
+                                }));
+    }
+
+    /**
+     * Identifies the call an event belongs to.
+     *
+     * <p>Prefers the per-call scope the framework publishes on the Reactor Context under
+     * {@link AgentBase#CALL_SCOPE_KEY}, which is unique to a single {@code call()}. Falls back
+     * to the agent id for agent types that keep no scope.
+     *
+     * <p>Returns {@code null} when neither is available, which an agent without an id (a test
+     * double, typically) is the only way to reach. The map cannot hold a null key, so callers
+     * skip it rather than fail the hook.
+     */
+    private static Object callKey(Agent agent, ContextView context) {
+        Object scope = context.getOrDefault(AgentBase.CALL_SCOPE_KEY, null);
+        return scope != null ? scope : agent.getAgentId();
+    }
+
+    /**
+     * Drops the inputs saved by {@link #handlePreCall} for a call that ended in an error and
+     * therefore never reached {@link PostCallEvent}. Without it the entry would outlive the
+     * call, since a per-call key is never overwritten by a later call.
+     */
+    private Mono<Void> handleError(ErrorEvent event) {
+        return Mono.deferContextual(
+                context ->
+                        Mono.fromRunnable(
+                                () -> {
+                                    Object callId = callKey(event.getAgent(), context);
+                                    if (callId != null) {
+                                        callInputs.remove(callId);
+                                    }
+                                }));
     }
 
     /**
@@ -135,6 +188,7 @@ public class TrainingRouter implements Hook {
                 ctx -> {
                     String agentId = event.getAgent().getAgentId();
                     String agentName = event.getAgent().getName();
+                    Object callId = callKey(event.getAgent(), ctx);
 
                     // ✅ Prevent shadow agent from triggering training (avoid recursive loop)
                     if (agentName != null && agentName.contains("-shadow")) {
@@ -142,12 +196,12 @@ public class TrainingRouter implements Hook {
                                 "Skipping training for shadow agent: {} (prevents recursive"
                                         + " training)",
                                 agentName);
-                        callInputs.remove(agentId); // Clean up input
+                        callInputs.remove(callId); // Clean up input
                         return Mono.empty();
                     }
 
                     // Get input messages
-                    List<Msg> inputs = callInputs.remove(agentId);
+                    List<Msg> inputs = callInputs.remove(callId);
                     if (inputs == null) {
                         logger.warn("No input messages found for agent: {}", agentId);
                         return Mono.empty();
