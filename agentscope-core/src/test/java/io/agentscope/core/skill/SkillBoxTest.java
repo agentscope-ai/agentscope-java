@@ -33,9 +33,11 @@ import io.agentscope.core.tool.ToolParam;
 import io.agentscope.core.tool.Toolkit;
 import io.agentscope.core.tool.mcp.McpClientWrapper;
 import io.modelcontextprotocol.spec.McpSchema;
+import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Base64;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
@@ -329,27 +331,47 @@ class SkillBoxTest {
 
         @Test
         void preservesLegacyNamesWithRelativeNonNormalizedWorkDirectory() throws Exception {
-            Path relative = Path.of("").toAbsolutePath().relativize(tempDir);
-            skillBox.setWorkDir(relative.resolve("unused/.."));
-            for (String name : List.of("Upper_Case.技能", "Long_" + "x".repeat(70))) {
-                AgentSkill skill =
-                        new AgentSkill(
-                                name,
-                                "Description",
-                                "Content",
-                                Map.of("nested/file.txt", "safe"),
-                                "Legacy_Source");
-                skillBox.registerSkill(skill);
+            // A relative work directory is resolved against the working directory, and a
+            // relative path cannot cross drives. @TempDir is not on that drive on every
+            // system: the Windows runner keeps the checkout on D: and the temp directory on
+            // C:, where relativize() below would fail (#4453). A directory under the module's
+            // build output always is.
+            Path workRoot =
+                    Files.createTempDirectory(Path.of("target"), "skill-box-work-")
+                            .toAbsolutePath();
+            try {
+                Path relative = Path.of("").toAbsolutePath().relativize(workRoot);
+                skillBox.setWorkDir(relative.resolve("unused/.."));
+                for (String name : List.of("Upper_Case.技能", "Long_" + "x".repeat(70))) {
+                    AgentSkill skill =
+                            new AgentSkill(
+                                    name,
+                                    "Description",
+                                    "Content",
+                                    Map.of("nested/file.txt", "safe"),
+                                    "Legacy_Source");
+                    skillBox.registerSkill(skill);
+                }
+
+                skillBox.uploadSkillFiles();
+
+                for (String name : List.of("Upper_Case.技能", "Long_" + "x".repeat(70))) {
+                    assertEquals(
+                            "safe",
+                            Files.readString(
+                                    workRoot.resolve("skills")
+                                            .resolve(name + "_Legacy_Source/nested/file.txt")));
+                }
+            } finally {
+                deleteTree(workRoot);
             }
+        }
 
-            skillBox.uploadSkillFiles();
-
-            for (String name : List.of("Upper_Case.技能", "Long_" + "x".repeat(70))) {
-                assertEquals(
-                        "safe",
-                        Files.readString(
-                                tempDir.resolve("skills")
-                                        .resolve(name + "_Legacy_Source/nested/file.txt")));
+        private static void deleteTree(Path root) throws IOException {
+            try (var paths = Files.walk(root)) {
+                for (Path path : paths.sorted(Comparator.reverseOrder()).toList()) {
+                    Files.deleteIfExists(path);
+                }
             }
         }
     }
