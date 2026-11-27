@@ -61,7 +61,7 @@ AgentStateStore store = MongoAgentStateStore.builder()
 
 - **Single value**: stored at `states.<key>` as a BSON sub-document; version at `versions.<key>`.
 - **List value**: stored at `states.<key>` as a BSON array; content hash at `hashes.<key>` for incremental-append optimization.
-- **TTL**: 30-day expiry on `_updated_at` (sparse index), aligned with snapshot TTL.
+- **TTL**: 30-day expiry on `_updated_at` (sparse index).
 
 ### 2. MongoBaseStore (BaseStore)
 
@@ -78,7 +78,7 @@ BaseStore store = new MongoBaseStore(mongoClient.getDatabase("agentscope"), "age
 
 ### 3. MongoSnapshotSpec
 
-Sandbox snapshots stored as BSON Binary in a collection with a 30-day TTL index on `createdAt`. Aligned with the session TTL so snapshots outlive their sessions.
+Sandbox snapshots are stored in GridFS, using separate file metadata and chunk collections. There is no independent snapshot TTL. Deleting the owning session explicitly triggers snapshot cleanup; expiring a session through MongoDB's TTL mechanism does not run that application callback.
 
 ```java
 import io.agentscope.extensions.mongodb.snapshot.MongoSnapshotSpec;
@@ -86,7 +86,9 @@ import io.agentscope.extensions.mongodb.snapshot.MongoSnapshotSpec;
 SandboxSnapshotSpec spec = new MongoSnapshotSpec(mongoClient, "agentscope");
 ```
 
-> BSON document size limit is 16 MB; snapshots are capped at 15 MB. For larger workspaces, consider a mixed store (MongoDB for state/lock, OSS for snapshots).
+Replacing a snapshot uploads the new archive before deleting previously completed revisions. If the upload stream fails, the last completed archive remains available. Downloads select the newest completed file by `uploadDate`, with `_id` as a deterministic tie-breaker if two timestamps match. An interrupted cleanup can leave multiple completed revisions; the next replacement cleans up the revisions it observed, and explicit snapshot deletion removes all matching revisions and any legacy BSON snapshot. Concurrent writers still require application-level coordination; this is not a transactional snapshot/agent-state update.
+
+GridFS chunks avoid the 16 MB limit of the legacy single-document format. Existing BSON Binary snapshots remain readable as a fallback when no completed GridFS file exists.
 
 ### 4. MongoSandboxExecutionGuard
 
@@ -114,7 +116,7 @@ SandboxExecutionGuard guard = MongoSandboxExecutionGuard.builder(mongoClient)
 |------------|---------|-----|--------------|
 | Sessions | Agent state store | 30 days on `_updated_at` | `agentscope_sessions` |
 | Base store | Workspace KV | — | `agentscope_base` |
-| Snapshots | Sandbox tar archives | 30 days on `createdAt` | `agentscope_snapshots` |
+| Snapshots | Sandbox tar archives | No independent TTL | `agentscope_snapshots.files` / `agentscope_snapshots.chunks` |
 | Sandbox locks | Distributed lock | Immediate on `expiresAt` | `agentscope_sandbox_locks` |
 
 All collection names are centralised in `MongoConstants` and can be overridden per component.
@@ -126,4 +128,4 @@ All collection names are centralised in `MongoConstants` and can be overridden p
 | Existing MongoDB cluster | **First choice**: MongoDB |
 | Document-oriented storage preferred | MongoDB |
 | Large conversation histories (unbounded field growth) | MongoDB (no MySQL field-length limits) |
-| Large workspace snapshots (>15 MB) | Mixed store: MongoDB for state/lock, OSS for snapshots |
+| Large workspace snapshots (>15 MB) | GridFS snapshots, or a mixed store with OSS |

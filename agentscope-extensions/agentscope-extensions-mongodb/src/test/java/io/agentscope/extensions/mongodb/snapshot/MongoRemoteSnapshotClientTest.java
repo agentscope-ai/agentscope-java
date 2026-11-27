@@ -18,15 +18,19 @@ package io.agentscope.extensions.mongodb.snapshot;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.mongodb.MongoGridFSException;
 import com.mongodb.client.FindIterable;
 import com.mongodb.client.MongoClient;
 import com.mongodb.client.MongoCollection;
@@ -40,6 +44,9 @@ import java.io.ByteArrayInputStream;
 import java.io.FileNotFoundException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.List;
 import org.bson.BsonObjectId;
 import org.bson.BsonString;
 import org.bson.BsonValue;
@@ -54,6 +61,56 @@ import org.mockito.Mock;
 import org.mockito.MockitoAnnotations;
 
 class MongoRemoteSnapshotClientTest {
+
+    private final List<GridFSFile> storedFiles = new ArrayList<>();
+
+    @Test
+    void failedReplacementKeepsPreviouslyUploadedSnapshot() throws Exception {
+        GridFSFile oldFile = mock(GridFSFile.class);
+        BsonObjectId oldId = new BsonObjectId(new ObjectId());
+        when(oldFile.getId()).thenReturn(oldId);
+        when(gridFSFindIterable.first()).thenReturn(oldFile);
+        storedFiles.add(oldFile);
+        MongoGridFSException failure = new MongoGridFSException("archive read failed");
+        when(gridFSBucket.uploadFromStream(eq("snap-1"), any(InputStream.class), any()))
+                .thenThrow(failure);
+
+        assertSame(
+                failure,
+                assertThrows(
+                        MongoGridFSException.class,
+                        () -> client.upload("snap-1", new ByteArrayInputStream(new byte[] {1}))));
+
+        verify(gridFSBucket, never()).delete(oldId);
+    }
+
+    @Test
+    void successfulReplacementDeletesOnlyCapturedFilesAfterUpload() throws Exception {
+        GridFSFile first = mock(GridFSFile.class);
+        GridFSFile second = mock(GridFSFile.class);
+        BsonObjectId firstId = new BsonObjectId(new ObjectId());
+        BsonObjectId secondId = new BsonObjectId(new ObjectId());
+        when(first.getId()).thenReturn(firstId);
+        when(second.getId()).thenReturn(secondId);
+        storedFiles.addAll(List.of(first, second));
+        InputStream archive = new ByteArrayInputStream(new byte[] {1});
+        GridFSFile overlappingUpload = mock(GridFSFile.class);
+        when(gridFSBucket.uploadFromStream(eq("snap-1"), eq(archive), any()))
+                .thenAnswer(
+                        invocation -> {
+                            storedFiles.add(overlappingUpload);
+                            return new ObjectId();
+                        });
+
+        client.upload("snap-1", archive);
+
+        var order = inOrder(gridFSBucket);
+        order.verify(gridFSBucket).find(any(Bson.class));
+        order.verify(gridFSBucket).uploadFromStream(eq("snap-1"), eq(archive), any());
+        order.verify(gridFSBucket).delete(firstId);
+        order.verify(gridFSBucket).delete(secondId);
+        order.verifyNoMoreInteractions();
+    }
 
     @Mock private GridFSBucket gridFSBucket;
     @Mock private MongoCollection<Document> legacyCollection;
@@ -76,6 +133,14 @@ class MongoRemoteSnapshotClientTest {
 
         when(gridFSBucket.find(any(Bson.class))).thenReturn(gridFSFindIterable);
         when(gridFSFindIterable.first()).thenReturn(null);
+        when(gridFSFindIterable.sort(any(Bson.class))).thenReturn(gridFSFindIterable);
+        when(gridFSFindIterable.into(any()))
+                .thenAnswer(
+                        invocation -> {
+                            Collection<GridFSFile> destination = invocation.getArgument(0);
+                            destination.addAll(storedFiles);
+                            return destination;
+                        });
 
         when(legacyCollection.find(any(Bson.class))).thenReturn(legacyFindIterable);
         when(legacyFindIterable.projection(any())).thenReturn(legacyFindIterable);
@@ -221,6 +286,8 @@ class MongoRemoteSnapshotClientTest {
         GridFSFile mockFile = mock(GridFSFile.class);
         when(mockFile.getId()).thenReturn(new BsonObjectId(fileId));
         when(gridFSFindIterable.first()).thenReturn(mockFile);
+
+        storedFiles.add(mockFile);
 
         assertTrue(client.delete("snap-1"));
         verify(gridFSBucket).delete((BsonValue) any());

@@ -15,14 +15,19 @@
  */
 package io.agentscope.extensions.mongodb;
 
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.mongodb.client.MongoClient;
 import com.mongodb.client.MongoClients;
 import com.mongodb.client.MongoCollection;
+import com.mongodb.client.gridfs.GridFSBucket;
+import com.mongodb.client.gridfs.GridFSBuckets;
+import com.mongodb.client.model.Filters;
 import io.agentscope.core.state.AgentStateStore;
 import io.agentscope.core.state.State;
 import io.agentscope.extensions.mongodb.sandbox.MongoSandboxExecutionGuard;
@@ -31,6 +36,8 @@ import io.agentscope.extensions.mongodb.state.MongoAgentStateStore;
 import io.agentscope.extensions.mongodb.store.MongoBaseStore;
 import io.agentscope.extensions.mongodb.testutil.RequireDocker;
 import java.io.ByteArrayInputStream;
+import java.io.IOException;
+import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
@@ -45,6 +52,8 @@ import org.junit.jupiter.api.MethodOrderer;
 import org.junit.jupiter.api.Order;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestMethodOrder;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.testcontainers.containers.MongoDBContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
@@ -333,6 +342,99 @@ class MongoIndexLifecycleContractTest {
         } finally {
             client.getDatabase(legacyDb).drop();
         }
+    }
+
+    @ParameterizedTest
+    @ValueSource(ints = {0, 300_000})
+    @Order(9)
+    void failedSnapshotReplacementPreservesReadableArchive(int bytesBeforeFailure)
+            throws Exception {
+        String collection = "replacement_snapshots";
+        String snapshotId = "existing-snapshot";
+        byte[] original = "previous complete workspace".getBytes(StandardCharsets.UTF_8);
+        MongoRemoteSnapshotClient snapshots =
+                new MongoRemoteSnapshotClient(client, dbName, collection);
+        snapshots.upload(snapshotId, new ByteArrayInputStream(original));
+
+        try (InputStream failing =
+                new InputStream() {
+                    private int remaining = bytesBeforeFailure;
+
+                    @Override
+                    public int read() throws IOException {
+                        if (remaining-- > 0) {
+                            return 1;
+                        }
+                        throw new IOException("fixture archive failure");
+                    }
+                }) {
+            assertThrows(Exception.class, () -> snapshots.upload(snapshotId, failing));
+        }
+
+        assertTrue(snapshots.exists(snapshotId));
+        try (InputStream restored = snapshots.download(snapshotId)) {
+            assertArrayEquals(original, restored.readAllBytes());
+        }
+        byte[] replacement = "new complete workspace".getBytes(StandardCharsets.UTF_8);
+        snapshots.upload(snapshotId, new ByteArrayInputStream(replacement));
+        try (InputStream restored = snapshots.download(snapshotId)) {
+            assertArrayEquals(replacement, restored.readAllBytes());
+        }
+        assertEquals(
+                1,
+                client.getDatabase(dbName)
+                        .getCollection(collection + ".files")
+                        .countDocuments(Filters.eq("filename", snapshotId)));
+        assertTrue(snapshots.delete(snapshotId));
+        assertFalse(snapshots.exists(snapshotId));
+    }
+
+    @Test
+    @Order(10)
+    void retainedRevisionsReadNewestAndDeleteTogether() throws Exception {
+        String collection = "retained_snapshots";
+        String snapshotId = "retained-snapshot";
+        GridFSBucket bucket = GridFSBuckets.create(client.getDatabase(dbName), collection);
+        byte[] original = "old complete archive".getBytes(StandardCharsets.UTF_8);
+        byte[] replacement = "new complete archive".getBytes(StandardCharsets.UTF_8);
+        var first = bucket.uploadFromStream(snapshotId, new ByteArrayInputStream(original));
+        var second = bucket.uploadFromStream(snapshotId, new ByteArrayInputStream(replacement));
+        // Model the same-millisecond upload case: _id provides deterministic tie breaking.
+        client.getDatabase(dbName)
+                .getCollection(collection + ".files")
+                .updateMany(
+                        Filters.eq("filename", snapshotId),
+                        new Document("$set", new Document("uploadDate", new java.util.Date(1))));
+        bucket.uploadFromStream("other-snapshot", new ByteArrayInputStream(original));
+        client.getDatabase(dbName)
+                .getCollection(collection)
+                .insertOne(new Document("_id", snapshotId).append("data", new Binary(original)));
+        MongoRemoteSnapshotClient snapshots =
+                new MongoRemoteSnapshotClient(client, dbName, collection);
+
+        assertTrue(second.compareTo(first) > 0);
+        try (InputStream restored = snapshots.download(snapshotId)) {
+            assertArrayEquals(replacement, restored.readAllBytes());
+        }
+        assertTrue(snapshots.delete(snapshotId));
+        assertFalse(snapshots.exists(snapshotId));
+        assertFalse(snapshots.delete(snapshotId));
+        assertTrue(snapshots.exists("other-snapshot"));
+        assertEquals(
+                0,
+                client.getDatabase(dbName)
+                        .getCollection(collection + ".files")
+                        .countDocuments(Filters.eq("filename", snapshotId)));
+        assertEquals(
+                0,
+                client.getDatabase(dbName)
+                        .getCollection(collection + ".chunks")
+                        .countDocuments(Filters.in("files_id", first, second)));
+        assertEquals(
+                0,
+                client.getDatabase(dbName)
+                        .getCollection(collection)
+                        .countDocuments(Filters.eq("_id", snapshotId)));
     }
 
     /** State slot shape mirroring {@code SessionSandboxStateStore.SandboxStateSlot}. */
