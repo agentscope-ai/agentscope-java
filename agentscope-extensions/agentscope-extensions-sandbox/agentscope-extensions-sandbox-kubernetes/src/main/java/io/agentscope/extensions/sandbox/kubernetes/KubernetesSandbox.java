@@ -64,26 +64,10 @@ public class KubernetesSandbox extends AbstractBaseSandbox implements SandboxFil
 
     @Override
     public void shutdown() throws Exception {
-        if (!k8sState.isClaimOwned()) {
-            log.debug(
-                    "[sandbox-k8s] Claim {} not owned, closing connection only",
-                    k8sState.getClaimName());
-            sdkSandbox.closeConnection();
-            return;
-        }
-        try {
-            sdkSandbox.terminate();
-            log.debug(
-                    "[sandbox-k8s] Terminated claim {} in {}",
-                    k8sState.getClaimName(),
-                    k8sState.getNamespace());
-        } catch (Exception e) {
-            log.warn(
-                    "[sandbox-k8s] Failed to terminate claim {} in {}: {}",
-                    k8sState.getClaimName(),
-                    k8sState.getNamespace(),
-                    e.getMessage());
-        }
+        // The claim is the resumable identity of this sandbox: it must outlive one call so the
+        // persisted state can reattach next time. Reclamation belongs to the claim lifecycle
+        // (shutdownAfterSeconds / shutdownPolicy) or an explicit terminate() on the SDK handle.
+        sdkSandbox.closeConnection();
     }
 
     @Override

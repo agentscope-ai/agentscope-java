@@ -169,7 +169,8 @@ public class KubernetesSandboxClient
 
     @Override
     public void delete(Sandbox sandbox) {
-        // shutdown performs deletion for owned claims
+        // Claims outlive a call so the persisted state can resume; reclaim them through the
+        // configured shutdownAfterSeconds lifecycle or Sandbox#terminate() on the SDK handle.
     }
 
     @Override
