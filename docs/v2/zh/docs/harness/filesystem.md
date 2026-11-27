@@ -336,6 +336,8 @@ HarnessAgent agent = HarnessAgent.builder()
     .build();
 ```
 
+本地 `grep_files` 在 `path` 指向文件时只搜索该文件，指向目录时递归搜索该目录。未安装 ripgrep、回退到 Java 搜索时，也遵守相同的搜索范围。
+
 #### 所有配置项
 
 ```java

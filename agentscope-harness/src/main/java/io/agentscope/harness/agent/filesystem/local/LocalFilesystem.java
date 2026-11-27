@@ -1119,9 +1119,8 @@ public class LocalFilesystem implements AbstractFilesystem {
         }
 
         List<GrepMatch> matches = new ArrayList<>();
-        Path root = Files.isDirectory(basePath) ? basePath : basePath.getParent();
 
-        try (Stream<Path> walk = Files.walk(root)) {
+        try (Stream<Path> walk = Files.walk(basePath)) {
             PathMatcher finalGlobMatcher = globMatcher;
             walk.filter(Files::isRegularFile)
                     .filter(
