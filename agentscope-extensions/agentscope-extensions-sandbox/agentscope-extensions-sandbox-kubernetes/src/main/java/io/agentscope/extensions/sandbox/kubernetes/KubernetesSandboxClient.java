@@ -31,6 +31,7 @@ import io.agentscope.harness.agent.sandbox.json.HarnessSandboxJacksonModule;
 import io.agentscope.harness.agent.sandbox.snapshot.RemoteSandboxSnapshot;
 import io.agentscope.harness.agent.sandbox.snapshot.RemoteSnapshotSpec;
 import io.agentscope.harness.agent.sandbox.snapshot.SandboxSnapshotSpec;
+import io.fabric8.kubernetes.client.Config;
 import io.fabric8.kubernetes.client.KubernetesClient;
 import io.fabric8.kubernetes.client.KubernetesClientBuilder;
 import java.time.Duration;
@@ -53,6 +54,8 @@ public class KubernetesSandboxClient
 
     private final ObjectMapper objectMapper;
     private final KubernetesSandboxClientOptions defaultOptions;
+    private volatile KubernetesClient sharedClient;
+    private volatile Config sharedClientConfig;
 
     public KubernetesSandboxClient() {
         this(new KubernetesSandboxClientOptions(), null);
@@ -318,13 +321,30 @@ public class KubernetesSandboxClient
         return o;
     }
 
-    private static KubernetesClient resolveClient(KubernetesSandboxClientOptions merged) {
-        if (merged.getKubernetesClient() != null) {
-            return merged.getKubernetesClient();
+    KubernetesClient resolveClient(KubernetesSandboxClientOptions merged) {
+        KubernetesClient supplied = merged.getKubernetesClient();
+        if (supplied != null) {
+            return supplied;
         }
-        if (merged.getKubernetesConfig() != null) {
-            return new KubernetesClientBuilder().withConfig(merged.getKubernetesConfig()).build();
+        Config config = merged.getKubernetesConfig();
+        // A per-call config override must not reuse the template client.
+        if (config != null && config != defaultOptions.getKubernetesConfig()) {
+            return new KubernetesClientBuilder().withConfig(config).build();
         }
-        return new KubernetesClientBuilder().build();
+        KubernetesClient client = sharedClient;
+        if (client != null && sharedClientConfig == config) {
+            return client;
+        }
+        synchronized (this) {
+            if (sharedClient != null && sharedClientConfig == config) {
+                return sharedClient;
+            }
+            sharedClient =
+                    config != null
+                            ? new KubernetesClientBuilder().withConfig(config).build()
+                            : new KubernetesClientBuilder().build();
+            sharedClientConfig = config;
+            return sharedClient;
+        }
     }
 }
