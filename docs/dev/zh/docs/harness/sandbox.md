@@ -176,6 +176,8 @@ SandboxContext callCtx = SandboxContext.builder()
 
 把同一个 `externalSandbox` 透传给多个 agent 的 `call()`，最后由你自己 `shutdown()`。
 
+对于框架托管的沙箱，`agentscope.sandbox.mirror.release-timeout-millis` 控制释放时等待正在进行的会话镜像上传的时长，单位为毫秒。默认值为 1000，设为 0 可跳过这段等待。Docker 在停止和移除容器前还会等待正在执行的上传命令退出，因此清理耗时可能超过镜像等待时间。
+
 ## 沙箱后端怎么选
 
 | 后端 | 适合 |
