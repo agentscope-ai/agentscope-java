@@ -2294,7 +2294,51 @@ public class HarnessAgent implements Agent, AutoCloseable {
                     });
         }
 
-        public HarnessAgent build() {
+        /**
+         * Builds a fresh runtime from this reusable configuration. Configure the builder before
+         * sharing it; builds are serialized, while the resulting agents can execute concurrently.
+         * If a build fails, auto-wired state-store and filesystem configuration is restored so
+         * the same builder can be corrected and reused.
+         */
+        public synchronized HarnessAgent build() {
+            var configuredMessageBus = messageBus;
+            var configuredAsyncToolRegistry = asyncToolRegistry;
+            var configuredStateStoreOverride = stateStoreOverride;
+            var configuredRemoteStore =
+                    remoteFilesystemSpec != null ? remoteFilesystemSpec.store() : null;
+            var configuredSandboxSnapshotSpec =
+                    sandboxFilesystemSpec != null
+                            ? sandboxFilesystemSpec.getSnapshotSpecOverride()
+                            : null;
+            var configuredSandboxExecutionGuard =
+                    sandboxFilesystemSpec != null
+                            ? sandboxFilesystemSpec.getExecutionGuard()
+                            : null;
+            var successfulBuild = false;
+            try {
+                var agent = buildInstance(inner.copy());
+                successfulBuild = true;
+                return agent;
+            } finally {
+                // Workspace-derived collaborators belong to this build's filesystem, especially
+                // when sandbox bindings or workspace indexes have per-agent lifetimes.
+                messageBus = configuredMessageBus;
+                asyncToolRegistry = configuredAsyncToolRegistry;
+                if (!successfulBuild) {
+                    stateStoreOverride = configuredStateStoreOverride;
+                    if (remoteFilesystemSpec != null) {
+                        remoteFilesystemSpec.restoreAutoInjectedStore(configuredRemoteStore);
+                    }
+                    if (sandboxFilesystemSpec != null) {
+                        sandboxFilesystemSpec
+                                .snapshotSpec(configuredSandboxSnapshotSpec)
+                                .executionGuard(configuredSandboxExecutionGuard);
+                    }
+                }
+            }
+        }
+
+        private HarnessAgent buildInstance(ReActAgent.Builder inner) {
             // Toolkit deep-copy: each agent gets its own toolkit so harness-registered tools and
             // user-registered tools never bleed across builds.
             Toolkit agentToolkit = this.toolkit.copy();
@@ -2325,7 +2369,6 @@ public class HarnessAgent implements Agent, AutoCloseable {
             if (distributedStore != null) {
                 if (stateStoreOverride == null) {
                     stateStoreOverride = distributedStore.agentStateStore();
-                    inner.stateStore(stateStoreOverride);
                 }
                 if (remoteFilesystemSpec != null) {
                     remoteFilesystemSpec.injectStoreIfAbsent(distributedStore.baseStore());
@@ -2366,8 +2409,8 @@ public class HarnessAgent implements Agent, AutoCloseable {
             NamespaceFactory nsFactory = fsIsolationScope.toNamespaceFactory();
             if (effectiveSession == null) {
                 effectiveSession = new JsonFileAgentStateStore(defaultStateDir(resolvedAgentId));
-                inner.stateStore(effectiveSession);
             }
+            inner.stateStore(effectiveSession);
 
             if (remoteFilesystemSpec != null && isLocalSession(effectiveSession)) {
                 throw new IllegalStateException(
