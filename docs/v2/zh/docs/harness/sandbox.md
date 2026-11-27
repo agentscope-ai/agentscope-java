@@ -115,9 +115,9 @@ HarnessAgent.builder()
 
 ## 并发控制（多副本场景）
 
-`USER` / `AGENT` / `GLOBAL` 模式在多副本下，两个副本同时处理同一个用户的请求会都把状态写到同一个 slot，最后写入的为准。如果你不想这样，需要一把分布式锁。
+`USER` / `AGENT` / `GLOBAL` 模式在多副本下，两个副本同时处理同一「用户 + agent」的请求会都把状态写到同一个 slot，最后写入的为准。如果你不想这样，需要一把分布式锁。
 
-执行锁的 key 与持久化 slot 同粒度：`USER` 作用域下是 `{agentId}/{userId}`。所以沙箱中 spawn 的子 agent 会用自己的锁，不会和父 call 持有的锁冲突；`GLOBAL` 作用域只有一个 slot，父与子共用，仍会串行（不要把 `GLOBAL` 与子 agent 一起用）。
+执行锁的 key 与持久化 slot 同粒度：`USER` 作用域下是 `{agentId}/{userId}`。所以沙箱中 spawn 的子 agent 会用自己的锁，不会和父 call 持有的锁冲突；`GLOBAL` 作用域只有一个 slot，父与子共用——call 内 spawn 的子 agent 会一直阻塞在父持有的租约上，不要把 `GLOBAL` 与子 agent 一起用。
 
 **推荐方式**：使用 `distributedStore(...)`，快照和执行锁都会自动注入：
 

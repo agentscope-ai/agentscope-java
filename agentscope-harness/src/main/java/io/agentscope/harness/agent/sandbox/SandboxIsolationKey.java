@@ -136,12 +136,22 @@ public final class SandboxIsolationKey {
      * session id / a distinct agent id), and {@link IsolationScope#GLOBAL} shares a single
      * persisted slot by definition, where serialisation is required.
      *
-     * @param agentId the agent id of the execution acquiring the sandbox; may be {@code null}
+     * @param agentId the agent id of the execution acquiring the sandbox; required for
+     *     {@link IsolationScope#USER}
      * @return the guard key for {@code agentId}
+     * @throws IllegalArgumentException if the scope is {@link IsolationScope#USER} and
+     *     {@code agentId} is null or blank — returning {@code this} would hand back exactly the
+     *     key that deadlocks nested calls
      */
     public SandboxIsolationKey forExecutionGuard(String agentId) {
-        if (scope != IsolationScope.USER || agentId == null || agentId.isBlank()) {
+        if (scope != IsolationScope.USER) {
             return this;
+        }
+        if (agentId == null || agentId.isBlank()) {
+            throw new IllegalArgumentException(
+                    "agentId is required for the USER-scope execution guard key; without it a"
+                            + " nested call would acquire the same guard key its parent already"
+                            + " holds and deadlock");
         }
         // Mirrors SessionSandboxStateStore#slotSessionId's USER composition so the guard and
         // the persisted slot stay in lockstep.

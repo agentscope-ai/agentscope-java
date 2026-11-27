@@ -21,6 +21,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.state.InMemoryAgentStateStore;
+import io.agentscope.core.state.State;
 import io.agentscope.harness.agent.IsolationScope;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -72,6 +73,28 @@ class SessionSandboxStateStoreTest {
     }
 
     @Test
+    void userScope_slotEndsWithGuardValue_compositionsStayInLockstep() throws Exception {
+        // Drift guard: SessionSandboxStateStore composes sandbox/user/{agentId}/{userId} and
+        // SandboxIsolationKey#forExecutionGuard composes {agentId}/{userId}. They must stay in
+        // lockstep — if either composition changes, this assertion goes red. Uses the real
+        // InMemoryAgentStateStore so the slot id is observable through its session keys.
+        RecordingStateStore stateStore = new RecordingStateStore();
+        SessionSandboxStateStore recordingStore =
+                new SessionSandboxStateStore(stateStore, AGENT_ID);
+        SandboxIsolationKey slotKey = isolationKey(IsolationScope.USER, "user-123");
+        SandboxIsolationKey guardKey = slotKey.forExecutionGuard(AGENT_ID);
+
+        recordingStore.save(slotKey, JSON);
+
+        String slotId = stateStore.lastSessionId;
+        assertTrue(slotId.startsWith("sandbox/user/"), "unexpected slot id: " + slotId);
+        assertTrue(
+                slotId.endsWith("/" + guardKey.getValue()),
+                "slot id %s must end with '/%s' — the slot and the execution-guard key drifted"
+                        .formatted(slotId, guardKey.getValue()));
+    }
+
+    @Test
     void deleteUsesTombstone_evenWhenSessionDeleteUnsupported() throws Exception {
         SessionSandboxStateStore redisLikeStore =
                 new SessionSandboxStateStore(new NoDeleteSession(), AGENT_ID);
@@ -104,6 +127,17 @@ class SessionSandboxStateStoreTest {
         @Override
         public void delete(String userId, String sessionId, String key) {
             // no-op
+        }
+    }
+
+    /** Records the raw session id the slot is written to. */
+    private static final class RecordingStateStore extends InMemoryAgentStateStore {
+        String lastSessionId;
+
+        @Override
+        public void save(String userId, String sessionId, String key, State state) {
+            lastSessionId = sessionId;
+            super.save(userId, sessionId, key, state);
         }
     }
 }

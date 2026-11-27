@@ -19,6 +19,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.agent.RuntimeContext;
@@ -203,11 +204,12 @@ class SandboxIsolationKeyTest {
     }
 
     @Test
-    void userScope_guardKeyWithBlankAgent_fallsBackToSlotKey() {
+    void userScope_guardKeyWithBlankAgent_throws() {
         RuntimeContext ctx = RuntimeContext.builder().userId("u1").build();
         SandboxIsolationKey key =
                 SandboxIsolationKey.resolve(IsolationScope.USER, ctx, "agent").orElseThrow();
-        assertSame(key, key.forExecutionGuard(null));
-        assertSame(key, key.forExecutionGuard("  "));
+        // Returning `this` would hand back exactly the key that deadlocks nested calls.
+        assertThrows(IllegalArgumentException.class, () -> key.forExecutionGuard(null));
+        assertThrows(IllegalArgumentException.class, () -> key.forExecutionGuard("  "));
     }
 }
