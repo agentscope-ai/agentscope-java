@@ -477,6 +477,16 @@ class ProjectAwareOverlayTest {
         assertFalse(overlay.isWorkspacePath(rc, absPath));
     }
 
+    @Test
+    void isWorkspacePath_rootRelativeOutsideWorkspace_returnsFalseOnEveryHost() {
+        // The CompositeFilesystem hands backends paths with a leading separator. On a Windows
+        // host that spelling is not absolute for Path.isAbsolute(), and it was matched against
+        // the workspace prefixes like a relative path (#4455).
+        assertFalse(overlay.isWorkspacePath(rc, "/MEMORY.md"));
+        assertFalse(overlay.isWorkspacePath(rc, "/memory/2024-01-01.md"));
+        assertFalse(overlay.isWorkspacePath(rc, "/AGENTS.md"));
+    }
+
     // ==================== Shell execute delegates to upper ====================
 
     @Test
