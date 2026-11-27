@@ -25,6 +25,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.Callable;
 import java.util.concurrent.TimeUnit;
 import okhttp3.Interceptor;
 import okhttp3.MediaType;
@@ -35,6 +36,7 @@ import okhttp3.Response;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Mono;
+import reactor.core.scheduler.Schedulers;
 
 /**
  * Client for interacting with Dify Knowledge Base API.
@@ -126,7 +128,7 @@ public class DifyRAGClient {
             return Mono.error(new IllegalArgumentException("Query cannot be null or empty"));
         }
 
-        return Mono.fromCallable(
+        Callable<DifyResponse> retrieval =
                 () -> {
                     log.debug(
                             "Retrieving from dataset: {} with query: {} (limit: {})",
@@ -270,7 +272,8 @@ public class DifyRAGClient {
 
                         return difyResponse;
                     }
-                });
+                };
+        return Mono.fromCallable(retrieval).subscribeOn(Schedulers.boundedElastic());
     }
 
     /**

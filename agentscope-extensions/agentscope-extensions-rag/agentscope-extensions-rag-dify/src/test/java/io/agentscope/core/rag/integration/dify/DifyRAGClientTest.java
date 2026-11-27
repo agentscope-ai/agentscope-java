@@ -16,6 +16,7 @@
 package io.agentscope.core.rag.integration.dify;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -26,19 +27,52 @@ import io.agentscope.core.rag.integration.dify.exception.DifyAuthException;
 import io.agentscope.core.rag.integration.dify.model.DifyResponse;
 import io.agentscope.core.util.JsonUtils;
 import java.io.IOException;
+import java.time.Duration;
 import java.util.List;
 import java.util.Map;
+import okhttp3.OkHttpClient;
 import okhttp3.mockwebserver.MockResponse;
 import okhttp3.mockwebserver.MockWebServer;
 import okhttp3.mockwebserver.RecordedRequest;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import reactor.core.publisher.Mono;
+import reactor.core.scheduler.Scheduler;
+import reactor.core.scheduler.Schedulers;
+import reactor.test.StepVerifier;
 
 /**
  * Unit tests for DifyRAGClient.
  */
 class DifyRAGClientTest {
+
+    @Test
+    void retrieveOffloadsSynchronousHttpFromNonBlockingSubscriber() {
+        mockWebServer.enqueue(createSuccessResponse());
+        OkHttpClient http =
+                new OkHttpClient.Builder()
+                        .addInterceptor(
+                                chain -> {
+                                    assertFalse(Schedulers.isInNonBlockingThread());
+                                    return chain.proceed(chain.request());
+                                })
+                        .build();
+        DifyRAGClient client = new DifyRAGClient(http, createConfig(), JsonUtils.getJsonCodec());
+        Mono<DifyResponse> retrieval = client.retrieve("query", 5);
+        assertEquals(0, mockWebServer.getRequestCount());
+        Scheduler eventLoop = Schedulers.newSingle("dify-test-event-loop");
+        try {
+            StepVerifier.create(Mono.defer(() -> retrieval).subscribeOn(eventLoop))
+                    .assertNext(response -> assertEquals(1, response.getRecords().size()))
+                    .expectComplete()
+                    .verify(Duration.ofSeconds(10));
+        } finally {
+            eventLoop.dispose();
+            http.connectionPool().evictAll();
+            http.dispatcher().executorService().shutdownNow();
+        }
+    }
 
     private MockWebServer mockWebServer;
 

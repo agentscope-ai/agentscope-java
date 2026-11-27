@@ -16,6 +16,7 @@
 package io.agentscope.core.rag.integration.haystack;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -25,18 +26,51 @@ import io.agentscope.core.rag.integration.haystack.exception.HayStackApiExceptio
 import io.agentscope.core.rag.integration.haystack.model.HayStackResponse;
 import io.agentscope.core.util.JsonUtils;
 import java.io.IOException;
+import java.time.Duration;
 import java.util.Map;
+import okhttp3.OkHttpClient;
 import okhttp3.mockwebserver.MockResponse;
 import okhttp3.mockwebserver.MockWebServer;
 import okhttp3.mockwebserver.RecordedRequest;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import reactor.core.publisher.Mono;
+import reactor.core.scheduler.Scheduler;
+import reactor.core.scheduler.Schedulers;
+import reactor.test.StepVerifier;
 
 /**
  * Unit tests for HayStackClient.
  */
 class HayStackClientTest {
+
+    @Test
+    void retrieveOffloadsSynchronousHttpFromNonBlockingSubscriber() {
+        mockWebServer.enqueue(successResponse());
+        OkHttpClient http =
+                new OkHttpClient.Builder()
+                        .addInterceptor(
+                                chain -> {
+                                    assertFalse(Schedulers.isInNonBlockingThread());
+                                    return chain.proceed(chain.request());
+                                })
+                        .build();
+        HayStackClient client = new HayStackClient(http, createConfig());
+        Mono<HayStackResponse> retrieval = client.retrieve("query", 5, null);
+        assertEquals(0, mockWebServer.getRequestCount());
+        Scheduler eventLoop = Schedulers.newSingle("haystack-test-event-loop");
+        try {
+            StepVerifier.create(Mono.defer(() -> retrieval).subscribeOn(eventLoop))
+                    .assertNext(response -> assertEquals(2, response.getDocuments().size()))
+                    .expectComplete()
+                    .verify(Duration.ofSeconds(10));
+        } finally {
+            eventLoop.dispose();
+            http.connectionPool().evictAll();
+            http.dispatcher().executorService().shutdownNow();
+        }
+    }
 
     private MockWebServer mockWebServer;
 

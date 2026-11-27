@@ -25,9 +25,11 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.Callable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Mono;
+import reactor.core.scheduler.Schedulers;
 
 /**
  * Client for interacting with Alibaba Cloud Bailian Knowledge Base API.
@@ -147,10 +149,11 @@ public class BailianClient {
             return Mono.error(new IllegalArgumentException("Query cannot be null or empty"));
         }
 
-        return Mono.fromCallable(
+        Callable<RetrieveResponse> retrieval =
                 () -> {
                     log.debug(
-                            "Retrieving from index: {} with query: {} (limit: {}, historySize: {})",
+                            "Retrieving from index: {} with query: {} (limit: {},"
+                                    + " historySize: {})",
                             indexId,
                             query,
                             limit,
@@ -255,8 +258,8 @@ public class BailianClient {
 
                     if (response.getBody().getData() == null) {
                         log.warn(
-                                "Bailian API returned no data for query: {}. requestId={},statu={},"
-                                        + " code={}, message={}",
+                                "Bailian API returned no data for query: {}."
+                                        + " requestId={},statu={}, code={}, message={}",
                                 query,
                                 response.getBody().getRequestId(),
                                 response.getBody().getStatus(),
@@ -273,7 +276,8 @@ public class BailianClient {
                             indexId);
 
                     return response;
-                });
+                };
+        return Mono.fromCallable(retrieval).subscribeOn(Schedulers.boundedElastic());
     }
 
     /**

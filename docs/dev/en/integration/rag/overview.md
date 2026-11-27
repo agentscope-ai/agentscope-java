@@ -32,6 +32,10 @@ Toolkit toolkit = new Toolkit();
 toolkit.registerObject(tools);
 ```
 
+## Reactive retrieval
+
+The Bailian, Dify, HayStack and RAGFlow clients defer their synchronous SDK/HTTP work until subscription and run it on Reactor's shared bounded-elastic scheduler. Calling these retrieval publishers from a nonblocking request thread therefore does not execute the blocking network call on that thread. Compose the returned `Mono` with your reactive flow; the `.block()` examples are for imperative callers, not event-loop handlers. Cancelling a subscription disposes its scheduled task, but whether an in-flight request stops promptly depends on the underlying SDK/HTTP client's interruption and timeout behavior.
+
 ## Choosing one
 
 | Need | Recommendation |
