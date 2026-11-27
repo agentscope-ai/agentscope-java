@@ -47,6 +47,10 @@ DashScopeChatModel model = DashScopeChatModel.builder()
     .build();
 ```
 
+## 流式响应
+
+DashScope 的 SSE 解析器会跳过格式错误的 JSON 和 JSON `null` 帧，因此被跳过的帧不会影响后续有效响应的返回。服务端错误响应仍会以 `DashScopeHttpException` 终止流并保留原始响应体，传输失败也仍作为错误传播，不会被当作空输出。
+
 ## Spring Boot
 
 Spring Boot 应用可以使用 DashScope starter：

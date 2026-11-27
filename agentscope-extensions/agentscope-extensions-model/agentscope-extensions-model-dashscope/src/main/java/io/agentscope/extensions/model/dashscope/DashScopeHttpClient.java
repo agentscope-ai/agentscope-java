@@ -312,18 +312,25 @@ public class DashScopeHttpClient {
             return transport.stream(httpRequest)
                     .<ParsedStreamResponse>handle(
                             (data, sink) -> {
+                                String responseBody = data;
                                 try {
                                     // Decrypt response if encryption is enabled
                                     if (finalEncryptionContext != null) {
-                                        data = decryptResponse(data, finalEncryptionContext);
+                                        responseBody =
+                                                decryptResponse(data, finalEncryptionContext);
                                     }
-                                    sink.next(
-                                            new ParsedStreamResponse(
-                                                    data,
-                                                    JsonUtils.getJsonCodec()
-                                                            .fromJson(
-                                                                    data,
-                                                                    DashScopeResponse.class)));
+                                    DashScopeResponse response =
+                                            JsonUtils.getJsonCodec()
+                                                    .fromJson(
+                                                            responseBody, DashScopeResponse.class);
+                                    // A JSON null frame decodes successfully to no response and
+                                    // must be skipped like malformed JSON, so that later frames
+                                    // are not terminated by a NullPointerException.
+                                    if (response == null) {
+                                        log.debug("Skipping null SSE data frame");
+                                        return;
+                                    }
+                                    sink.next(new ParsedStreamResponse(responseBody, response));
                                 } catch (JsonException e) {
                                     log.warn(
                                             "Failed to parse SSE data: {}. Error: {}",
