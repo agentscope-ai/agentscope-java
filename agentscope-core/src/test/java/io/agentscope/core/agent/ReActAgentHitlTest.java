@@ -374,6 +374,28 @@ class ReActAgentHitlTest {
     }
 
     @Test
+    void askingToolMessageReachesTheConfirmationEvent() {
+        // The tool's ASK decision carries a human-readable message; it must surface on the
+        // RequireUserConfirmEvent keyed by call id, not be dropped at the gate (#3315).
+        ChatModelBase model =
+                new ScriptedModel(
+                        List.of(() -> Flux.just(toolUseResponse("tc1", "plan_exit", "x"))));
+        ReActAgent agent = buildAgent(model, toolkitWith(new AskingTool("plan_exit")));
+
+        List<AgentEvent> events = agent.streamEvents(List.of()).collectList().block();
+        assertNotNull(events);
+
+        RequireUserConfirmEvent req =
+                (RequireUserConfirmEvent)
+                        events.get(indexOf(events, RequireUserConfirmEvent.class));
+        assertEquals(1, req.getConfirmationMessages().size(), "the ASK message must survive");
+        assertEquals(
+                "ask: plan_exit",
+                req.getConfirmationMessages().get("tc1"),
+                "message must be keyed by tool call id");
+    }
+
+    @Test
     void ungrantedAskingToolSkipsConfirmationWithNotFoundResult() {
         // Regression: the grant gate must run BEFORE the permission pipeline — an ungranted
         // call must never reach human confirmation; it resolves as non-existent with the
