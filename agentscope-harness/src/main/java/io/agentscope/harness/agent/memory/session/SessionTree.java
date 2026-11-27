@@ -21,6 +21,7 @@ import io.agentscope.harness.agent.filesystem.AbstractFilesystem;
 import io.agentscope.harness.agent.filesystem.model.ReadResult;
 import io.agentscope.harness.agent.filesystem.sandbox.PinnedSandboxFilesystem;
 import io.agentscope.harness.agent.sandbox.Sandbox;
+import io.agentscope.harness.agent.sandbox.SandboxAcquireResult;
 import io.agentscope.harness.agent.sandbox.SandboxAware;
 import io.agentscope.harness.agent.transcript.ObjectStoreTranscriptStore;
 import io.agentscope.harness.agent.transcript.TranscriptRef;
@@ -550,9 +551,18 @@ public class SessionTree {
         if (transcriptStore == null || transcriptRef == null || entries.isEmpty()) {
             return;
         }
-        // Same pin as scheduleMirror: async segment upload must survive call unbind.
-        final AbstractFilesystem mirrorFs = pinIfSandbox(filesystem);
-        final TranscriptStore store = transcriptStoreForMirror(mirrorFs);
+        final TranscriptStore store;
+        if (transcriptStore instanceof ObjectStoreTranscriptStore ost) {
+            // The segment is written through the filesystem, so it has to be this call's own
+            // mirror target. Any other transcript store never touches the sandbox.
+            AbstractFilesystem mirrorFs = mirrorTarget();
+            if (mirrorFs == null) {
+                return;
+            }
+            store = ost.withFilesystem(mirrorFs).withRuntimeContext(fsRc);
+        } else {
+            store = transcriptStore.withRuntimeContext(fsRc);
+        }
         final TranscriptRef ref = transcriptRef;
         StringBuilder sb = new StringBuilder();
         for (SessionEntry entry : entries) {
@@ -584,7 +594,10 @@ public class SessionTree {
         if (filesystem == null || workspaceRoot == null) {
             return;
         }
-        final AbstractFilesystem mirrorFs = pinIfSandbox(filesystem);
+        final AbstractFilesystem mirrorFs = mirrorTarget();
+        if (mirrorFs == null) {
+            return;
+        }
         final String contextRel = resolveRelativePath(contextFile);
         final String logRel = resolveRelativePath(logFile);
         MIRROR_EXECUTOR.execute(
@@ -595,24 +608,28 @@ public class SessionTree {
     }
 
     /**
-     * When {@code fs} is a call-scoped sandbox proxy with an active binding, return a pinned
-     * filesystem that keeps that sandbox for async uploads. Otherwise return {@code fs} as-is.
+     * Returns the filesystem an asynchronous mirror of this call must write through, or {@code
+     * null} when there is none to write to.
+     *
+     * <p>The mirror is scheduled while the call runs and performed after it, so the sandbox it
+     * addresses is decided here. That is the sandbox bound to <em>this</em> call on its {@code
+     * RuntimeContext}: it is pinned, and the upload keeps using it once the call has released.
+     *
+     * <p>The agent-level slot of the shared sandbox proxy is deliberately not read. With several
+     * users on one agent it names whichever sandbox was acquired last, so a mirror aimed there
+     * writes one user's session into another user's sandbox (#4273). A call that has no sandbox
+     * bound gets no mirror target: the mirror is best-effort and is skipped rather than sent to
+     * another call's sandbox.
+     *
+     * <p>A filesystem that is not sandbox-backed is returned as-is.
      */
-    private static AbstractFilesystem pinIfSandbox(AbstractFilesystem fs) {
-        if (fs instanceof SandboxAware aware) {
-            Sandbox sb = aware.getSandbox();
-            if (sb != null) {
-                return new PinnedSandboxFilesystem(sb);
-            }
+    private AbstractFilesystem mirrorTarget() {
+        if (!(filesystem instanceof SandboxAware)) {
+            return filesystem;
         }
-        return fs;
-    }
-
-    private TranscriptStore transcriptStoreForMirror(AbstractFilesystem mirrorFs) {
-        if (transcriptStore instanceof ObjectStoreTranscriptStore ost) {
-            return ost.withFilesystem(mirrorFs).withRuntimeContext(fsRc);
-        }
-        return transcriptStore.withRuntimeContext(fsRc);
+        SandboxAcquireResult bound = fsRc != null ? fsRc.get(SandboxAcquireResult.class) : null;
+        Sandbox sandbox = bound == null ? null : bound.getSandbox();
+        return sandbox == null ? null : new PinnedSandboxFilesystem(sandbox);
     }
 
     /**
