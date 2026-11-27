@@ -51,6 +51,7 @@ import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
@@ -1330,6 +1331,41 @@ public class WorkspaceManager implements AutoCloseable {
             return WriteResult.fail(
                     "Error moving '" + src + "' to '" + dst + "': " + e.getMessage());
         }
+    }
+
+    /**
+     * After a failed daily archive move, checks whether another worker already moved the source.
+     * Both observations use the same runtime namespace and backend routing as the move.
+     */
+    public boolean isDailyMemoryFileArchived(RuntimeContext rc, LocalDate date) {
+        String name = date + ".md";
+        String src = MEMORY_DIR + "/" + name;
+        String archive = MEMORY_DIR + "/archive";
+        String dst = archive + "/" + name;
+        boolean host = memoryFilesRouteToLiveSandbox(src);
+        if (host != memoryFilesRouteToLiveSandbox(dst)) {
+            return false;
+        }
+        if (host) {
+            return Files.notExists(resolveRuntimeDataPath(rc, src))
+                    && Files.isRegularFile(resolveRuntimeDataPath(rc, dst));
+        }
+        if (filesystem == null || filesystem.exists(rc, src)) {
+            return false;
+        }
+        // exists() also returns true for directories; require the exact archived file instead.
+        GlobResult glob = filesystem.glob(rc, name, archive);
+        if (glob == null || !glob.isSuccess() || glob.matches() == null) {
+            return false;
+        }
+        String namespaced = toWorkspaceRelativeString(resolveRuntimeDataPath(rc, dst));
+        return glob.matches().stream()
+                .anyMatch(
+                        file -> {
+                            String path = normalizeRelativePath(file.path());
+                            return !file.isDirectory()
+                                    && (path.equals(dst) || path.equals(namespaced));
+                        });
     }
 
     /**

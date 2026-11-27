@@ -35,6 +35,7 @@ import io.agentscope.harness.agent.workspace.WorkspaceManager;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.LocalDate;
+import java.time.format.DateTimeParseException;
 import java.util.EnumSet;
 import java.util.Set;
 import java.util.function.Function;
@@ -250,32 +251,48 @@ public class MemoryMaintenanceMiddleware implements HarnessRuntimeMiddleware {
             if (fi.isDirectory()) {
                 continue;
             }
+            String listedPath;
             try {
-                String listedPath = WorkspaceManager.requireSafeRelativePath(fi.path());
-                String fileName = fileName(listedPath);
-                String fromPath = WorkspaceConstants.MEMORY_DIR + "/" + fileName;
+                listedPath = WorkspaceManager.requireSafeRelativePath(fi.path());
+            } catch (IllegalArgumentException e) {
+                log.debug("Skipping invalid memory ledger path");
+                continue;
+            }
+            String fileName = fileName(listedPath);
+            if (fileName.startsWith(".") || !fileName.endsWith(".md")) {
+                continue;
+            }
+            LocalDate fileDate;
+            try {
+                fileDate = LocalDate.parse(fileName.substring(0, fileName.length() - 3));
+            } catch (DateTimeParseException e) {
+                continue;
+            }
+            if (!fileDate.isBefore(cutoff)) {
+                continue;
+            }
+
+            String fromPath = WorkspaceConstants.MEMORY_DIR + "/" + fileName;
+            String toPath = WorkspaceConstants.MEMORY_DIR + "/archive/" + fileName;
+            try {
                 String namespacedPath =
                         workspaceManager.toWorkspaceRelativeString(
                                 workspaceManager.resolveRuntimeDataPath(rc, fromPath));
-                // Virtual local listings may retain the current namespace; other backends strip it.
-                // Some backends glob recursively, so accept only these two direct ledger paths.
-                if ((!listedPath.equals(fromPath) && !listedPath.equals(namespacedPath))
-                        || fileName.startsWith(".")
-                        || !fileName.endsWith(".md")) {
+                // Some backends glob recursively; do not widen the current namespace.
+                if (!listedPath.equals(fromPath) && !listedPath.equals(namespacedPath)) {
+                    log.debug("Skipping daily ledger {}: unexpected memory listing path", fileName);
                     continue;
                 }
-                LocalDate fileDate = LocalDate.parse(fileName.substring(0, fileName.length() - 3));
-                if (fileDate.isBefore(cutoff)) {
-                    String toPath = WorkspaceConstants.MEMORY_DIR + "/archive/" + fileName;
-                    var moved = workspaceManager.moveMemoryFile(rc, fromPath, toPath);
-                    if (moved.isSuccess()) {
-                        log.debug("Archived expired daily file: {}", fileName);
-                    } else {
-                        log.warn("Failed to archive daily file {}: {}", fileName, moved.error());
-                    }
+                var moved = workspaceManager.moveMemoryFile(rc, fromPath, toPath);
+                if (moved.isSuccess()) {
+                    log.debug("Archived expired daily file: {}", fileName);
+                } else if (workspaceManager.isDailyMemoryFileArchived(rc, fileDate)) {
+                    log.debug("Skipping already archived daily file: {}", fileName);
+                } else {
+                    log.warn("Failed to archive daily file {}: {}", fileName, moved.error());
                 }
             } catch (Exception e) {
-                // Invalid date or per-file failure: preserve best-effort processing of other files.
+                log.warn("Failed to archive daily file {}: {}", fileName, e.toString());
             }
         }
     }

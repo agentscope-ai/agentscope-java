@@ -43,6 +43,7 @@ import java.nio.file.Path;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Map;
@@ -158,6 +159,90 @@ class MemoryMaintenanceArchiveTest {
                                     "memory/absent.md",
                                     "memory/archive/absent.md")
                             .isSuccess());
+        }
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {true, false})
+    void recognizesAlreadyArchivedOnlyWhenTheSourceIsGoneAndTheArchiveIsInScope(boolean sandbox)
+            throws Exception {
+        io.agentscope.harness.agent.filesystem.remote.store.NamespaceFactory namespace =
+                rc -> List.of(rc.getUserId());
+        AbstractFilesystem fs =
+                sandbox
+                        ? new SandboxBackedFilesystem()
+                        : new LocalFilesystem(workspace, true, 10, namespace);
+        try (var manager = new WorkspaceManager(workspace, fs, null, namespace)) {
+            var alice = context("alice");
+            LocalDate day = LocalDate.of(2026, 11, 18);
+            String name = day + ".md";
+            Path memory = workspace.resolve("alice/memory");
+            seed(workspace.resolve("bob/memory/archive"), name, "unrelated archive");
+            seed(memory.resolve("archive/nested"), name, "nested ledger is not the archive");
+            assertFalse(manager.isDailyMemoryFileArchived(alice, day));
+            Path archive = memory.resolve("archive").resolve(name);
+            Files.createDirectories(archive);
+            assertFalse(manager.isDailyMemoryFileArchived(alice, day));
+            Files.delete(archive);
+            seed(memory.resolve("archive"), name, "archived by first replica");
+            seed(memory, name, "source still here");
+            assertFalse(manager.isDailyMemoryFileArchived(alice, day));
+            Files.delete(memory.resolve(name));
+            assertTrue(manager.isDailyMemoryFileArchived(alice, day));
+            assertEquals("archived by first replica", Files.readString(archive));
+        }
+    }
+
+    @Test
+    void staleListingDoesNotRewriteArchiveOrBlockOtherLedgers() throws Exception {
+        var fs =
+                new LocalFilesystem(workspace, true, 10) {
+                    @Override
+                    public GlobResult glob(RuntimeContext rc, String pattern, String path) {
+                        if (pattern.equals("*.md") && path.equals("memory")) {
+                            return GlobResult.success(
+                                    List.of(
+                                            FileInfo.ofFile("exports/memory/2026-11-15.md", 1, 1L),
+                                            FileInfo.ofFile("memory/2026-11-16.md", 1, 1L),
+                                            FileInfo.ofFile("memory/2026-11-17.md", 1, 1L),
+                                            FileInfo.ofFile("memory/2026-11-18.md", 1, 1L)));
+                        }
+                        return super.glob(rc, pattern, path);
+                    }
+                };
+        Path memory = workspace.resolve("memory");
+        seed(memory, "2026-11-15.md", "unexpected listing must not authorize this move");
+        seed(memory.resolve("archive"), "2026-11-16.md", "archived by first replica");
+        seed(memory, "2026-11-18.md", "next eligible ledger");
+        try (var manager = new WorkspaceManager(workspace, fs, null)) {
+            maintain(manager, context("alice"), 0);
+            assertTrue(Files.exists(memory.resolve("2026-11-15.md")));
+            assertEquals(
+                    "archived by first replica",
+                    Files.readString(memory.resolve("archive/2026-11-16.md")));
+            assertFalse(Files.exists(memory.resolve("archive/2026-11-17.md")));
+            assertEquals(
+                    "next eligible ledger",
+                    Files.readString(memory.resolve("archive/2026-11-18.md")));
+        }
+    }
+
+    @Test
+    void checksThePersistentRouteForAnAlreadyArchivedLedger() throws Exception {
+        Path persistent = workspace.resolve("persistent");
+        Path host = workspace.resolve("host");
+        seed(host.resolve("memory/archive"), "2026-11-18.md", "not authoritative");
+        Files.createDirectories(persistent);
+        var routed =
+                new RoutedSandboxFilesystem(
+                        new SandboxBackedFilesystem(),
+                        Map.of("memory/", new LocalFilesystem(persistent, true, 10)));
+        try (var manager = new WorkspaceManager(host, routed, null)) {
+            var rc = context("alice");
+            LocalDate date = LocalDate.of(2026, 11, 18);
+            assertFalse(manager.isDailyMemoryFileArchived(rc, date));
+            seed(persistent.resolve("archive"), date + ".md", "authoritative archive");
+            assertTrue(manager.isDailyMemoryFileArchived(rc, date));
         }
     }
 
