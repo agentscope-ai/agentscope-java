@@ -81,12 +81,16 @@ class LocalFilesystemPersonalAssistantExampleTest {
 
         // Build the agent with a LocalFilesystemWithShell store.
         // No distributed store, no sandbox — all operations go straight to disk.
+        // This is about files persisting, not about memory: the memory flush that runs in the
+        // background after a call may consolidate into MEMORY.md, and the last assertion below
+        // would then depend on whether that has finished.
         try (HarnessAgent agent =
                 HarnessAgent.builder()
                         .name("my-local-assistant")
                         .model(stubModel("done"))
                         .workspace(workspace.toAbsolutePath().normalize().toString())
                         .abstractFilesystem(new LocalFilesystemWithShell(workspace))
+                        .disableMemoryHooks()
                         .build()) {
 
             // Call 1: write a note to MEMORY.md through the workspace manager

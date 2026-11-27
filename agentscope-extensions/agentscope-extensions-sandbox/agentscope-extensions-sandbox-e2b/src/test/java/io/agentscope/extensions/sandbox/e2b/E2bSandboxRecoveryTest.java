@@ -48,6 +48,8 @@ import okio.Buffer;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.condition.EnabledOnOs;
+import org.junit.jupiter.api.condition.OS;
 import org.junit.jupiter.api.io.TempDir;
 
 class E2bSandboxRecoveryTest {
@@ -408,7 +410,10 @@ class E2bSandboxRecoveryTest {
         assertTrue(envdCommand(setupWorkspace).contains("test -d"));
     }
 
+    // As in E2bSandboxOptionsAndStateTest: the workspace is a host directory here, which the
+    // client only accepts as an in-sandbox root on a POSIX host (#4460).
     @Test
+    @EnabledOnOs({OS.LINUX, OS.MAC})
     void nativeRestoreAfterConnectFailurePreservesEditsAndUnchangedProjection() throws Exception {
         server.enqueue(new MockResponse().setResponseCode(500).setBody("connect failed"));
         server.enqueue(sandboxResponse("restored-sandbox"));

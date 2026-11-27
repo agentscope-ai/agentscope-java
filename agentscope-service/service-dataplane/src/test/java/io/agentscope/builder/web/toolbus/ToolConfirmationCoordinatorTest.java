@@ -420,9 +420,15 @@ class ToolConfirmationCoordinatorTest {
 
     @Test
     void replacementTurnLeaseCannotReleaseOldTicketAndMayReuseToolUseId() {
-        ManagedExecutionScope oldScope =
-                new ManagedExecutionScope("tenant-a", "task-a", "attempt-a", 3, "turn-a");
-        when(controlPlaneClient.managedExecutionScope("session-a")).thenReturn(oldScope);
+        // The requests below start threads that keep calling this mock in the background. A
+        // stubbing made while they run can be attributed to one of their calls and get lost, so
+        // the stubbing is made once here, before any request, and switched through the reference
+        // (#4460).
+        AtomicReference<ManagedExecutionScope> scope =
+                new AtomicReference<>(
+                        new ManagedExecutionScope("tenant-a", "task-a", "attempt-a", 3, "turn-a"));
+        when(controlPlaneClient.managedExecutionScope("session-a"))
+                .thenAnswer(invocation -> scope.get());
         CompletableFuture<Boolean> oldWaiting =
                 requestManaged("shared-tool", "web_search", Map.of("query", "old"), "instance-a");
         CoordinationStore.HitlTicket oldTicket = ticket.get();
@@ -448,9 +454,7 @@ class ToolConfirmationCoordinatorTest {
 
         coordinator.cancelSession("session-a", "new_turn_admitted");
         assertThat(oldWaiting.join()).isFalse();
-        when(controlPlaneClient.managedExecutionScope("session-a"))
-                .thenReturn(
-                        new ManagedExecutionScope("tenant-a", "task-a", "attempt-b", 4, "turn-b"));
+        scope.set(new ManagedExecutionScope("tenant-a", "task-a", "attempt-b", 4, "turn-b"));
         CompletableFuture<Boolean> newWaiting =
                 requestManaged("shared-tool", "web_search", Map.of("query", "new"), "instance-b");
 

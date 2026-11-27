@@ -459,7 +459,11 @@ class MemoryFlushSandboxIndependenceTest {
             wsm.writeMemoryFileUtf8(RuntimeContext.empty(), "MEMORY.md", "legacy root");
             assertEquals("legacy root", Files.readString(workspace.resolve("MEMORY.md")));
         }
-        Path relativeWorkspace = Path.of("").toAbsolutePath().relativize(workspace);
+        // A relative path is resolved against the working directory and cannot cross drives, so
+        // the relative workspace has to be on that drive. @TempDir is not on every system: the
+        // Windows runner keeps the checkout on D: and the temp directory on C: (#4455).
+        Path relativeWorkspace =
+                Path.of("").toAbsolutePath().relativize(Path.of("target").toAbsolutePath());
         for (List<String> ns : List.of(List.<String>of(), List.of("user"))) {
             try (WorkspaceManager wsm =
                     new WorkspaceManager(relativeWorkspace, null, null, rc -> ns)) {

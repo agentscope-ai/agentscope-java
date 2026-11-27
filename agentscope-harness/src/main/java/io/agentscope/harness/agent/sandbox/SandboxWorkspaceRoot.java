@@ -46,10 +46,24 @@ public final class SandboxWorkspaceRoot {
     }
 
     private static String normalize(String root) {
-        if (root == null || root.isBlank() || !root.startsWith("/")) {
+        if (root == null || root.isBlank() || !isAbsolute(root)) {
             throw new SandboxException.SandboxConfigurationException(
                     "Sandbox workspace root must be an absolute path but was: " + root);
         }
         return java.nio.file.Path.of(root).normalize().toString().replace('\\', '/');
     }
+
+    /**
+     * A sandbox root is a POSIX path for the container backends. The in-memory sandbox is the
+     * exception: it works on a host directory, so its root is a Windows drive path when the host
+     * is Windows. Both are accepted on every host, so that the check does not depend on where it
+     * runs.
+     */
+    private static boolean isAbsolute(String root) {
+        return root.startsWith("/") || DRIVE_ABSOLUTE.matcher(root).matches();
+    }
+
+    /** A Windows drive path such as {@code C:\workspace} or {@code D:/ws}. */
+    private static final java.util.regex.Pattern DRIVE_ABSOLUTE =
+            java.util.regex.Pattern.compile("^[A-Za-z]:[/\\\\].*");
 }

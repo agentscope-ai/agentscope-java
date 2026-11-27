@@ -36,6 +36,7 @@ import io.agentscope.harness.agent.sandbox.Sandbox;
 import io.agentscope.harness.agent.sandbox.SandboxAcquireResult;
 import io.agentscope.harness.agent.sandbox.SandboxException;
 import io.agentscope.harness.agent.sandbox.SandboxState;
+import io.agentscope.harness.agent.sandbox.SandboxWorkspaceRoot;
 import io.agentscope.harness.agent.sandbox.WorkspaceSpec;
 import io.agentscope.harness.agent.workspace.WorkspacePathNormalizer;
 import java.nio.file.Path;
@@ -96,6 +97,20 @@ class SandboxWorkspaceRootTest {
             assertThrows(
                     SandboxException.SandboxConfigurationException.class,
                     () -> normalizer.normalize("a.txt", context(root)));
+        }
+    }
+
+    @Test
+    void driveRootsAreAcceptedOnEveryHost() {
+        // The in-memory sandbox works on a host directory, which is a drive path when the host
+        // is Windows (#4455).
+        assertEquals("C:/ws", SandboxWorkspaceRoot.resolve(context("C:\\ws"), null));
+        assertEquals(
+                "D:/ws/agent", SandboxWorkspaceRoot.resolve(context("D:/agent/../ws/agent"), null));
+        for (String root : new String[] {"C:ws", "ws", "\\\\server\\share\\ws"}) {
+            assertThrows(
+                    SandboxException.SandboxConfigurationException.class,
+                    () -> SandboxWorkspaceRoot.resolve(context(root), null));
         }
     }
 

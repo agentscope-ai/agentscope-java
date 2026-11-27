@@ -41,6 +41,8 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.condition.EnabledOnOs;
+import org.junit.jupiter.api.condition.OS;
 import org.junit.jupiter.api.io.TempDir;
 import org.mockito.ArgumentCaptor;
 
@@ -172,7 +174,11 @@ class E2bSandboxOptionsAndStateTest {
         assertEquals("/workspace", manifest.getRoot());
     }
 
+    // The sandbox root has to be an absolute in-sandbox path, which the client insists on. This
+    // test uses a host directory for it so that it can read the materialized files, and a host
+    // directory only passes for an in-sandbox path on a POSIX host (#4460).
     @Test
+    @EnabledOnOs({OS.LINUX, OS.MAC})
     void resumedLegacyStateMaterializesEntriesUnderSavedExecutionRoot(@TempDir Path temp)
             throws Exception {
         Path legacyRoot = temp.resolve("legacy-manifest");

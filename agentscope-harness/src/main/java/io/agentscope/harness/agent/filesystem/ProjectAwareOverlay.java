@@ -262,11 +262,13 @@ public class ProjectAwareOverlay extends OverlayFilesystem implements AbstractSa
         if (rel != null) {
             return matchesWorkspacePrefix(rel);
         }
-        if (Path.of(normalized).isAbsolute()) {
+        // A leading separator makes a path absolute wherever the agent works. On a Windows host
+        // Path.isAbsolute() says otherwise, and the relative match below then sent an absolute
+        // path such as /MEMORY.md to the workspace layer instead of the project one (#4455).
+        // No other absolute path needs a check of its own: one under the host's workspace root
+        // was handled above, and a drive path matches no workspace prefix below.
+        if (normalized.startsWith("/")) {
             return false;
-        }
-        while (normalized.startsWith("/")) {
-            normalized = normalized.substring(1);
         }
         return matchesWorkspacePrefix(normalized);
     }
