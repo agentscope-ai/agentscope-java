@@ -63,3 +63,5 @@ At startup, the channel resolves the bot's GitLab user id by calling `GET /api/v
 **Inbound:** `GitLabWebhookController` → note.id dedup → bot self-note filter → `GitLabInboundMapper` → bot-loop guard → Gateway.
 
 **Outbound:** `GitLabOutboundClient` posts replies as notes via the GitLab Notes API.
+
+Project paths from webhooks, including nested groups such as `team/subgroup/project`, are encoded once as the API's project identifier. Pass the original project path when constructing outbound addresses; do not URL-encode it first.

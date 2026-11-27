@@ -16,11 +16,9 @@
 package io.agentscope.core.agui.converter;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.core.agui.model.AguiMessage;
 import io.agentscope.core.message.AudioBlock;
 import io.agentscope.core.message.ContentBlock;
@@ -44,29 +42,24 @@ class AguiReasoningMediaTest {
 
     private static final String URL = "https://example.com/generated-output";
     private final AguiMessageConverter converter = new AguiMessageConverter();
-    private final ObjectMapper mapper = new ObjectMapper();
 
     @ParameterizedTest
     @MethodSource("urlMedia")
-    void reasoningDoesNotHideUrlMedia(ContentBlock media, String type, String mimeType)
-            throws Exception {
+    void reasoningWithMediaUsesProtocolValidTextContent(ContentBlock media, String mimeType) {
         List<AguiMessage> messages = converter.toAguiMessages(reasoningWith(media));
 
-        assertEquals(2, messages.size(), "reasoning and media must both reach the client");
+        assertEquals(2, messages.size());
         assertTrue(messages.get(0).isReasoningMessage());
         assertEquals("Generate the requested output", messages.get(0).getTextContent());
         assertTrue(messages.get(1).isAssistantMessage());
-        assertNotEquals(messages.get(0).getId(), messages.get(1).getId());
-        JsonNode json = mapper.readTree(mapper.writeValueAsString(messages.get(1)));
-        assertEquals(1, json.path("content").size());
-        JsonNode part = json.path("content").get(0);
-        assertEquals(type, part.path("type").asText());
-        assertEquals(URL, part.path("source").path("value").asText());
-        assertEquals(mimeType, part.path("source").path("mimeType").asText());
+        assertFalse(messages.get(1).hasBlocks());
+        String text = messages.get(1).getTextContent();
+        assertTrue(text.contains(URL));
+        assertTrue(text.contains(mimeType));
     }
 
     @Test
-    void historyConversionKeepsMediaAndFollowingMessages() throws Exception {
+    void historyConversionKeepsTextReferenceAndFollowingMessages() {
         Msg media = reasoningWith(ImageBlock.builder().source(source("image/png")).build());
         Msg following =
                 Msg.builder()
@@ -79,11 +72,8 @@ class AguiReasoningMediaTest {
         assertEquals(3, messages.size());
         assertTrue(messages.get(0).isReasoningMessage());
         assertTrue(messages.get(1).isAssistantMessage());
-        JsonNode content =
-                mapper.readTree(mapper.writeValueAsString(messages.get(1))).path("content");
-        assertEquals(1, content.size());
-        assertEquals("image", content.get(0).path("type").asText());
-        assertEquals(URL, content.get(0).path("source").path("value").asText());
+        assertFalse(messages.get(1).hasBlocks());
+        assertTrue(messages.get(1).getTextContent().contains(URL));
         assertEquals("next", messages.get(2).getTextContent());
     }
 
@@ -117,29 +107,16 @@ class AguiReasoningMediaTest {
 
     private static Stream<Arguments> urlMedia() {
         return Stream.of(
+                Arguments.of(ImageBlock.builder().source(source("image/png")).build(), "image/png"),
                 Arguments.of(
-                        ImageBlock.builder().source(source("image/png")).build(),
-                        "image",
-                        "image/png"),
-                Arguments.of(
-                        AudioBlock.builder().source(source("audio/mpeg")).build(),
-                        "audio",
-                        "audio/mpeg"),
-                Arguments.of(
-                        VideoBlock.builder().source(source("video/mp4")).build(),
-                        "video",
-                        "video/mp4"),
+                        AudioBlock.builder().source(source("audio/mpeg")).build(), "audio/mpeg"),
+                Arguments.of(VideoBlock.builder().source(source("video/mp4")).build(), "video/mp4"),
                 Arguments.of(
                         DocumentBlock.builder().source(source("application/pdf")).build(),
-                        "document",
                         "application/pdf"),
-                Arguments.of(
-                        DataBlock.builder().source(source("image/png")).build(),
-                        "image",
-                        "image/png"),
+                Arguments.of(DataBlock.builder().source(source("image/png")).build(), "image/png"),
                 Arguments.of(
                         DataBlock.builder().source(source("application/pdf")).build(),
-                        "document",
                         "application/pdf"));
     }
 }

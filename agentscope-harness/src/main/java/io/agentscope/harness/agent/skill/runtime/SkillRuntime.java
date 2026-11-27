@@ -147,8 +147,14 @@ public final class SkillRuntime {
 
     /** Renders the {@code <available_skills>} block + (when applicable) the code-execution prompt. */
     public String renderPrompt(SkillCatalog catalog, SkillFilter filter) {
+        return renderPrompt(catalog, filter, true);
+    }
+
+    /** Renders an index only when discovery is available on the current tool surface. */
+    public String renderPrompt(SkillCatalog catalog, SkillFilter filter, boolean allowIndex) {
         return promptBuilder.render(
                 catalog != null ? catalog : SkillCatalog.empty(),
-                filter != null ? filter : SkillFilter.all());
+                filter != null ? filter : SkillFilter.all(),
+                allowIndex);
     }
 }

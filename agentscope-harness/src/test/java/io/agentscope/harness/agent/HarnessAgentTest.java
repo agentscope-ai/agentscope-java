@@ -81,6 +81,7 @@ import io.agentscope.harness.agent.journal.WorkspaceThreadJournalStore;
 import io.agentscope.harness.agent.memory.MemoryConfig;
 import io.agentscope.harness.agent.memory.compaction.CompactionConfig;
 import io.agentscope.harness.agent.middleware.AgentTraceMiddleware;
+import io.agentscope.harness.agent.middleware.RepeatedFailureGuard;
 import io.agentscope.harness.agent.middleware.SubagentEntry;
 import io.agentscope.harness.agent.middleware.WorkspaceContextMiddleware;
 import io.agentscope.harness.agent.sandbox.SandboxAcquireResult;
@@ -168,6 +169,101 @@ class HarnessAgentTest {
     }
 
     @Test
+    void longTermMemoryIsOffByDefaultButThreadToolsRemain() throws Exception {
+        Files.createDirectories(workspace);
+        HarnessAgent agent =
+                HarnessAgent.builder()
+                        .name("t")
+                        .model(stubModel("ok"))
+                        .workspace(workspace)
+                        .abstractFilesystem(new LocalFilesystem(workspace))
+                        .build();
+
+        List<String> toolNames =
+                agent.getDelegate().getToolkit().getToolSchemas().stream()
+                        .map(ToolSchema::getName)
+                        .toList();
+        assertFalse(toolNames.contains("memory_search"));
+        assertFalse(toolNames.contains("memory_get"));
+        assertFalse(toolNames.contains("memory_save"));
+        // The native Thread journal is independent of long-term memory.
+        assertTrue(toolNames.contains("thread_search"));
+
+        WorkspaceContextMiddleware mw =
+                agent.getDelegate().getMiddlewares().stream()
+                        .filter(WorkspaceContextMiddleware.class::isInstance)
+                        .map(WorkspaceContextMiddleware.class::cast)
+                        .findFirst()
+                        .orElseThrow();
+        mw.onSystemPrompt(null, RuntimeContext.empty(), "BASE\n").block();
+        assertTrue(mw.isDisableMemoryTools());
+        assertTrue(mw.isDisableMemoryHooks());
+    }
+
+    @Test
+    void enableLongTermMemory_registersMemoryToolsAndGuidance() throws Exception {
+        Files.createDirectories(workspace);
+        Files.writeString(workspace.resolve("MEMORY.md"), "enabled memory marker xyz");
+        HarnessAgent agent =
+                HarnessAgent.builder()
+                        .name("t")
+                        .model(stubModel("ok"))
+                        .workspace(workspace)
+                        .abstractFilesystem(new LocalFilesystem(workspace))
+                        .enableLongTermMemory()
+                        .build();
+
+        List<String> toolNames =
+                agent.getDelegate().getToolkit().getToolSchemas().stream()
+                        .map(ToolSchema::getName)
+                        .toList();
+        assertTrue(toolNames.contains("memory_search"));
+        assertTrue(toolNames.contains("memory_get"));
+        assertTrue(toolNames.contains("memory_save"));
+        assertTrue(toolNames.contains("thread_search"));
+
+        WorkspaceContextMiddleware mw =
+                agent.getDelegate().getMiddlewares().stream()
+                        .filter(WorkspaceContextMiddleware.class::isInstance)
+                        .map(WorkspaceContextMiddleware.class::cast)
+                        .findFirst()
+                        .orElseThrow();
+        assertFalse(mw.isDisableMemoryTools());
+        assertFalse(mw.isDisableMemoryHooks());
+        RuntimeContext rc = RuntimeContext.empty();
+        mw.onSystemPrompt(null, rc, "BASE\n").block();
+        var materials = rc.get(io.agentscope.harness.agent.context.WorkspaceContextMaterials.class);
+        assertNotNull(materials);
+        assertTrue(
+                materials.items().stream()
+                        .anyMatch(item -> item.content().contains("## Memory Recall")));
+        assertTrue(
+                materials.items().stream()
+                        .anyMatch(item -> item.content().contains("enabled memory marker xyz")));
+    }
+
+    @Test
+    void memoryConfigAloneAlsoEnablesLongTermMemory() throws Exception {
+        Files.createDirectories(workspace);
+        HarnessAgent agent =
+                HarnessAgent.builder()
+                        .name("t")
+                        .model(stubModel("ok"))
+                        .workspace(workspace)
+                        .abstractFilesystem(new LocalFilesystem(workspace))
+                        .memory(MemoryConfig.defaults())
+                        .build();
+
+        List<String> toolNames =
+                agent.getDelegate().getToolkit().getToolSchemas().stream()
+                        .map(ToolSchema::getName)
+                        .toList();
+        assertTrue(toolNames.contains("memory_search"));
+        assertTrue(toolNames.contains("memory_get"));
+        assertTrue(toolNames.contains("memory_save"));
+    }
+
+    @Test
     void disableMemoryTools_omitsHarnessMemoryAndSessionTools() throws Exception {
         Files.createDirectories(workspace);
         Model model = stubModel("ok");
@@ -200,6 +296,7 @@ class HarnessAgentTest {
                         .model(model)
                         .workspace(workspace)
                         .abstractFilesystem(new LocalFilesystem(workspace))
+                        .enableLongTermMemory()
                         .disableMemoryTools()
                         .disableMemoryHooks()
                         .build();
@@ -243,9 +340,19 @@ class HarnessAgentTest {
     }
 
     @ParameterizedTest
-    @CsvSource({"false,false", "false,true", "true,false", "true,true"})
+    @CsvSource({
+        "false,false,false",
+        "false,true,false",
+        "true,false,false",
+        "true,true,false",
+        "false,false,true",
+        "false,true,true",
+        "true,false,true",
+        "true,true,true"
+    })
     void recallInstructionsChangeOnlyRecallGuidanceInModelRequests(
-            boolean disableTools, boolean disableHooks) throws Exception {
+            boolean disableTools, boolean disableHooks, boolean disableBeforeConfig)
+            throws Exception {
         String custom = "Search only for missing prior facts; keep %d and {userId} literal.";
         String[] instructions = {null, "", " \n\t", custom};
         for (int i = 0; i < instructions.length; i++) {
@@ -258,14 +365,20 @@ class HarnessAgentTest {
                             .model(model)
                             .workspace(root)
                             .abstractFilesystem(new LocalFilesystem(root))
-                            .journalEnabled(false)
-                            .memory(
-                                    MemoryConfig.builder()
-                                            .recallInstructions(instructions[i])
-                                            .flushTrigger(MemoryConfig.FlushTrigger.never())
-                                            .build());
-            if (disableTools) builder.disableMemoryTools();
-            if (disableHooks) builder.disableMemoryHooks();
+                            .journalEnabled(false);
+            if (disableBeforeConfig) {
+                if (disableTools) builder.disableMemoryTools();
+                if (disableHooks) builder.disableMemoryHooks();
+            }
+            builder.memory(
+                    MemoryConfig.builder()
+                            .recallInstructions(instructions[i])
+                            .flushTrigger(MemoryConfig.FlushTrigger.never())
+                            .build());
+            if (!disableBeforeConfig) {
+                if (disableTools) builder.disableMemoryTools();
+                if (disableHooks) builder.disableMemoryHooks();
+            }
             try (HarnessAgent agent = builder.build()) {
                 agent.call(
                                 userText("Answer using the supplied facts."),
@@ -482,7 +595,9 @@ class HarnessAgentTest {
         agent.call(userText("hi"), RuntimeContext.builder().sessionId("s1").build()).block();
 
         String combined = capturedPrompt(model);
-        assertTrue(combined.contains("No artifact delivery tool is configured"), () -> combined);
+        assertTrue(
+                combined.contains("Unless your tool list includes a delivery or upload tool"),
+                () -> combined);
         assertFalse(combined.contains("deliver_artifact"), () -> combined);
     }
 
@@ -1531,6 +1646,7 @@ class HarnessAgentTest {
                                 .model(stubModel("done"))
                                 .workspace(workspace)
                                 .abstractFilesystem(new LocalFilesystem(workspace))
+                                .enableLongTermMemory()
                                 .build();
                 HarnessAgent copied =
                         HarnessAgent.Builder.fromAgent(source.getDelegate())
@@ -2474,6 +2590,7 @@ class HarnessAgentTest {
                         .model(stubModel("ok"))
                         .toolkit(parentToolkit)
                         .workspace(workspace)
+                        .enableLongTermMemory()
                         .subagent(decl)
                         .buildSubagentEntries(workspace);
 
@@ -2796,5 +2913,56 @@ class HarnessAgentTest {
         when(tool.getDescription()).thenReturn("mock tool " + name);
         when(tool.getParameters()).thenReturn(Map.of("type", "object", "properties", Map.of()));
         return tool;
+    }
+
+    @Test
+    void repeatedFailureGuardIsInstalledByDefaultAndCanBeDisabled() {
+        HarnessAgent agent =
+                HarnessAgent.builder()
+                        .name("guard")
+                        .model(stubModel("ok"))
+                        .workspace(workspace)
+                        .abstractFilesystem(new LocalFilesystem(workspace))
+                        .build();
+        assertEquals(
+                1,
+                agent.getDelegate().getMiddlewares().stream()
+                        .filter(RepeatedFailureGuard.class::isInstance)
+                        .count());
+
+        HarnessAgent disabled =
+                HarnessAgent.builder()
+                        .name("guard-off")
+                        .model(stubModel("ok"))
+                        .workspace(workspace)
+                        .abstractFilesystem(new LocalFilesystem(workspace))
+                        .disableRepeatedFailureGuard()
+                        .build();
+        assertTrue(
+                disabled.getDelegate().getMiddlewares().stream()
+                        .noneMatch(RepeatedFailureGuard.class::isInstance));
+    }
+
+    @Test
+    void repeatedFailureGuardDisableFlagPropagatesToSubagents() {
+        HarnessAgent.Builder builder =
+                HarnessAgent.builder()
+                        .name("guard-parent")
+                        .model(stubModel("ok"))
+                        .workspace(workspace)
+                        .abstractFilesystem(new LocalFilesystem(workspace))
+                        .disableRepeatedFailureGuard();
+        List<SubagentEntry> entries = builder.buildSubagentEntries(workspace);
+        HarnessAgent child =
+                (HarnessAgent)
+                        entries.stream()
+                                .filter(e -> "general-purpose".equals(e.name()))
+                                .findFirst()
+                                .orElseThrow()
+                                .factory()
+                                .create(RuntimeContext.builder().sessionId("parent").build());
+        assertTrue(
+                child.getDelegate().getMiddlewares().stream()
+                        .noneMatch(RepeatedFailureGuard.class::isInstance));
     }
 }

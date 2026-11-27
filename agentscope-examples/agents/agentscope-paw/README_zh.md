@@ -44,7 +44,7 @@ paw 是一个轻量的 Spring Boot 应用，把 **HarnessAgent** 直接挂载到
 └─────────────────────────────────────────────────────────────────┘
 ```
 
-[QwenPaw]: https://github.com/agentscope-ai/openpaw
+[QwenPaw]: https://github.com/agentscope-ai/QwenPaw
 
 ---
 

@@ -22,7 +22,6 @@ import static io.agentscope.extensions.model.openai.OpenAIModelProviderSupport.a
 import io.agentscope.core.formatter.Formatter;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.Model;
-import io.agentscope.core.model.ModelContextWindows;
 import io.agentscope.core.model.ModelCreationContext;
 import io.agentscope.core.model.spi.ModelProvider;
 import io.agentscope.extensions.model.openai.OpenAIChatModel;
@@ -100,9 +99,7 @@ public final class GLMModelProvider implements ModelProvider {
                         .endpointPath(endpointPath)
                         .formatter(new GLMFormatter())
                         .nativeStructuredOutput(false)
-                        .supportsToolChoiceSpecific(false)
-                        .contextWindowSize(
-                                ModelContextWindows.lookup(modelName, ModelContextWindows.GLM));
+                        .supportsToolChoiceSpecific(false);
 
         GenerateOptions userOptions = context.component(GenerateOptions.class);
         GenerateOptions glmDefaults = glmDefaultOptions(context);

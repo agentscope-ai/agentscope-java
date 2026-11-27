@@ -104,6 +104,7 @@ public class McpClientBuilder {
     private Function<ElicitFormRequest, ElicitResult> syncElicitationHandler;
     private List<String> protocolVersions;
     private boolean propagateMeta = true;
+    private List<McpToolResultCustomizer> resultCustomizers = List.of();
 
     private McpClientBuilder(String name) {
         this.name = name;
@@ -490,6 +491,54 @@ public class McpClientBuilder {
     }
 
     /**
+     * Configures ordered customizers for the MCP tool result metadata exposed to the agent.
+     *
+     * <p>The server's raw {@code _meta} map is not exposed automatically. When at least one
+     * customizer is configured, the map passed to the customizers starts empty and becomes the value
+     * stored under {@link McpTool#METADATA_MCP_RESULT_META} on the {@link
+     * io.agentscope.core.message.ToolResultBlock}, and from there on {@code ToolResultEndEvent}
+     * metadata. Customizers can read the server's raw map from {@link
+     * McpToolResultContext#resultMeta()} and copy selected entries or add derived values. They run
+     * in list order and the resulting list is fixed when the wrapper is built:
+     *
+     * <pre>{@code
+     * McpClientWrapper customized = McpClientBuilder.create("customized-mcp")
+     *         .streamableHttpTransport("https://mcp.example.com/http")
+     *         .resultCustomizers(List.of(
+     *                 (ctx, resultMetadata) -> {
+     *                     Object traceId = ctx.resultMeta().get("traceId");
+     *                     if (traceId != null) {
+     *                         resultMetadata.put("trace.id", traceId);
+     *                     }
+     *                 }))
+     *         .buildSync();
+     * }</pre>
+     *
+     * <p>The customizer is per connection and applies to every tool on it, including results the
+     * server flags as errors. Each customizer failure is logged and skipped without changing the
+     * original tool result. See {@link McpToolResultCustomizer} for the contract.
+     *
+     * @param resultCustomizers ordered customizers to apply; {@code null} means no customizers
+     * @return this builder
+     */
+    public McpClientBuilder resultCustomizers(List<McpToolResultCustomizer> resultCustomizers) {
+        this.resultCustomizers =
+                resultCustomizers == null ? List.of() : List.copyOf(resultCustomizers);
+        return this;
+    }
+
+    /**
+     * Configures ordered result metadata customizers.
+     *
+     * @param resultCustomizers ordered customizers to apply
+     * @return this builder
+     */
+    public McpClientBuilder resultCustomizers(McpToolResultCustomizer... resultCustomizers) {
+        this.resultCustomizers = resultCustomizers == null ? List.of() : List.of(resultCustomizers);
+        return this;
+    }
+
+    /**
      * Builds an asynchronous MCP client wrapper.
      *
      * @return Mono emitting the async client wrapper
@@ -529,7 +578,8 @@ public class McpClientBuilder {
 
                     McpAsyncClient mcpClient = clientBuilder.build();
 
-                    McpAsyncClientWrapper wrapper = new McpAsyncClientWrapper(name, mcpClient);
+                    McpAsyncClientWrapper wrapper =
+                            new McpAsyncClientWrapper(name, mcpClient, resultCustomizers);
                     wrapper.setPropagateMeta(propagateMeta);
                     return wrapper;
                 });
@@ -572,7 +622,7 @@ public class McpClientBuilder {
 
         McpSyncClient mcpClient = clientBuilder.build();
 
-        McpSyncClientWrapper wrapper = new McpSyncClientWrapper(name, mcpClient);
+        McpSyncClientWrapper wrapper = new McpSyncClientWrapper(name, mcpClient, resultCustomizers);
         wrapper.setPropagateMeta(propagateMeta);
         return wrapper;
     }

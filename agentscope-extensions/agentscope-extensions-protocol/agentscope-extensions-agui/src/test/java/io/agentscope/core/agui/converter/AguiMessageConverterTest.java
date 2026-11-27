@@ -327,6 +327,63 @@ class AguiMessageConverterTest {
     }
 
     @Test
+    void testConvertToolResultWithMediaBlocks() {
+        ToolResultBlock result =
+                ToolResultBlock.builder()
+                        .id("tc-media")
+                        .state(ToolResultState.SUCCESS)
+                        .output(
+                                List.of(
+                                        ImageBlock.builder()
+                                                .source(
+                                                        new Base64Source(
+                                                                "image/png", "iVBORw0KGgo="))
+                                                .build(),
+                                        AudioBlock.builder()
+                                                .source(new FileIdSource("openai", "audio-1"))
+                                                .build(),
+                                        VideoBlock.builder()
+                                                .source(new FileIdSource("openai", "video-1"))
+                                                .build(),
+                                        DataBlock.builder()
+                                                .source(
+                                                        new Base64Source(
+                                                                "image/png", "iVBORw0KGgo="))
+                                                .build(),
+                                        TextBlock.builder().text("generated").build()))
+                        .build();
+        Msg msg = Msg.builder().id("msg-tool-media").role(MsgRole.TOOL).content(result).build();
+
+        AguiMessage wire = converter.toAguiMessages(msg).get(0);
+
+        assertTrue(wire.hasBlocks());
+        List<InputContent> parts = ((MessageContent.Blocks) wire.getContent()).parts();
+        assertEquals(5, parts.size());
+        ImageInputContent image = assertInstanceOf(ImageInputContent.class, parts.get(0));
+        InputContentDataSource imageSource =
+                assertInstanceOf(InputContentDataSource.class, image.source());
+        assertEquals("iVBORw0KGgo=", imageSource.value());
+        AudioInputContent audio = assertInstanceOf(AudioInputContent.class, parts.get(1));
+        InputContentFileSource audioSource =
+                assertInstanceOf(InputContentFileSource.class, audio.source());
+        assertEquals("audio-1", audioSource.value());
+        VideoInputContent video = assertInstanceOf(VideoInputContent.class, parts.get(2));
+        InputContentFileSource videoSource =
+                assertInstanceOf(InputContentFileSource.class, video.source());
+        assertEquals("video-1", videoSource.value());
+        ImageInputContent data = assertInstanceOf(ImageInputContent.class, parts.get(3));
+        assertEquals("iVBORw0KGgo=", ((InputContentDataSource) data.source()).value());
+
+        ToolResultBlock restored =
+                converter.toMsg(wire).getFirstContentBlock(ToolResultBlock.class);
+        assertNotNull(restored);
+        assertEquals(5, restored.getOutput().size());
+        assertEquals(
+                "iVBORw0KGgo=",
+                ((Base64Source) ((ImageBlock) restored.getOutput().get(0)).getSource()).getData());
+    }
+
+    @Test
     void testConvertToolMessageWithDocumentBlocks() {
         AguiMessage aguiMsg =
                 AguiMessage.blocksMessage(
@@ -1088,7 +1145,7 @@ class AguiMessageConverterTest {
     }
 
     @Test
-    void testConvertBase64MediaBlocksAreSkippedOnOutbound() {
+    void testConvertBase64MediaBlocksSerializeAsDataSources() {
         Msg msg =
                 Msg.builder()
                         .id("msg-media-base64")
@@ -1103,6 +1160,89 @@ class AguiMessageConverterTest {
                                         .build(),
                                 VideoBlock.builder()
                                         .source(new Base64Source("video/mp4", "AAAA"))
+                                        .build())
+                        .build();
+
+        AguiMessage aguiMsg = converter.toAguiMessages(msg).get(0);
+
+        assertTrue(aguiMsg.hasBlocks());
+        MessageContent.Blocks blocks = (MessageContent.Blocks) aguiMsg.getContent();
+        assertEquals(4, blocks.parts().size());
+
+        ImageInputContent image = assertInstanceOf(ImageInputContent.class, blocks.parts().get(0));
+        InputContentDataSource imageSource =
+                assertInstanceOf(InputContentDataSource.class, image.source());
+        assertEquals("iVBORw0KGgo=", imageSource.value());
+        assertEquals("image/png", imageSource.mimeType());
+
+        AudioInputContent audio = assertInstanceOf(AudioInputContent.class, blocks.parts().get(1));
+        InputContentDataSource audioSource =
+                assertInstanceOf(InputContentDataSource.class, audio.source());
+        assertEquals("UklGRg==", audioSource.value());
+        assertEquals("audio/wav", audioSource.mimeType());
+
+        VideoInputContent video = assertInstanceOf(VideoInputContent.class, blocks.parts().get(2));
+        InputContentDataSource videoSource =
+                assertInstanceOf(InputContentDataSource.class, video.source());
+        assertEquals("AAAA", videoSource.value());
+        assertEquals("video/mp4", videoSource.mimeType());
+
+        TextInputContent text = assertInstanceOf(TextInputContent.class, blocks.parts().get(3));
+        assertEquals("caption", text.text());
+    }
+
+    @Test
+    void testConvertFileIdMediaBlocksSerializeAsFileSources() {
+        Msg msg =
+                Msg.builder()
+                        .id("msg-media-file")
+                        .role(MsgRole.USER)
+                        .content(
+                                ImageBlock.builder()
+                                        .source(new FileIdSource("openai", "img-file-1"))
+                                        .build(),
+                                AudioBlock.builder()
+                                        .source(new FileIdSource("openai", "aud-file-1"))
+                                        .build(),
+                                VideoBlock.builder()
+                                        .source(new FileIdSource("openai", "vid-file-1"))
+                                        .build())
+                        .build();
+
+        AguiMessage aguiMsg = converter.toAguiMessages(msg).get(0);
+
+        assertTrue(aguiMsg.hasBlocks());
+        MessageContent.Blocks blocks = (MessageContent.Blocks) aguiMsg.getContent();
+        assertEquals(3, blocks.parts().size());
+
+        ImageInputContent image = assertInstanceOf(ImageInputContent.class, blocks.parts().get(0));
+        InputContentFileSource imageSource =
+                assertInstanceOf(InputContentFileSource.class, image.source());
+        assertEquals("img-file-1", imageSource.value());
+        assertEquals("openai", imageSource.provider());
+
+        AudioInputContent audio = assertInstanceOf(AudioInputContent.class, blocks.parts().get(1));
+        InputContentFileSource audioSource =
+                assertInstanceOf(InputContentFileSource.class, audio.source());
+        assertEquals("aud-file-1", audioSource.value());
+        assertEquals("openai", audioSource.provider());
+
+        VideoInputContent video = assertInstanceOf(VideoInputContent.class, blocks.parts().get(2));
+        InputContentFileSource videoSource =
+                assertInstanceOf(InputContentFileSource.class, video.source());
+        assertEquals("vid-file-1", videoSource.value());
+        assertEquals("openai", videoSource.provider());
+    }
+
+    @Test
+    void testConvertBase64DataBlockRoutesByMediaType() {
+        Msg msg =
+                Msg.builder()
+                        .id("msg-data-block-base64")
+                        .role(MsgRole.USER)
+                        .content(
+                                DataBlock.builder()
+                                        .source(new Base64Source("image/png", "iVBORw0KGgo="))
                                         .build(),
                                 DataBlock.builder()
                                         .source(new Base64Source("application/pdf", "dGVzdA=="))
@@ -1111,8 +1251,83 @@ class AguiMessageConverterTest {
 
         AguiMessage aguiMsg = converter.toAguiMessages(msg).get(0);
 
-        assertFalse(aguiMsg.hasBlocks());
-        assertEquals("caption", aguiMsg.getTextContent());
+        MessageContent.Blocks blocks = (MessageContent.Blocks) aguiMsg.getContent();
+        ImageInputContent image = assertInstanceOf(ImageInputContent.class, blocks.parts().get(0));
+        InputContentDataSource imageSource =
+                assertInstanceOf(InputContentDataSource.class, image.source());
+        assertEquals("image/png", imageSource.mimeType());
+
+        DocumentInputContent document =
+                assertInstanceOf(DocumentInputContent.class, blocks.parts().get(1));
+        InputContentDataSource documentSource =
+                assertInstanceOf(InputContentDataSource.class, document.source());
+        assertEquals("application/pdf", documentSource.mimeType());
+        assertEquals("dGVzdA==", documentSource.value());
+    }
+
+    @Test
+    void testConvertDataBlockWithFileIdSourceBecomesDocumentPart() {
+        Msg msg =
+                Msg.builder()
+                        .id("msg-data-block-file")
+                        .role(MsgRole.USER)
+                        .content(
+                                DataBlock.builder()
+                                        .source(new FileIdSource("dashscope", "file-abc"))
+                                        .build())
+                        .build();
+
+        AguiMessage aguiMsg = converter.toAguiMessages(msg).get(0);
+
+        MessageContent.Blocks blocks = (MessageContent.Blocks) aguiMsg.getContent();
+        DocumentInputContent document =
+                assertInstanceOf(DocumentInputContent.class, blocks.parts().get(0));
+        InputContentFileSource documentSource =
+                assertInstanceOf(InputContentFileSource.class, document.source());
+        assertEquals("file-abc", documentSource.value());
+        assertEquals("dashscope", documentSource.provider());
+    }
+
+    @Test
+    void testBase64MediaRoundTripPreservesDataAndMediaType() {
+        Msg original =
+                Msg.builder()
+                        .id("msg-base64-round-trip")
+                        .role(MsgRole.USER)
+                        .content(
+                                ImageBlock.builder()
+                                        .source(new Base64Source("image/png", "iVBORw0KGgo="))
+                                        .build())
+                        .build();
+
+        Msg restored = converter.toMsg(converter.toAguiMessages(original).get(0));
+
+        ImageBlock image = restored.getFirstContentBlock(ImageBlock.class);
+        assertNotNull(image);
+        Base64Source source = (Base64Source) image.getSource();
+        assertEquals("image/png", source.getMediaType());
+        assertEquals("iVBORw0KGgo=", source.getData());
+    }
+
+    @Test
+    void testFileIdMediaRoundTripPreservesProviderAndFileId() {
+        Msg original =
+                Msg.builder()
+                        .id("msg-file-round-trip")
+                        .role(MsgRole.USER)
+                        .content(
+                                ImageBlock.builder()
+                                        .source(new FileIdSource("openai", "img-file-1"))
+                                        .build())
+                        .build();
+
+        Msg restored = converter.toMsg(converter.toAguiMessages(original).get(0));
+
+        ImageBlock image = restored.getFirstContentBlock(ImageBlock.class);
+        assertNotNull(image);
+        FileIdSource source = (FileIdSource) image.getSource();
+        assertEquals("openai", source.getProvider());
+        assertEquals("img-file-1", source.getFileId());
     }
 
     @Test
@@ -2110,6 +2325,119 @@ class AguiMessageConverterTest {
         assertEquals(MsgRole.TOOL, msgs.get(0).getRole());
         assertEquals(MsgRole.USER, msgs.get(1).getRole());
         assertNotNull(msgs.get(1).getMetadata().get(Msg.METADATA_CONFIRM_RESULTS));
+    }
+
+    // ===== Message name field tests =====
+
+    @Test
+    void testInboundWireNameMapsToMsgName() {
+        String json =
+                "{\"id\":\"msg-n1\",\"role\":\"assistant\",\"name\":\"Coder\",\"content\":\"hi\"}";
+        AguiMessage aguiMsg = JsonUtils.getJsonCodec().fromJson(json, AguiMessage.class);
+
+        assertEquals("Coder", aguiMsg.getName());
+        assertEquals("Coder", converter.toMsg(aguiMsg).getName());
+    }
+
+    @Test
+    void testInboundWithoutNameLeavesMsgNameNull() {
+        AguiMessage aguiMsg = AguiMessage.assistantMessage("msg-n2", "hi");
+
+        assertNull(aguiMsg.getName());
+        assertNull(converter.toMsg(aguiMsg).getName());
+    }
+
+    @Test
+    void testOutboundMsgNameMapsToWireName() {
+        Msg msg =
+                Msg.builder()
+                        .id("msg-n3")
+                        .name("Assistant")
+                        .role(MsgRole.ASSISTANT)
+                        .content(TextBlock.builder().text("hello").build())
+                        .build();
+
+        AguiMessage wire = converter.toAguiMessage(msg);
+
+        assertEquals("Assistant", wire.getName());
+    }
+
+    @Test
+    void testOutboundWithoutNameOmitsNameKeyFromWireJson() {
+        Msg msg =
+                Msg.builder()
+                        .id("msg-n4")
+                        .role(MsgRole.USER)
+                        .content(TextBlock.builder().text("hello").build())
+                        .build();
+
+        String json = JsonUtils.getJsonCodec().toJson(converter.toAguiMessage(msg));
+
+        assertFalse(json.contains("\"name\""), json);
+    }
+
+    @Test
+    void testNameSurvivesJsonRoundTrip() {
+        AguiMessage original = AguiMessage.userMessage("msg-n5", "hello", "Alice");
+
+        String json = JsonUtils.getJsonCodec().toJson(original);
+        AguiMessage parsed = JsonUtils.getJsonCodec().fromJson(json, AguiMessage.class);
+
+        assertEquals("Alice", parsed.getName());
+        assertEquals(original, parsed);
+    }
+
+    @Test
+    void testOutboundReasoningSplitCarriesName() {
+        Msg msg =
+                Msg.builder()
+                        .id("msg-n6")
+                        .name("Planner")
+                        .role(MsgRole.ASSISTANT)
+                        .content(
+                                List.of(
+                                        ThinkingBlock.builder().thinking("hmm").build(),
+                                        TextBlock.builder().text("answer").build()))
+                        .build();
+
+        List<AguiMessage> results = converter.toAguiMessages(msg);
+
+        assertEquals(2, results.size());
+        assertEquals("Planner", results.get(0).getName());
+        assertEquals("Planner", results.get(1).getName());
+    }
+
+    @Test
+    void testOutboundToolResultSplitCarriesName() {
+        Msg msg =
+                Msg.builder()
+                        .id("msg-n7")
+                        .name("Coder")
+                        .role(MsgRole.TOOL)
+                        .content(
+                                ToolResultBlock.text("first").withIdAndName("tc-0", "lookup"),
+                                ToolResultBlock.error("tc-1", "failed"))
+                        .build();
+
+        List<AguiMessage> results = converter.toAguiMessages(msg);
+
+        assertEquals(2, results.size());
+        assertEquals("Coder", results.get(0).getName());
+        assertEquals("Coder", results.get(1).getName());
+    }
+
+    @Test
+    void testFactoryOverloadsCarryName() {
+        assertEquals("U", AguiMessage.userMessage("m1", "hi", "U").getName());
+        assertEquals(
+                "U2",
+                AguiMessage.userMessage("m2", List.of(new TextInputContent("hi")), "U2").getName());
+        assertEquals("A", AguiMessage.assistantMessage("m3", "hi", "A").getName());
+        assertEquals("S", AguiMessage.systemMessage("m4", "hi", "S").getName());
+        assertEquals("T", AguiMessage.toolMessage("m5", "tc-1", "hi", null, "T").getName());
+        assertEquals("T2", AguiMessage.toolMessage("m6", "tc-1", "hi", "boom", "T2").getName());
+        assertEquals("R", AguiMessage.reasoningMessage("m7", "hi", "R").getName());
+        assertNull(AguiMessage.userMessage("m8", "hi").getName());
     }
 
     private static String resultText(ToolResultBlock result) {

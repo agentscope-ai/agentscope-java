@@ -71,6 +71,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
+import java.util.function.BiFunction;
 import java.util.stream.Collectors;
 
 /**
@@ -156,6 +157,8 @@ public class AguiMessageConverter {
         String toolCallId = null;
         String error = null;
         boolean toolMessage = msg.getRole() == MsgRole.TOOL;
+        boolean structuredContentAllowed =
+                msg.getRole() == MsgRole.USER || msg.getRole() == MsgRole.TOOL;
 
         for (ContentBlock block : msg.getContent()) {
             if (block instanceof ThinkingBlock tb) {
@@ -170,31 +173,41 @@ public class AguiMessageConverter {
                     error = toolResultText(trb);
                 }
                 appendContent(content, toolResultText(trb));
-            } else if (block instanceof ImageBlock ib
-                    && ib.getSource() instanceof URLSource urlSource) {
-                inputContents.add(
-                        new ImageInputContent(
-                                toInputContentUrlSource(urlSource), Collections.emptyMap()));
-            } else if (block instanceof AudioBlock ab
-                    && ab.getSource() instanceof URLSource urlSource) {
-                inputContents.add(
-                        new AudioInputContent(
-                                toInputContentUrlSource(urlSource), Collections.emptyMap()));
-            } else if (block instanceof VideoBlock vb
-                    && vb.getSource() instanceof URLSource urlSource) {
-                inputContents.add(
-                        new VideoInputContent(
-                                toInputContentUrlSource(urlSource), Collections.emptyMap()));
-            } else if (block instanceof DataBlock db
-                    && db.getSource() instanceof URLSource urlSource) {
-                InputContent inputContent = dataBlockInputContent(urlSource);
-                if (inputContent != null) {
-                    inputContents.add(inputContent);
+            } else if (block instanceof ImageBlock ib) {
+                if (structuredContentAllowed) {
+                    addMediaInputContent(inputContents, ib.getSource(), ImageInputContent::new);
+                } else {
+                    appendContent(content, mediaReference("image", ib.getSource()));
+                }
+            } else if (block instanceof AudioBlock ab) {
+                if (structuredContentAllowed) {
+                    addMediaInputContent(inputContents, ab.getSource(), AudioInputContent::new);
+                } else {
+                    appendContent(content, mediaReference("audio", ab.getSource()));
+                }
+            } else if (block instanceof VideoBlock vb) {
+                if (structuredContentAllowed) {
+                    addMediaInputContent(inputContents, vb.getSource(), VideoInputContent::new);
+                } else {
+                    appendContent(content, mediaReference("video", vb.getSource()));
+                }
+            } else if (block instanceof DataBlock db) {
+                if (structuredContentAllowed) {
+                    InputContent inputContent = dataBlockInputContent(db.getSource());
+                    if (inputContent != null) {
+                        inputContents.add(inputContent);
+                    }
+                } else {
+                    appendContent(content, mediaReference("data", db.getSource()));
                 }
             } else if (block instanceof DocumentBlock db) {
-                InputContent attachment = toDocumentInputContent(db);
-                if (attachment != null) {
-                    inputContents.add(attachment);
+                if (structuredContentAllowed) {
+                    InputContent attachment = toDocumentInputContent(db);
+                    if (attachment != null) {
+                        inputContents.add(attachment);
+                    } else {
+                        appendContent(content, DocumentReferenceRenderer.render(db));
+                    }
                 } else {
                     appendContent(content, DocumentReferenceRenderer.render(db));
                 }
@@ -205,7 +218,7 @@ public class AguiMessageConverter {
         if (reasoningContent.length() > 0) {
             messages.add(
                     AguiMessage.reasoningMessage(
-                            generatedMessageId(msg), reasoningContent.toString()));
+                            generatedMessageId(msg), reasoningContent.toString(), msg.getName()));
             if (content.length() == 0
                     && inputContents.isEmpty()
                     && toolCalls.isEmpty()
@@ -232,6 +245,7 @@ public class AguiMessageConverter {
                 new AguiMessage(
                         generatedMessageId(msg),
                         role,
+                        msg.getName(),
                         wireContent,
                         toolCalls.isEmpty() ? null : toolCalls,
                         toolCallId,
@@ -331,16 +345,22 @@ public class AguiMessageConverter {
                 contentBlocks.add(toContentBlock(input));
             }
             if (aguiMessage.isToolMessage() && aguiMessage.getToolCallId() != null) {
-                if (aguiMessage.getError() != null && !aguiMessage.getError().isBlank()) {
-                    contentBlocks.add(0, TextBlock.builder().text(aguiMessage.getError()).build());
+                String error = aguiMessage.getError();
+                if (error != null
+                        && !error.isBlank()
+                        && contentBlocks.stream()
+                                .noneMatch(
+                                        block ->
+                                                block instanceof TextBlock text
+                                                        && error.equals(text.getText()))) {
+                    contentBlocks.add(0, TextBlock.builder().text(error).build());
                 }
                 blocks.add(
                         ToolResultBlock.builder()
                                 .id(aguiMessage.getToolCallId())
                                 .output(contentBlocks)
                                 .state(
-                                        aguiMessage.getError() != null
-                                                        && !aguiMessage.getError().isBlank()
+                                        error != null && !error.isBlank()
                                                 ? ToolResultState.ERROR
                                                 : ToolResultState.SUCCESS)
                                 .build());
@@ -360,7 +380,12 @@ public class AguiMessageConverter {
             }
         }
 
-        return Msg.builder().id(aguiMessage.getId()).role(role).content(blocks).build();
+        return Msg.builder()
+                .id(aguiMessage.getId())
+                .name(aguiMessage.getName())
+                .role(role)
+                .content(blocks)
+                .build();
     }
 
     /**
@@ -514,6 +539,25 @@ public class AguiMessageConverter {
         target.append(value);
     }
 
+    private static String mediaReference(String kind, Source source) {
+        if (source instanceof URLSource url) {
+            String mimeType = url.getMimeType();
+            return "["
+                    + kind
+                    + ": "
+                    + url.getUrl()
+                    + (mimeType == null || mimeType.isBlank() ? "" : ", " + mimeType)
+                    + "]";
+        }
+        if (source instanceof Base64Source base64) {
+            return "[" + kind + ": inline " + base64.getMediaType() + "]";
+        }
+        if (source instanceof FileIdSource fileId) {
+            return "[" + kind + ": " + fileId.getProvider() + "/" + fileId.getFileId() + "]";
+        }
+        return "[" + kind + ": unsupported source]";
+    }
+
     /**
      * Join the text and document-reference parts of a tool result into a single string.
      */
@@ -540,8 +584,18 @@ public class AguiMessageConverter {
         for (ContentBlock output : result.getOutput()) {
             if (output instanceof TextBlock textBlock) {
                 appendContent(text, textBlock.getText());
-            }
-            if (output instanceof DocumentBlock document) {
+            } else if (output instanceof ImageBlock image) {
+                addMediaInputContent(parts, image.getSource(), ImageInputContent::new);
+            } else if (output instanceof AudioBlock audio) {
+                addMediaInputContent(parts, audio.getSource(), AudioInputContent::new);
+            } else if (output instanceof VideoBlock video) {
+                addMediaInputContent(parts, video.getSource(), VideoInputContent::new);
+            } else if (output instanceof DataBlock data) {
+                InputContent inputContent = dataBlockInputContent(data.getSource());
+                if (inputContent != null) {
+                    parts.add(inputContent);
+                }
+            } else if (output instanceof DocumentBlock document) {
                 InputContent documentContent = toDocumentInputContent(document);
                 if (documentContent != null) {
                     parts.add(documentContent);
@@ -549,6 +603,11 @@ public class AguiMessageConverter {
                     appendContent(text, DocumentReferenceRenderer.render(document));
                 }
             }
+        }
+        if (error && text.toString().isBlank()) {
+            String fallback = toolResultText(result);
+            text.setLength(0);
+            text.append(fallback.isBlank() ? "Tool execution failed" : fallback);
         }
         MessageContent content;
         if (parts.isEmpty()) {
@@ -562,6 +621,7 @@ public class AguiMessageConverter {
         return new AguiMessage(
                 id,
                 convertRole(msg.getRole()),
+                msg.getName(),
                 content,
                 null,
                 result.getId(),
@@ -658,19 +718,86 @@ public class AguiMessageConverter {
         throw new IllegalStateException("Unhandled InputContentSource type: " + inputSource);
     }
 
-    private static InputContentUrlSource toInputContentUrlSource(URLSource source) {
-        return new InputContentUrlSource(source.getUrl(), source.getMimeType());
+    /**
+     * Appends an AG-UI input content for a media block source, when the source can be expressed.
+     *
+     * @param target the target input content list
+     * @param source the AgentScope media source
+     * @param factory builds the typed AG-UI input content for the block kind
+     */
+    private static void addMediaInputContent(
+            List<InputContent> target,
+            Source source,
+            BiFunction<InputContentSource, Map<String, Object>, InputContent> factory) {
+        InputContentSource inputSource = toInputContentSource(source);
+        if (inputSource != null) {
+            target.add(factory.apply(inputSource, Collections.emptyMap()));
+        }
     }
 
-    private static InputContent dataBlockInputContent(URLSource source) {
+    /**
+     * Maps an AgentScope media {@link Source} onto the AG-UI protocol source model.
+     *
+     * <p>Mapping:
+     * <ul>
+     *   <li>{@link URLSource} &rarr; {@link InputContentUrlSource} (type {@code url})</li>
+     *   <li>{@link Base64Source} &rarr; {@link InputContentDataSource} (type {@code data})</li>
+     *   <li>{@link FileIdSource} &rarr; {@link InputContentFileSource} (type {@code file}),
+     *       preserving the provider that issued the handle</li>
+     * </ul>
+     *
+     * @param source the AgentScope media source
+     * @return the AG-UI protocol source, or {@code null} when the source cannot be expressed
+     */
+    private static InputContentSource toInputContentSource(Source source) {
+        if (source instanceof URLSource url) {
+            return new InputContentUrlSource(url.getUrl(), url.getMimeType());
+        }
+        if (source instanceof Base64Source base64) {
+            return new InputContentDataSource(base64.getData(), base64.getMediaType());
+        }
+        if (source instanceof FileIdSource fileId) {
+            return new InputContentFileSource(fileId.getFileId(), fileId.getProvider(), null);
+        }
+        return null;
+    }
+
+    /**
+     * Builds the AG-UI input content for a {@link DataBlock}, routing by MIME type.
+     *
+     * <p>URL sources keep resolving the MIME type from the URL; inline data uses its declared
+     * media type; a provider file handle, whose bytes are not inspectable here, maps to the
+     * document part as the protocol's generic carrier for opaque data.
+     *
+     * @param source the data block source
+     * @return the AG-UI input content, or {@code null} when the MIME type cannot be resolved
+     */
+    private static InputContent dataBlockInputContent(Source source) {
+        if (source instanceof Base64Source base64) {
+            String mediaType = base64.getMediaType();
+            return typedDataBlockInputContent(
+                    new InputContentDataSource(base64.getData(), mediaType), mediaType);
+        }
+        if (source instanceof FileIdSource fileId) {
+            return new DocumentInputContent(
+                    new InputContentFileSource(fileId.getFileId(), fileId.getProvider(), null),
+                    Collections.emptyMap());
+        }
+        if (!(source instanceof URLSource url)) {
+            return null;
+        }
         String mimeType;
         try {
-            mimeType = MediaUtils.resolveMimeType(source);
+            mimeType = MediaUtils.resolveMimeType(url);
         } catch (IllegalArgumentException unreadableMimeType) {
             return null;
         }
+        return typedDataBlockInputContent(
+                new InputContentUrlSource(url.getUrl(), mimeType), mimeType);
+    }
 
-        InputContentUrlSource inputSource = new InputContentUrlSource(source.getUrl(), mimeType);
+    private static InputContent typedDataBlockInputContent(
+            InputContentSource inputSource, String mimeType) {
         if (mimeType.startsWith("image/")) {
             return new ImageInputContent(inputSource, Collections.emptyMap());
         }

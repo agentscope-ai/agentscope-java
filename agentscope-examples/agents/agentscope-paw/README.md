@@ -54,7 +54,7 @@ store: every read, write, and shell command goes straight to the host OS.
 └─────────────────────────────────────────────────────────────────┘
 ```
 
-[QwenPaw]: https://github.com/agentscope-ai/openpaw
+[QwenPaw]: https://github.com/agentscope-ai/QwenPaw
 
 ---
 
