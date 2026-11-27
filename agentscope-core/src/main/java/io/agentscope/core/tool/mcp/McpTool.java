@@ -58,8 +58,8 @@ public class McpTool extends ToolBase {
      * {@link McpToolResultCustomizer}s, as an unmodifiable {@code Map<String, Object>}.
      *
      * <p>The framework does not expose a server's raw {@code _meta} map automatically. When at least
-     * one customizer is registered for the connection, the mutable map passed to those customizers
-     * is attached under this key, and the agent runtime copies the block metadata onto the emitted
+     * one customizer is registered for the connection, the accumulated result metadata is attached
+     * under this key, and the agent runtime copies the block metadata onto the emitted
      * {@code ToolResultEndEvent}. A customizer can expose selected server entries by reading {@link
      * McpToolResultContext#resultMeta()} and writing them into the supplied map.
      */
@@ -459,7 +459,7 @@ public class McpTool extends ToolBase {
     /**
      * Builds the metadata for one result from the connection's ordered customizers.
      *
-     * <p>The map supplied to customizers starts empty and becomes the value stored under {@link
+     * <p>The accumulated result metadata starts empty and becomes the value stored under {@link
      * #METADATA_MCP_RESULT_META}. When no customizer is configured, no result metadata is exposed,
      * even if the server returned a non-empty raw {@code _meta} map.
      *
@@ -483,8 +483,10 @@ public class McpTool extends ToolBase {
                         resultMeta,
                         result);
         for (McpToolResultCustomizer customizer : customizers) {
+            Map<String, Object> candidate = new LinkedHashMap<>(customizedResultMeta);
             try {
-                customizer.customize(context, customizedResultMeta);
+                customizer.customize(context, candidate);
+                customizedResultMeta = candidate;
             } catch (Exception e) {
                 logger.warn(
                         "MCP result customizer failed for tool '{}': {}", getName(), e.toString());

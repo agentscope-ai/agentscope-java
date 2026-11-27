@@ -173,19 +173,27 @@ class McpToolResultMetaTest {
     }
 
     @Test
-    void customizerFailureIsLoggedAndDoesNotBlockLaterCustomizersOrOriginalResult() {
+    void customizerFailureDiscardsEntryChangesAndAllowsLaterCustomizers() {
         stubResult(result(Map.of("traceId", "raw"), false));
         useCustomizers(
                 (context, resultMetadata) -> {
+                    resultMetadata.put("trace.id", "first");
+                    resultMetadata.put("span.id", "span-1");
+                },
+                (context, resultMetadata) -> {
+                    resultMetadata.put("trace.id", "failed");
+                    resultMetadata.remove("span.id");
+                    resultMetadata.put("uncommitted", context.resultMeta().get("traceId"));
                     throw new IllegalStateException("customizer failed");
                 },
-                (context, resultMetadata) -> resultMetadata.put("after.failure", true));
+                (context, resultMetadata) ->
+                        resultMetadata.put("after.failure", resultMetadata.get("trace.id")));
 
         ToolResultBlock block = call(newTool());
 
         assertEquals("ok", text(block));
         assertEquals(
-                Map.of("after.failure", true),
+                Map.of("trace.id", "first", "span.id", "span-1", "after.failure", "first"),
                 block.getMetadata().get(McpTool.METADATA_MCP_RESULT_META));
     }
 

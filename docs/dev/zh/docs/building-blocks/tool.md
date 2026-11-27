@@ -406,7 +406,7 @@ toolkit.registerMcpClient(search).block();
 
 ### MCP 工具结果元数据
 
-MCP server 可以在工具结果里附带 `_meta` 映射。AgentScope 默认不会暴露这份原始映射。如需暴露选中的字段，可以在连接上注册有序的 `resultCustomizers` 列表。传给 customizer 的可变 map 从空开始，所有 customizer 执行完后会作为 `McpTool.METADATA_MCP_RESULT_META`（`io.agentscope/mcpResultMeta`）的值写入 tool result。运行时随后把该元数据复制到发出的 `ToolResultEndEvent` 上。模型看不到这些元数据：结果里的 `output` 不受影响。
+MCP server 可以在工具结果里附带 `_meta` 映射。AgentScope 默认不会暴露这份原始映射。如需暴露选中的字段，可以在连接上注册有序的 `resultCustomizers` 列表。AgentScope 将 customizer 累积的元数据写入工具结果的 `McpTool.METADATA_MCP_RESULT_META`（`io.agentscope/mcpResultMeta`）字段。运行时把该元数据复制到 `ToolResultEndEvent` 上，并将工具结果的 `output` 发送给模型。
 
 如需显式暴露 server 返回的整份 map，可以这样复制：
 
@@ -421,7 +421,9 @@ McpClientWrapper customized =
                 .buildSync();
 ```
 
-Customizer 也可用于筛选字段或生成稳定 key。它们按列表顺序对该连接上每次调用完成执行，包括 server 标记为失败的结果。每个 customizer 会收到调用身份（`toolName`、`remoteToolName`、`toolCallId`）、实际发送的参数（已合并 preset 参数）、server 的 `_meta`、原始 `CallToolResult`，以及初始为空的可变结果 metadata map。后面的 customizer 可以覆盖或删除前面的条目。列表在 wrapper 构建时固定；要调整规则应重建连接。某个 customizer 抛异常时，框架会记录并跳过，不改变原工具结果；customizer 写入的 null key 或 null value 会在附加前被清理。未配置 customizer 时，即使 server 返回了 `_meta`，也不会添加 `io.agentscope/mcpResultMeta`。
+Customizer 也可用于筛选字段或生成稳定 key。它们按列表顺序对该连接上每次调用完成执行，包括 server 标记为失败的结果。每个 customizer 会收到调用身份（`toolName`、`remoteToolName`、`toolCallId`）、实际发送的参数（已合并 preset 参数）、server 的 `_meta`、原始 `CallToolResult`，以及截至当前已累积元数据的可变浅拷贝。第一个 customizer 收到的是空 map。后面的 customizer 可以覆盖或删除前面的条目。列表在 wrapper 构建时固定。要调整规则，请重建连接。
+
+如果某个 customizer 抛出异常，框架会记录异常，丢弃该回调对顶层条目的修改，然后继续执行下一个 customizer。请将已有值视为只读，需要修改时请替换整个值。框架会在附加元数据前清理 null key 和 null value。未配置 customizer 时，即使 server 返回了 `_meta`，也不会添加 `io.agentscope/mcpResultMeta`。
 
 如果业务实现自定义 `McpClientWrapper` 装饰器，应把 `delegate.getResultCustomizers()` 传给父类构造器，或重写 `getResultCustomizers()` 返回 delegate 的列表；同时应让 `propagateMeta` 与 delegate 保持一致。
 

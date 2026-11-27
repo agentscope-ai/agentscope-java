@@ -22,8 +22,8 @@ import java.util.Map;
  * McpTool#METADATA_MCP_RESULT_META} on the {@link io.agentscope.core.message.ToolResultBlock} and,
  * from there, on {@code ToolResultEndEvent}.
  *
- * <p>The framework does not expose the server's raw {@code _meta} map by default. When at least one
- * customizer is registered, the supplied map starts empty. A customizer can read the raw map from
+ * <p>The framework does not expose the server's raw {@code _meta} map by default. The first
+ * customizer receives an empty map. A customizer can read the raw map from
  * {@link McpToolResultContext#resultMeta()} and copy selected entries into the supplied map, or
  * derive its own entries. The map produced after all customizers run becomes the value stored under
  * {@link McpTool#METADATA_MCP_RESULT_META}. A later customizer can override or remove entries written
@@ -45,9 +45,10 @@ import java.util.Map;
  * }</pre>
  *
  * <p>Customizers run for every completion of every tool on the connection, including results the
- * server flagged as errors. They run on the calling thread and must be lightweight. A customizer
- * failure is logged and skipped, preserving the original tool result. Null keys and null values
- * are removed by the framework before the metadata is attached.
+ * server flagged as errors. They run on the calling thread and must be lightweight. If a customizer
+ * throws an exception, the framework logs it, discards its top-level entry changes, and continues
+ * with the next customizer. Treat existing values as read-only and replace a value to change it.
+ * Null keys and null values are removed by the framework before the metadata is attached.
  *
  * @see McpToolResultContext
  * @see McpClientBuilder#resultCustomizers(List)
@@ -59,8 +60,8 @@ public interface McpToolResultCustomizer {
      * Adjusts the result metadata for one MCP tool call.
      *
      * @param context the call, its arguments and the server's result metadata
-     * @param resultMetadata mutable map that will be exposed under {@link
-     *     McpTool#METADATA_MCP_RESULT_META}; starts empty
+     * @param resultMetadata mutable shallow copy of the accumulated metadata, empty for the first
+     *     customizer
      */
     void customize(McpToolResultContext context, Map<String, Object> resultMetadata);
 }
