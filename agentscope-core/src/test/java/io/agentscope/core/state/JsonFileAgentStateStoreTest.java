@@ -25,6 +25,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.util.JsonUtils;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -79,6 +80,48 @@ class JsonFileAgentStateStoreTest {
         var loaded = store.get(null, "session1", "agent_state", TestState.class);
         assertTrue(loaded.isPresent());
         assertEquals("before \uFFFD after", loaded.get().value());
+    }
+
+    @Test
+    @DisplayName("Should keep literal IDs separate from their Base64URL encodings")
+    void encodedSessionIdsDoNotCollide(@TempDir Path tempDir) {
+        JsonFileAgentStateStore store = new JsonFileAgentStateStore(tempDir);
+
+        store.save("user1", "YS9i", "state", new TestState("literal", 2));
+        store.save("user1", "YS9i", "literal_only", new TestState("literal-only", 3));
+        store.save("user1", "a/b", "state", new TestState("slash", 1));
+
+        assertEquals(
+                Optional.of(new TestState("slash", 1)),
+                store.get("user1", "a/b", "state", TestState.class));
+        assertEquals(
+                Optional.of(new TestState("literal", 2)),
+                store.get("user1", "YS9i", "state", TestState.class));
+        assertEquals(Optional.empty(), store.get("user1", "a/b", "literal_only", TestState.class));
+        assertEquals(Set.of("a/b", "YS9i"), store.listSessionIds("user1"));
+        assertTrue(Files.isDirectory(tempDir.resolve("user1").resolve("~YS9i")));
+        assertTrue(Files.isDirectory(tempDir.resolve("user1").resolve("YS9i")));
+
+        store.delete("user1", "a/b");
+        assertEquals(
+                Optional.of(new TestState("literal", 2)),
+                store.get("user1", "YS9i", "state", TestState.class));
+    }
+
+    @Test
+    @DisplayName("Should read state from the legacy unprefixed encoded session directory")
+    void readsLegacyEncodedSessionDirectory(@TempDir Path tempDir) throws IOException {
+        Path legacySession = tempDir.resolve("user1").resolve("YS9i");
+        Files.createDirectories(legacySession);
+        Files.writeString(
+                legacySession.resolve("state.json"),
+                JsonUtils.getJsonCodec().toPrettyJson(new TestState("legacy", 1)));
+
+        JsonFileAgentStateStore store = new JsonFileAgentStateStore(tempDir);
+
+        assertEquals(
+                Optional.of(new TestState("legacy", 1)),
+                store.get("user1", "a/b", "state", TestState.class));
     }
 
     @Test
