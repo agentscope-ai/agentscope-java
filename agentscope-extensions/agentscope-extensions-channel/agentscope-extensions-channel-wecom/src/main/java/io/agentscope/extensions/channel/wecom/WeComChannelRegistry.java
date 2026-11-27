@@ -48,6 +48,11 @@ public final class WeComChannelRegistry {
         channels.remove(channelId);
     }
 
+    /** Removes only the registration owned by the stopping channel instance. */
+    void unregister(String channelId, WeComChannel expected) {
+        channels.remove(channelId, expected);
+    }
+
     public WeComChannel get(String channelId) {
         return channels.get(channelId);
     }

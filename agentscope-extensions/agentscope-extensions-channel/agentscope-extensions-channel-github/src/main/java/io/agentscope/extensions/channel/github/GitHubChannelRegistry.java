@@ -42,6 +42,11 @@ public final class GitHubChannelRegistry {
         channels.remove(channelId);
     }
 
+    /** Removes only the registration owned by the stopping channel instance. */
+    void unregister(String channelId, GitHubChannel expected) {
+        channels.remove(channelId, expected);
+    }
+
     public GitHubChannel get(String channelId) {
         return channels.get(channelId);
     }

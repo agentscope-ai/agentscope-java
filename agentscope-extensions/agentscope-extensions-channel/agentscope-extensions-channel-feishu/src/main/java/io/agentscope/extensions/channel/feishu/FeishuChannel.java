@@ -200,7 +200,7 @@ public final class FeishuChannel implements Channel {
 
     @Override
     public void stop() {
-        registry.unregister(channelId);
+        registry.unregister(channelId, this);
         log.info("Feishu channel '{}' stopped", channelId);
     }
 

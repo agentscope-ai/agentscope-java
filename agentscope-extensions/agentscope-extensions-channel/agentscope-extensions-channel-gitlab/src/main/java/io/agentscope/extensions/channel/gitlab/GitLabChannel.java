@@ -157,7 +157,7 @@ public final class GitLabChannel implements Channel {
 
     @Override
     public void stop() {
-        registry.unregister(channelId);
+        registry.unregister(channelId, this);
         log.info("GitLab channel '{}' stopped", channelId);
     }
 

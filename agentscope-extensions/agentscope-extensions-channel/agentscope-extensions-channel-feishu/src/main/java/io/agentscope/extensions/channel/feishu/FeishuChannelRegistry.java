@@ -44,6 +44,11 @@ public final class FeishuChannelRegistry {
         channels.remove(channelId);
     }
 
+    /** Removes only the registration owned by the stopping channel instance. */
+    void unregister(String channelId, FeishuChannel expected) {
+        channels.remove(channelId, expected);
+    }
+
     public FeishuChannel get(String channelId) {
         return channels.get(channelId);
     }

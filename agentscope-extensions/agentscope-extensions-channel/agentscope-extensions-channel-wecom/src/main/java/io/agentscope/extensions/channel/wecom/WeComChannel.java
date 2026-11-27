@@ -210,7 +210,7 @@ public final class WeComChannel implements Channel {
 
     @Override
     public void stop() {
-        registry.unregister(channelId);
+        registry.unregister(channelId, this);
         log.info("WeCom channel '{}' stopped", channelId);
     }
 
