@@ -24,6 +24,7 @@ import io.agentscope.core.interruption.InterruptContext;
 import io.agentscope.core.interruption.InterruptSource;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
+import io.agentscope.core.model.ModelSchedulers;
 import io.agentscope.core.shutdown.GracefulShutdownManager;
 import io.agentscope.core.state.AgentState;
 import io.agentscope.core.tracing.TracerRegistry;
@@ -45,7 +46,6 @@ import reactor.core.publisher.FluxSink;
 import reactor.core.publisher.Mono;
 import reactor.core.publisher.SignalType;
 import reactor.core.publisher.Sinks;
-import reactor.core.scheduler.Schedulers;
 
 /**
  * Abstract base class for all agents in the AgentScope framework.
@@ -1078,7 +1078,7 @@ public abstract class AgentBase implements Agent {
                                             sink.onCancel(callDisposable);
                                         },
                                         FluxSink.OverflowStrategy.BUFFER)
-                                .publishOn(Schedulers.boundedElastic()));
+                                .publishOn(ModelSchedulers.responses()));
     }
 
     @Override

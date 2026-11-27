@@ -102,6 +102,39 @@ ReActAgent agent =
                 .build();
 ```
 
+### 模型调度与并发配置
+
+模型请求准备、阻塞式非流调用、阻塞式流读取以及 Agent 响应事件交付使用 `ModelSchedulers` 中独立、按需创建的线程池，不再使用 Reactor 共享的 `Schedulers.boundedElastic()` 池。
+
+以下 JVM 属性必须在**对应线程池第一次使用之前**设置：
+
+| 属性 | 默认值 | 含义 |
+| --- | --- | --- |
+| `agentscope.model.requestThreadCap` | `max(64, availableProcessors × 10)` | 请求准备与阻塞式非流模型调用 |
+| `agentscope.model.streamThreadCap` | `max(64, availableProcessors × 10)` | 阻塞式流读取 |
+| `agentscope.model.responseThreadCap` | `max(64, availableProcessors × 10)` | Agent 响应事件交付 |
+| `agentscope.model.taskQueueCapacity` | `256` | 各池中**每个底层线程**允许排队的任务数 |
+
+所有值必须为正数。这些限制作用于同一个 JVM 内的共享池，不是单个模型或 HTTP 连接池的限制。线程是守护线程，空闲 60 秒后释放。调用方不得关闭 `ModelSchedulers` 返回的共享调度器。
+
+如果需要按业务隔离流读取线程，`JdkHttpTransport.builder()` 和 `OkHttpTransport.builder()` 都支持传入自定义 `streamScheduler`：
+
+```java
+import io.agentscope.core.model.transport.JdkHttpTransport;
+import reactor.core.scheduler.Scheduler;
+import reactor.core.scheduler.Schedulers;
+
+Scheduler reads = Schedulers.newBoundedElastic(128, 256, "my-model-reads");
+JdkHttpTransport transport =
+        JdkHttpTransport.builder().streamScheduler(reads).build();
+
+// OpenAIChatModel.builder().httpTransport(transport)...
+// DashScopeChatModel.builder().httpTransport(transport)...
+// On application shutdown: transport.close(); reads.dispose();
+```
+
+注入的调度器由调用方管理：关闭 transport 不会关闭它。请在所有使用它的 transport 和模型停止后再释放自定义调度器。
+
 ### Spring Boot 应用
 
 Spring Boot 场景下，优先使用特定模型提供商的 starter，例如 `agentscope-openai-spring-boot-starter`、`agentscope-dashscope-spring-boot-starter`、`agentscope-gemini-spring-boot-starter`、`agentscope-anthropic-spring-boot-starter`、`agentscope-ollama-spring-boot-starter`。这些 starter 直接依赖对应模型扩展模块，创建 Spring 管理的 `Model` bean，通用的 `agentscope-spring-boot-starter` 继续负责 AgentScope 的公共基础设施。它们不会通过静态 `ModelRegistry` 创建模型；高级用户始终可以自定义 `Model` bean。

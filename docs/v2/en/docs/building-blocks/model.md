@@ -102,6 +102,39 @@ ReActAgent agent =
                 .build();
 ```
 
+### Model scheduling and concurrency
+
+Model request preparation, blocking non-streaming calls, blocking stream reads, and agent response event delivery use dedicated, lazily created pools in `ModelSchedulers` instead of Reactor's shared `Schedulers.boundedElastic()` pool.
+
+Set these JVM properties **before the corresponding pool is first used**:
+
+| Property | Default | Meaning |
+| --- | --- | --- |
+| `agentscope.model.requestThreadCap` | `max(64, availableProcessors × 10)` | Request preparation and blocking non-streaming model calls |
+| `agentscope.model.streamThreadCap` | `max(64, availableProcessors × 10)` | Blocking stream reads |
+| `agentscope.model.responseThreadCap` | `max(64, availableProcessors × 10)` | Agent response event delivery |
+| `agentscope.model.taskQueueCapacity` | `256` | Maximum queued tasks **per backing thread**, in each pool |
+
+All values must be positive. These limits apply to the shared pools within one JVM, not to individual models or HTTP connection pools. Threads are daemon threads and idle threads expire after 60 seconds. Callers must not dispose the shared schedulers returned by `ModelSchedulers`.
+
+For workload-specific stream read isolation, both `JdkHttpTransport.builder()` and `OkHttpTransport.builder()` accept a custom `streamScheduler`:
+
+```java
+import io.agentscope.core.model.transport.JdkHttpTransport;
+import reactor.core.scheduler.Scheduler;
+import reactor.core.scheduler.Schedulers;
+
+Scheduler reads = Schedulers.newBoundedElastic(128, 256, "my-model-reads");
+JdkHttpTransport transport =
+        JdkHttpTransport.builder().streamScheduler(reads).build();
+
+// OpenAIChatModel.builder().httpTransport(transport)...
+// DashScopeChatModel.builder().httpTransport(transport)...
+// On application shutdown: transport.close(); reads.dispose();
+```
+
+Injected schedulers are caller-owned: closing a transport does not dispose them. Dispose custom schedulers only after all transports and models using them have stopped.
+
 ### Spring Boot applications
 
 For Spring Boot, prefer provider-specific starters such as `agentscope-openai-spring-boot-starter`, `agentscope-dashscope-spring-boot-starter`, `agentscope-gemini-spring-boot-starter`, `agentscope-anthropic-spring-boot-starter`, and `agentscope-ollama-spring-boot-starter`. These starters directly depend on the matching model extension, create Spring-managed `Model` beans, and leave the generic starter focused on common AgentScope infrastructure. They do not create models through the static `ModelRegistry`; advanced users can always provide their own `Model` bean.

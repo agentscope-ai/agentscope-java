@@ -15,6 +15,7 @@
  */
 package io.agentscope.core.model.transport;
 
+import io.agentscope.core.model.ModelSchedulers;
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
@@ -30,6 +31,7 @@ import java.security.cert.X509Certificate;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.concurrent.TimeUnit;
 import javax.net.ssl.SSLContext;
 import javax.net.ssl.SSLSocketFactory;
@@ -46,7 +48,7 @@ import okhttp3.ResponseBody;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Flux;
-import reactor.core.scheduler.Schedulers;
+import reactor.core.scheduler.Scheduler;
 
 /**
  * OkHttp implementation of the HttpTransport interface.
@@ -69,6 +71,7 @@ public class OkHttpTransport implements HttpTransport {
 
     private final OkHttpClient client;
     private final HttpTransportConfig config;
+    private final Scheduler streamScheduler;
 
     /**
      * Create a new OkHttpTransport with default configuration.
@@ -83,8 +86,7 @@ public class OkHttpTransport implements HttpTransport {
      * @param config the transport configuration
      */
     public OkHttpTransport(HttpTransportConfig config) {
-        this.config = config;
-        this.client = buildClient(config);
+        this(buildClient(config), config, ModelSchedulers.streams());
     }
 
     /**
@@ -97,11 +99,17 @@ public class OkHttpTransport implements HttpTransport {
      * @param config the transport configuration (used for reference only)
      */
     public OkHttpTransport(OkHttpClient client, HttpTransportConfig config) {
-        this.client = client;
-        this.config = config;
+        this(client, config, ModelSchedulers.streams());
     }
 
-    private OkHttpClient buildClient(HttpTransportConfig config) {
+    private OkHttpTransport(
+            OkHttpClient client, HttpTransportConfig config, Scheduler streamScheduler) {
+        this.client = client;
+        this.config = config;
+        this.streamScheduler = Objects.requireNonNull(streamScheduler, "streamScheduler");
+    }
+
+    private static OkHttpClient buildClient(HttpTransportConfig config) {
         OkHttpClient.Builder builder =
                 new OkHttpClient.Builder()
                         .connectTimeout(
@@ -307,7 +315,7 @@ public class OkHttpTransport implements HttpTransport {
                                 closeQuietly(response);
                             }
                         })
-                .subscribeOn(Schedulers.boundedElastic(), false);
+                .subscribeOn(streamScheduler, false);
     }
 
     @Override
@@ -428,6 +436,19 @@ public class OkHttpTransport implements HttpTransport {
     public static class Builder {
         private HttpTransportConfig config = HttpTransportConfig.defaults();
         private OkHttpClient existingClient = null;
+        private Scheduler streamScheduler;
+
+        /**
+         * Use a caller-owned scheduler for blocking stream reads. The transport never disposes it.
+         * Defaults to {@link ModelSchedulers#streams()}.
+         *
+         * @param scheduler the stream scheduler
+         * @return this builder
+         */
+        public Builder streamScheduler(Scheduler scheduler) {
+            this.streamScheduler = Objects.requireNonNull(scheduler, "scheduler");
+            return this;
+        }
 
         /**
          * Set the transport configuration.
@@ -460,10 +481,12 @@ public class OkHttpTransport implements HttpTransport {
          * @return a new OkHttpTransport instance
          */
         public OkHttpTransport build() {
+            Scheduler effectiveStreamScheduler =
+                    streamScheduler != null ? streamScheduler : ModelSchedulers.streams();
             if (existingClient != null) {
-                return new OkHttpTransport(existingClient, config);
+                return new OkHttpTransport(existingClient, config, effectiveStreamScheduler);
             }
-            return new OkHttpTransport(config);
+            return new OkHttpTransport(buildClient(config), config, effectiveStreamScheduler);
         }
     }
 
