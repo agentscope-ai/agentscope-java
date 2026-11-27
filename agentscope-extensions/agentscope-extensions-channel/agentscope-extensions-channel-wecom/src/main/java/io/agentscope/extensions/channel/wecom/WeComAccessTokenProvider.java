@@ -83,32 +83,52 @@ public final class WeComAccessTokenProvider {
                                         .build())
                 .retrieve()
                 .bodyToMono(String.class)
+                .switchIfEmpty(
+                        Mono.error(new IllegalStateException("WeCom gettoken response is empty")))
                 .timeout(Duration.ofSeconds(10))
                 .map(this::parseAndStore);
     }
 
     private String parseAndStore(String body) {
+        JsonNode node;
         try {
-            JsonNode node = MAPPER.readTree(body);
-            int errcode = node.path("errcode").asInt(0);
-            if (errcode != 0) {
+            node = MAPPER.readTree(body);
+        } catch (Exception e) {
+            // Token responses are sensitive; parser errors can contain response fragments.
+            throw new IllegalStateException("Invalid WeCom gettoken JSON response");
+        }
+        if (node == null || !node.isObject()) {
+            throw new IllegalStateException("WeCom gettoken response must be an object");
+        }
+        JsonNode status = node.get("errcode");
+        if (status != null) {
+            if (!status.isIntegralNumber() || !status.canConvertToInt()) {
+                throw new IllegalStateException("WeCom gettoken response has invalid errcode");
+            }
+            if (status.intValue() != 0) {
                 throw new IllegalStateException(
                         "WeCom gettoken failed: errcode="
-                                + errcode
+                                + status.intValue()
                                 + ", errmsg="
                                 + node.path("errmsg").asText());
             }
-            String token = node.path("access_token").asText();
-            int expiresIn = node.path("expires_in").asInt(7200);
-            long refreshAt = System.currentTimeMillis() + (long) (expiresIn * 800L);
-            store.putIfNewer(new CachedAccessToken(token, refreshAt));
-            return token;
-        } catch (RuntimeException re) {
-            throw re;
-        } catch (Exception e) {
-            throw new IllegalStateException(
-                    "Failed to parse WeCom gettoken response: " + e.getMessage(), e);
         }
+        JsonNode tokenNode = node.get("access_token");
+        if (tokenNode == null || !tokenNode.isTextual() || tokenNode.textValue().isBlank()) {
+            throw new IllegalStateException("WeCom gettoken response has no nonblank token");
+        }
+        JsonNode expiry = node.get("expires_in");
+        int expiresIn = 7200;
+        if (expiry != null) {
+            if (!expiry.isIntegralNumber() || !expiry.canConvertToInt() || expiry.intValue() <= 0) {
+                throw new IllegalStateException("WeCom gettoken response has invalid expires_in");
+            }
+            expiresIn = expiry.intValue();
+        }
+        String token = tokenNode.textValue();
+        long refreshAt = System.currentTimeMillis() + expiresIn * 800L;
+        store.putIfNewer(new CachedAccessToken(token, refreshAt));
+        return token;
     }
 
     /** Forces the next {@link #token()} call to refresh. Useful for tests / error recovery. */

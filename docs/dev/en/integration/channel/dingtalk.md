@@ -85,6 +85,10 @@ DingTalkChannel channel = DingTalkChannel.fromProperties(
 
 **Outbound:** Replies are sent via `DingTalkOutboundClient` using the OpenAPI `batchSend` endpoints — `oToMessages/batchSend` for DMs and `groupMessages/send` for groups. Text and Markdown formats are auto-detected.
 
+## Token refresh failures
+
+The token provider rejects empty responses, missing or blank tokens, and invalid expiry fields instead of caching unusable credentials. A failed refresh makes the send fail before posting the message; it leaves the existing cache entry unchanged so a later call can retry. Check the credential configuration and the provider or proxy response before retrying. A valid token response that omits the expiry field retains the default two-hour lifetime.
+
 ## Reconnection
 
 In Stream mode, the client reconnects automatically with exponential backoff (1s → 60s cap) when the WebSocket drops.

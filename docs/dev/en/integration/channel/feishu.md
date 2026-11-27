@@ -69,3 +69,7 @@ When `encryptKey` is configured, the callback body arrives as `{"encrypt":"<base
 **Inbound:** `FeishuCallbackController` → optional decryption → URL verification check → event_id dedup → `FeishuInboundMapper` (text messages only in MVP) → bot-loop guard → Gateway.
 
 **Outbound:** `FeishuOutboundClient` sends chat messages via `POST /open-apis/im/v1/messages`. When the outbound address includes a thread ID, it sends each message via `POST /open-apis/im/v1/messages/{threadId}/reply`. Both routes use a `tenant_access_token` from `FeishuAccessTokenProvider`. Tokens are cached and proactively refreshed at ~80% of TTL.
+
+## Token refresh failures
+
+The token provider rejects empty responses, missing or blank tokens, and invalid status or expiry fields instead of caching unusable credentials. A failed refresh makes the send fail before posting the message; it leaves the existing cache entry unchanged so a later call can retry. Check the credential configuration and the provider or proxy response before retrying. A valid token response that omits the expiry field retains the default two-hour lifetime.

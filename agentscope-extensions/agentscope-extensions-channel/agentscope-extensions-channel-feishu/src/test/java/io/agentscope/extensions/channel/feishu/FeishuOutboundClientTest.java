@@ -42,6 +42,7 @@ class FeishuOutboundClientTest {
             "{\"code\":0,\"tenant_access_token\":\"token-1\",\"expire\":7200}";
 
     private final AtomicReference<String> sendResponse = new AtomicReference<>("");
+    private final AtomicReference<String> tokenResponse = new AtomicReference<>(TOKEN_RESPONSE);
     private final List<URI> sendRequests = new CopyOnWriteArrayList<>();
     private HttpServer server;
     private FeishuOutboundClient client;
@@ -58,7 +59,7 @@ class FeishuOutboundClientTest {
                     }
                     String body =
                             path.contains("tenant_access_token")
-                                    ? TOKEN_RESPONSE
+                                    ? tokenResponse.get()
                                     : sendResponse.get();
                     byte[] bytes = body.getBytes(StandardCharsets.UTF_8);
                     exchange.getResponseHeaders().set("Content-Type", "application/json");
@@ -79,6 +80,15 @@ class FeishuOutboundClientTest {
     @AfterEach
     void tearDown() {
         server.stop(0);
+    }
+
+    @Test
+    void emptyTokenResponseFailsBeforeSendingMessage() {
+        tokenResponse.set("");
+        StepVerifier.create(client.send(direct("user-1"), List.of(text("hello"))))
+                .expectError(IllegalStateException.class)
+                .verify(Duration.ofSeconds(10));
+        assertTrue(sendRequests.isEmpty());
     }
 
     @Test

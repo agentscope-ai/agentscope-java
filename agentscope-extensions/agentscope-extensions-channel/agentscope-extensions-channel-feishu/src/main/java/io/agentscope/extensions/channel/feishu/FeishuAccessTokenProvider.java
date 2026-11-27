@@ -113,32 +113,58 @@ public final class FeishuAccessTokenProvider {
                 .bodyValue(body)
                 .retrieve()
                 .bodyToMono(String.class)
+                .switchIfEmpty(
+                        Mono.error(
+                                new IllegalStateException(
+                                        "Feishu tenant_access_token response is empty")))
                 .timeout(responseTimeout)
                 .map(this::parseAndStore);
     }
 
     private String parseAndStore(String body) {
+        JsonNode node;
         try {
-            JsonNode node = MAPPER.readTree(body);
-            int code = node.path("code").asInt(0);
-            if (code != 0) {
+            node = MAPPER.readTree(body);
+        } catch (Exception e) {
+            // Token responses are sensitive; parser errors can contain response fragments.
+            throw new IllegalStateException("Invalid Feishu tenant_access_token JSON response");
+        }
+        if (node == null || !node.isObject()) {
+            throw new IllegalStateException(
+                    "Feishu tenant_access_token response must be an object");
+        }
+        JsonNode status = node.get("code");
+        if (status != null) {
+            if (!status.isIntegralNumber() || !status.canConvertToInt()) {
+                throw new IllegalStateException(
+                        "Feishu tenant_access_token response has invalid code");
+            }
+            if (status.intValue() != 0) {
                 throw new IllegalStateException(
                         "Feishu tenant_access_token failed: code="
-                                + code
+                                + status.intValue()
                                 + ", msg="
                                 + node.path("msg").asText());
             }
-            String token = node.path("tenant_access_token").asText();
-            int expiresIn = node.path("expire").asInt(7200);
-            long refreshAt = System.currentTimeMillis() + (long) (expiresIn * 800L);
-            store.putIfNewer(new CachedAccessToken(token, refreshAt));
-            return token;
-        } catch (RuntimeException re) {
-            throw re;
-        } catch (Exception e) {
-            throw new IllegalStateException(
-                    "Failed to parse Feishu tenant_access_token response: " + e.getMessage(), e);
         }
+        JsonNode tokenNode = node.get("tenant_access_token");
+        if (tokenNode == null || !tokenNode.isTextual() || tokenNode.textValue().isBlank()) {
+            throw new IllegalStateException(
+                    "Feishu tenant_access_token response has no nonblank token");
+        }
+        JsonNode expiry = node.get("expire");
+        int expiresIn = 7200;
+        if (expiry != null) {
+            if (!expiry.isIntegralNumber() || !expiry.canConvertToInt() || expiry.intValue() <= 0) {
+                throw new IllegalStateException(
+                        "Feishu tenant_access_token response has invalid expire");
+            }
+            expiresIn = expiry.intValue();
+        }
+        String token = tokenNode.textValue();
+        long refreshAt = System.currentTimeMillis() + expiresIn * 800L;
+        store.putIfNewer(new CachedAccessToken(token, refreshAt));
+        return token;
     }
 
     /** Forces the next {@link #token()} call to refresh. Useful for tests / error recovery. */

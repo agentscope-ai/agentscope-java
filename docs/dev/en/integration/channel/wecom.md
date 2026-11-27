@@ -70,3 +70,7 @@ All WeCom callbacks are encrypted. The adapter handles decryption and signature 
 **Inbound:** `WeComCallbackController` → URL verification (echostr) → decrypt → MsgId dedup → `WeComInboundMapper` (text messages) → bot-loop guard → Gateway.
 
 **Outbound:** `WeComOutboundClient` sends replies via `/cgi-bin/message/send` (DMs) or `/cgi-bin/appchat/send` (groups), authenticating with an `access_token` from `WeComAccessTokenProvider`.
+
+## Token refresh failures
+
+The token provider rejects empty responses, missing or blank tokens, and invalid status or expiry fields instead of caching unusable credentials. A failed refresh makes the send fail before posting the message; it leaves the existing cache entry unchanged so a later call can retry. Check the credential configuration and the provider or proxy response before retrying. A valid token response that omits the expiry field retains the default two-hour lifetime.

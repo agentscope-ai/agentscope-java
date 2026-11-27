@@ -85,28 +85,42 @@ public final class DingTalkAccessTokenProvider {
                 .bodyValue(body)
                 .retrieve()
                 .bodyToMono(String.class)
+                .switchIfEmpty(
+                        Mono.error(
+                                new IllegalStateException(
+                                        "DingTalk accessToken response is empty")))
                 .timeout(Duration.ofSeconds(10))
                 .map(this::parseAndStore);
     }
 
     private String parseAndStore(String body) {
+        JsonNode node;
         try {
-            JsonNode node = MAPPER.readTree(body);
-            String token = node.path("accessToken").asText(null);
-            if (token == null || token.isBlank()) {
-                throw new IllegalStateException(
-                        "DingTalk accessToken response missing accessToken: " + body);
-            }
-            int expiresIn = node.path("expireIn").asInt(7200);
-            long refreshAt = System.currentTimeMillis() + (long) (expiresIn * 800L);
-            store.putIfNewer(new CachedAccessToken(token, refreshAt));
-            return token;
-        } catch (RuntimeException re) {
-            throw re;
+            node = MAPPER.readTree(body);
         } catch (Exception e) {
-            throw new IllegalStateException(
-                    "Failed to parse DingTalk accessToken response: " + e.getMessage(), e);
+            // Token responses are sensitive; parser errors can contain response fragments.
+            throw new IllegalStateException("Invalid DingTalk accessToken JSON response");
         }
+        if (node == null || !node.isObject()) {
+            throw new IllegalStateException("DingTalk accessToken response must be an object");
+        }
+        JsonNode tokenNode = node.get("accessToken");
+        if (tokenNode == null || !tokenNode.isTextual() || tokenNode.textValue().isBlank()) {
+            throw new IllegalStateException("DingTalk accessToken response has no nonblank token");
+        }
+        JsonNode expiry = node.get("expireIn");
+        int expiresIn = 7200;
+        if (expiry != null) {
+            if (!expiry.isIntegralNumber() || !expiry.canConvertToInt() || expiry.intValue() <= 0) {
+                throw new IllegalStateException(
+                        "DingTalk accessToken response has invalid expireIn");
+            }
+            expiresIn = expiry.intValue();
+        }
+        String token = tokenNode.textValue();
+        long refreshAt = System.currentTimeMillis() + expiresIn * 800L;
+        store.putIfNewer(new CachedAccessToken(token, refreshAt));
+        return token;
     }
 
     /** Forces the next {@link #token()} call to refresh. */
