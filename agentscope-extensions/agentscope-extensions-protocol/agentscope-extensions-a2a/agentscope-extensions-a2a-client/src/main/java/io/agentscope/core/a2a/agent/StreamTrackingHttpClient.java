@@ -20,6 +20,7 @@ import java.util.Map;
 import java.util.Queue;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Consumer;
 import org.a2aproject.sdk.client.http.A2AHttpClient;
 import org.a2aproject.sdk.client.http.A2AHttpResponse;
@@ -38,13 +39,15 @@ final class StreamTrackingHttpClient implements A2AHttpClient {
     private final A2AHttpClient delegate;
 
     private final Queue<CompletableFuture<Void>> streams = new ConcurrentLinkedQueue<>();
+    private final AtomicBoolean cancelled = new AtomicBoolean();
 
     StreamTrackingHttpClient(A2AHttpClient delegate) {
         this.delegate = delegate;
     }
 
-    /** Cancels the streams this client opened; it does nothing for those that already ended. */
+    /** Cancels this call's streams, including any registered after cleanup has begun. */
     void cancelStreams() {
+        cancelled.set(true);
         CompletableFuture<Void> stream;
         while ((stream = streams.poll()) != null) {
             stream.cancel(true);
@@ -54,6 +57,10 @@ final class StreamTrackingHttpClient implements A2AHttpClient {
     private CompletableFuture<Void> track(CompletableFuture<Void> stream) {
         streams.add(stream);
         stream.whenComplete((ignored, error) -> streams.remove(stream));
+        if (cancelled.get()) {
+            streams.remove(stream);
+            stream.cancel(true);
+        }
         return stream;
     }
 
