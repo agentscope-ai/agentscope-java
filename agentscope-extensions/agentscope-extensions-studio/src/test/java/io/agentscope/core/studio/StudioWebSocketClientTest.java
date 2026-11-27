@@ -304,4 +304,37 @@ class StudioWebSocketClientTest {
         assertEquals(true, clientWithSocket.isConnected());
         clientWithSocket.close();
     }
+
+    /**
+     * A wait that never receives an answer has to leave {@code pendingRequests}. A downstream
+     * {@code timeout} — which is what {@code StudioUserAgent} adds on top of
+     * {@code waitForInput} — cancels its upstream instead of erroring it, so a cleanup that only
+     * listens for the error signal never runs and the sink stays registered for the lifetime of
+     * the client.
+     */
+    @Test
+    @DisplayName("A timed-out wait should release its pending request")
+    void testTimedOutWaitReleasesPendingRequest() {
+        String requestId = "timed-out-request";
+
+        StepVerifier.create(client.waitForInput(requestId).timeout(Duration.ofMillis(100)))
+                .expectError()
+                .verify();
+
+        assertEquals(
+                0,
+                client.pendingRequestCount(),
+                "a timed-out wait must not stay registered in pendingRequests");
+    }
+
+    @Test
+    @DisplayName("An explicitly cancelled wait should release its pending request")
+    void testCancelledWaitReleasesPendingRequest() {
+        StepVerifier.create(client.waitForInput("cancelled-request")).thenCancel().verify();
+
+        assertEquals(
+                0,
+                client.pendingRequestCount(),
+                "a cancelled wait must not stay registered in pendingRequests");
+    }
 }

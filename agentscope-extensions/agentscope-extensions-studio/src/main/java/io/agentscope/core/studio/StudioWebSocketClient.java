@@ -330,11 +330,14 @@ public class StudioWebSocketClient {
 
         return sink.asMono()
                 .timeout(Duration.ofMinutes(30))
+                .doFinally(signal -> pendingRequests.remove(requestId))
                 .doOnError(
-                        e -> {
-                            pendingRequests.remove(requestId);
-                            logger.warn("Timeout or error waiting for user input: {}", requestId);
-                        });
+                        e -> logger.warn("Timeout or error waiting for user input: {}", requestId));
+    }
+
+    /** Number of waits still registered. Test visibility. */
+    int pendingRequestCount() {
+        return pendingRequests.size();
     }
 
     /**
