@@ -94,6 +94,8 @@ DifyRAGConfig config = DifyRAGConfig.builder()
 
 ## 关键参数
 
+重试次数用尽时，客户端会报告最后一次请求的结果。如果最后收到 HTTP 错误，会保留其状态码和响应消息；如果最后发生网络传输故障，则会传递对应的 `IOException`，不会复用之前的 HTTP 响应。在响应式调用中，可使用 Reactor 的 `Exceptions.unwrap(...)` 解包错误，检查受检的传输异常。
+
 | 字段 | 说明 |
 | --- | --- |
 | `apiKey` | Dify 数据集 API Key（必填） |

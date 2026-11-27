@@ -384,6 +384,7 @@ public class DifyRAGClient {
                 try {
                     if (response != null) {
                         response.close();
+                        response = null;
                     }
 
                     response = chain.proceed(request);
