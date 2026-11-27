@@ -107,6 +107,8 @@ Harness 默认使用 `WorkspaceThreadJournalStore`，跟随 Workspace Filesystem
 
 `ThreadJournalStore.list(ctx)` 只列出调用者当前存储作用域内的 Thread；SESSION 隔离不意味着可以枚举其他 Session。内存实现只适用于进程内使用。共享持久存储本身不提供后台认领与自动恢复，需要这些能力时装配 Durable Backend。
 
+Workspace 日志发现会跳过无关或格式损坏的路径，包括身份编码无效的路径，避免单个异常条目影响其他有效 Thread 的列出。这不会屏蔽底层存储故障，也不代表日志内容已经校验；打开内容损坏的日志时仍会明确报错。
+
 原生日志格式版本保存在权威 `head.json`，当前版本为 2。缺失版本、不支持的版本和损坏数据明确报错，不自动转换、清空或新建日志掩盖旧数据。恢复读取提交链，不以目录扫描推断哪个片段已经提交。
 
 不需要执行日志时，使用 `.journalEnabled(false).stateStore(snapshotStore)` 保存当前工作状态。状态快照模式不能提供完整历史事件。使用日志时，checkpoint 是原生恢复权威；受 Durable 管理时，工厂返回 Agent Builder，由 adapter 安装本次调用的 Journal，并与 Backend 统一提交状态和执行事实。

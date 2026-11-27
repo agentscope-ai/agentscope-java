@@ -108,6 +108,8 @@ Override storage with `.threadJournalStore(store)`. Custom backends implement `T
 
 `ThreadJournalStore.list(ctx)` discovers Threads only within the caller's storage scope; SESSION isolation does not enumerate other Sessions. In-memory stores are process-local. Shared persistence alone provides neither background claiming nor autonomous recovery; use a Durable Backend for those capabilities.
 
+Workspace journal discovery skips unrelated or malformed paths, including invalid encoded identities, so one such entry does not hide valid Threads. This does not suppress storage failures or validate journal contents; opening a journal with corrupt contents still fails explicitly.
+
 The authoritative `head.json` carries the native journal format version, currently 2. Missing/unsupported versions and corruption fail explicitly without conversion, clearing or silently creating a fresh journal over old data. Recovery follows the committed chain rather than guessing committed segments through directory listing.
 
 For state snapshots without execution history, use `.journalEnabled(false).stateStore(snapshotStore)`. Snapshot mode does not provide complete historical events. With journaling enabled, checkpoints are the native recovery authority. For Durable-managed execution, factories return Agent builders and the adapter installs the invocation Journal so it and the Backend commit state and facts together.

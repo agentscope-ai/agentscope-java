@@ -18,6 +18,7 @@ package io.agentscope.harness.agent.journal;
 import static io.agentscope.harness.agent.tool.ToolResultAssertions.assertText;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
@@ -50,6 +51,8 @@ import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 class WorkspaceThreadJournalStoreTest {
     @TempDir Path directory;
@@ -84,6 +87,77 @@ class WorkspaceThreadJournalStoreTest {
         var store = new WorkspaceThreadJournalStore(filesystem);
 
         assertEquals(List.of(key), store.list(RuntimeContext.builder().userId("u").build()));
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"s_!", "s_A", "s__w", "s_", "s_IA", "s_YQ==", "s_YR"})
+    void discoverySkipsMalformedOrNoncanonicalIdentities(String segment) {
+        var filesystem = mock(AbstractFilesystem.class);
+        var storage = mock(AtomicJournalStorage.class);
+        when(filesystem.journalStorage(any())).thenReturn(storage);
+        for (int position : new int[] {1, 3, 4, 6}) {
+            String[] parts = (key.storagePath() + "/head.json").split("/");
+            parts[position] = segment;
+            // An empty user is valid; unlike the other components it identifies anonymous use.
+            if (position == 3 && segment.equals("s_")) continue;
+            when(storage.listPaths("agents/"))
+                    .thenReturn(List.of(String.join("/", parts), key.storagePath() + "/head.json"));
+            assertEquals(
+                    List.of(key),
+                    new WorkspaceThreadJournalStore(filesystem)
+                            .list(RuntimeContext.builder().userId("u").build()),
+                    "segment " + position + ": " + segment);
+        }
+    }
+
+    @Test
+    void localDiscoveryRetainsReadableUnicodeAndAnonymousJournalsBesideMalformedFiles() {
+        var filesystem = new LocalFilesystem(directory);
+        var storage = filesystem.journalStorage(RuntimeContext.empty());
+        var valid = new ThreadKey(null, "助手", "会话", "main");
+        var anonymous = new ThreadKey(null, "agent", "session", "main");
+        var store = new WorkspaceThreadJournalStore(filesystem);
+        for (ThreadKey thread : List.of(valid, anonymous)) {
+            var journal = store.open(thread, RuntimeContext.empty());
+            var writer = journal.acquire("writer", Duration.ofMinutes(1));
+            journal.commit(writer, "batch", 0, List.of(event()));
+            journal.release(writer);
+        }
+        storage.compareAndSet(
+                "agents/s_!/sessions/s_/s_c2Vzc2lvbg/threads/s_bWFpbg/head.json",
+                0,
+                new byte[] {1});
+        var reopened = new WorkspaceThreadJournalStore(new LocalFilesystem(directory));
+        assertEquals(List.of(anonymous, valid), reopened.list(RuntimeContext.empty()));
+        assertEquals(
+                List.of(event()), reopened.open(valid, RuntimeContext.empty()).readAfter(0, 10));
+    }
+
+    @Test
+    void discoveryDoesNotHideStorageFailures() {
+        var filesystem = mock(AbstractFilesystem.class);
+        var storage = mock(AtomicJournalStorage.class);
+        var failure = new JournalException("Storage unavailable");
+        when(filesystem.journalStorage(any())).thenReturn(storage);
+        when(storage.listPaths("agents/")).thenThrow(failure);
+        assertSame(
+                failure,
+                assertThrows(
+                        JournalException.class,
+                        () ->
+                                new WorkspaceThreadJournalStore(filesystem)
+                                        .list(RuntimeContext.empty())));
+    }
+
+    @Test
+    void discoveryDoesNotTreatCorruptJournalContentsAsHealthy() {
+        var filesystem = new LocalFilesystem(directory);
+        filesystem
+                .journalStorage(RuntimeContext.empty())
+                .compareAndSet(key.storagePath() + "/head.json", 0, new byte[] {1});
+        var store = new WorkspaceThreadJournalStore(filesystem);
+        assertEquals(List.of(key), store.list(RuntimeContext.builder().userId("u").build()));
+        assertThrows(JournalException.class, () -> store.open(key, RuntimeContext.empty()).head());
     }
 
     private static String journalPath(String agent, String user, String session, String thread) {
