@@ -166,7 +166,7 @@ public class CosBaseStore implements BaseStore {
             Collections.sort(dataKeys);
 
             int start = Math.min(offset, dataKeys.size());
-            int end = Math.min(start + limit, dataKeys.size());
+            int end = start + Math.min(limit, dataKeys.size() - start);
             List<String> page = dataKeys.subList(start, end);
 
             List<StoreItem> items = new ArrayList<>(page.size());

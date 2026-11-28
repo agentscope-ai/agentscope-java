@@ -28,7 +28,10 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.aliyun.oss.OSS;
+import com.aliyun.oss.model.ListObjectsV2Request;
+import com.aliyun.oss.model.ListObjectsV2Result;
 import com.aliyun.oss.model.OSSObject;
+import com.aliyun.oss.model.OSSObjectSummary;
 import io.agentscope.harness.agent.filesystem.remote.store.StoreItem;
 import java.io.ByteArrayInputStream;
 import java.io.InputStream;
@@ -58,6 +61,36 @@ class OssBaseStoreTest {
     void builderRejectsNullClient() {
         assertThrows(
                 NullPointerException.class, () -> OssBaseStore.builder().bucketName("b").build());
+    }
+
+    @Test
+    void searchHandlesLargeLimitWithoutOverflow() {
+        ListObjectsV2Result listing = new ListObjectsV2Result();
+        for (String key : List.of("a", "b")) {
+            OSSObjectSummary summary = new OSSObjectSummary();
+            summary.setKey("test/store/ns1/" + key + ".json");
+            listing.getObjectSummaries().add(summary);
+        }
+        when(mockOss.listObjectsV2(any(ListObjectsV2Request.class))).thenReturn(listing);
+        when(mockOss.doesObjectExist("test-bucket", "test/store/ns1/b.json")).thenReturn(true);
+        when(mockOss.getObject("test-bucket", "test/store/ns1/b.json"))
+                .thenAnswer(
+                        inv -> {
+                            OSSObject object = new OSSObject();
+                            object.setObjectContent(
+                                    new ByteArrayInputStream(
+                                            "{}".getBytes(StandardCharsets.UTF_8)));
+                            return object;
+                        });
+
+        assertEquals(
+                List.of("b"),
+                store.search(List.of("ns1"), Integer.MAX_VALUE, 1).stream()
+                        .map(StoreItem::key)
+                        .toList());
+        assertTrue(store.search(List.of("ns1"), Integer.MAX_VALUE, Integer.MAX_VALUE).isEmpty());
+        assertEquals("b", store.search(List.of("ns1"), 1, 1).get(0).key());
+        assertTrue(store.search(List.of("ns1"), 0, 1).isEmpty());
     }
 
     @Test

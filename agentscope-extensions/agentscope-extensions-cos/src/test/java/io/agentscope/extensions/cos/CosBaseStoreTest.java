@@ -192,6 +192,29 @@ class CosBaseStoreTest {
     }
 
     @Test
+    void searchHandlesLargeLimitWithoutOverflow() {
+        ObjectListing listing = mock(ObjectListing.class);
+        COSObjectSummary first = new COSObjectSummary();
+        first.setKey("test/store/ns1/a.json");
+        COSObjectSummary second = new COSObjectSummary();
+        second.setKey("test/store/ns1/b.json");
+        when(listing.getObjectSummaries()).thenReturn(List.of(first, second));
+        when(mockCos.listObjects(any(ListObjectsRequest.class))).thenReturn(listing);
+        when(mockCos.getObjectMetadata(any(), any(String.class))).thenReturn(new ObjectMetadata());
+        notFound("test/store/ns1/b.version");
+        when(mockCos.getObject(any(GetObjectRequest.class))).thenAnswer(inv -> cosObjectWith("{}"));
+
+        assertEquals(
+                List.of("b"),
+                store.search(List.of("ns1"), Integer.MAX_VALUE, 1).stream()
+                        .map(StoreItem::key)
+                        .toList());
+        assertTrue(store.search(List.of("ns1"), Integer.MAX_VALUE, Integer.MAX_VALUE).isEmpty());
+        assertEquals("b", store.search(List.of("ns1"), 1, 1).get(0).key());
+        assertTrue(store.search(List.of("ns1"), 0, 1).isEmpty());
+    }
+
+    @Test
     void search_returnsSinglePage() {
         String prefix = "test/store/ns1/";
         COSObjectSummary s1 = new COSObjectSummary();

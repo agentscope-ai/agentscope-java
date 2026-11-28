@@ -93,7 +93,7 @@ public class InMemoryStore implements BaseStore {
         Collections.sort(matches, (a, b) -> a.key().compareTo(b.key()));
 
         int start = Math.min(offset, matches.size());
-        int end = Math.min(start + limit, matches.size());
+        int end = start + Math.min(limit, matches.size() - start);
         return matches.subList(start, end);
     }
 

@@ -105,6 +105,8 @@ This mode **does not provide shell** — on purpose: for shell, use mode 2 (sand
 | `JdbcStore` | JDBC-based, for MySQL / PostgreSQL / H2 / SQLite | `agentscope-extensions-jdbc` |
 | `InMemoryStore` | In-memory, for testing | `agentscope-harness` |
 
+For direct `BaseStore.search` calls on the in-memory, OSS and COS backends, a nonnegative offset selects the page start and a positive limit caps its length. A limit larger than the remaining result count returns the available items without overflowing the page calculation; an offset at or beyond the end returns an empty page. This does not reduce object-storage listing work: OSS and COS still enumerate matching object keys before selecting a page.
+
 ---
 
 ### Mode 2: sandbox (`SandboxFilesystemSpec` family)
