@@ -23,11 +23,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-import com.sun.net.httpserver.HttpServer;
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.TextBlock;
@@ -48,7 +46,6 @@ import io.agentscope.durable.DurableTurn;
 import io.agentscope.durable.DurableTypes.ExecutionRequest;
 import io.agentscope.durable.DurableTypes.ExecutionResult;
 import io.agentscope.durable.DurableTypes.ExecutionState;
-import io.agentscope.durable.DurableTypes.PublicEvent;
 import io.agentscope.durable.DurableTypes.RunStepRef;
 import io.agentscope.durable.DurableTypes.SessionKey;
 import io.agentscope.durable.DurableTypes.ThreadKey;
@@ -63,25 +60,14 @@ import io.agentscope.durable.Executor;
 import io.agentscope.durable.TransactionalSessionBackend;
 import io.agentscope.durable.Wakeups;
 import io.agentscope.durable.agentscope.AgentScopeAdapter;
-import io.agentscope.durable.codec.agentscope.AgentScopeCheckpointCodec;
 import io.agentscope.durable.store.RecordStore;
 import io.agentscope.durable.worker.TransactionalExecutionStore;
-import io.agentscope.extensions.durable.http.DurableHttp;
-import io.agentscope.extensions.durable.http.DurableRuntimeHandler;
-import io.agentscope.extensions.durable.http.SessionEventHandler;
 import io.agentscope.extensions.durable.jdbc.FileObjectStore;
 import io.agentscope.extensions.durable.jdbc.JdbcRecordStore;
-import java.io.IOException;
-import java.net.InetSocketAddress;
-import java.net.URI;
-import java.net.http.HttpClient;
-import java.net.http.HttpRequest;
-import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.sql.DriverManager;
 import java.time.Duration;
-import java.util.ArrayList;
 import java.util.Base64;
 import java.util.HashMap;
 import java.util.List;
@@ -93,7 +79,6 @@ import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.ScheduledExecutorService;
@@ -579,244 +564,6 @@ class RocketMqExecutionTest {
             }
             verify(broker.producer, never()).close();
             assertFalse(hands.keys("execution-pool:", null, 10).isEmpty());
-        }
-    }
-
-    @Test
-    void apiRestartPreservesAnActiveTurnAndSseResumesFromItsCommittedCursor() throws Exception {
-        var enteredHands = new CountDownLatch(1);
-        var finishTool = new CountDownLatch(1);
-        var modelCalls = new AtomicInteger();
-        var provider = mock(Executor.class);
-        when(provider.capabilities()).thenReturn(new Executor.Capabilities(true, false, false));
-        when(provider.startExecution(any()))
-                .thenAnswer(
-                        invocation -> {
-                            ExecutionRequest execution = invocation.getArgument(0);
-                            enteredHands.countDown();
-                            assertTrue(
-                                    finishTool.await(AWAIT_DEADLINE_SECONDS, TimeUnit.SECONDS),
-                                    "API replacement did not release the tool");
-                            return new ExecutionResult(
-                                    ExecutionState.SUCCEEDED,
-                                    null,
-                                    execution.call().arguments().path("value"),
-                                    null);
-                        });
-        var model = mock(Model.class);
-        when(model.getModelName()).thenReturn("offline-restart");
-        when(model.stream(any(), any(), any()))
-                .thenAnswer(
-                        invocation -> {
-                            List<Msg> messages = invocation.getArgument(0);
-                            modelCalls.incrementAndGet();
-                            var result =
-                                    messages.stream()
-                                            .flatMap(
-                                                    m ->
-                                                            m
-                                                                    .getContentBlocks(
-                                                                            ToolResultBlock.class)
-                                                                    .stream())
-                                            .filter(block -> !block.isSuspended())
-                                            .findFirst();
-                            return Flux.just(
-                                    ChatResponse.builder()
-                                            .content(
-                                                    result.isPresent()
-                                                            ? List.of(
-                                                                    result.get().getOutput().get(0))
-                                                            : List.of(
-                                                                    ToolUseBlock.builder()
-                                                                            .id("call")
-                                                                            .name("echo")
-                                                                            .input(
-                                                                                    Map.of(
-                                                                                            "value",
-                                                                                            "hands"
-                                                                                                + " reply"))
-                                                                            .build()))
-                                            .build());
-                        });
-        var adapter =
-                AgentScopeAdapter.forReAct(
-                        binding -> {
-                            var toolkit = new Toolkit();
-                            toolkit.registerSchema(
-                                    ToolSchema.builder()
-                                            .name("echo")
-                                            .description("Echo the input")
-                                            .parameters(
-                                                    Map.of(
-                                                            "type",
-                                                            "object",
-                                                            "properties",
-                                                            Map.of(
-                                                                    "value",
-                                                                    Map.of("type", "string"))))
-                                            .build());
-                            return ReActAgent.builder()
-                                    .name("agent")
-                                    .model(model)
-                                    .toolkit(toolkit)
-                                    .permissionContext(
-                                            PermissionContextState.builder()
-                                                    .mode(PermissionMode.BYPASS)
-                                                    .build());
-                        },
-                        Map.of("echo", "hands"));
-        var session = new SessionKey("tenant", "session");
-        var database = directory.resolve("brain.db");
-        var http = HttpClient.newHttpClient();
-        try (var broker = new Broker();
-                var brain = open(database);
-                var hands = open(directory.resolve("hands.db"));
-                var worker =
-                        RocketMqWorker.builder()
-                                .executor("hands", provider)
-                                .recordStore(hands)
-                                .clients(
-                                        FACTORY,
-                                        broker.producer,
-                                        broker.consumer(true),
-                                        broker.consumer(TOPOLOGY.controls()))
-                                .authorize(command -> {})
-                                .pollInterval(POLL)
-                                .build();
-                var executor =
-                        RocketMqRemoteExecutor.builder()
-                                .clients(FACTORY, broker.producer, broker.consumer(false))
-                                .pollInterval(POLL)
-                                .build();
-                var runtime =
-                        DurableRuntime.builder()
-                                .backend(new TransactionalSessionBackend(brain))
-                                .harness("agent", "v1", adapter)
-                                .executor("hands", executor)
-                                .pollInterval(POLL)
-                                .build()) {
-            worker.start();
-            runtime.start();
-            String turnId;
-            List<PublicEvent> beforeRestart;
-            try (var store = open(database);
-                    var api = AcceptanceApi.start(store)) {
-                var turn =
-                        api.client().createSession(session, "agent").submit("request", "Use echo");
-                turnId = turn.turnId();
-                assertTrue(
-                        enteredHands.await(AWAIT_DEADLINE_SECONDS, TimeUnit.SECONDS),
-                        () ->
-                                "Hands did not start. "
-                                        + recoveryDiagnostics(runtime, turn, broker, modelCalls));
-                beforeRestart = api.replay(http, null);
-                assertTrue(
-                        beforeRestart.stream()
-                                .anyMatch(event -> event.type().equals("tool.requested")));
-                assertFalse(turn.status().status().terminal());
-            }
-
-            try (var store = open(database);
-                    var api = AcceptanceApi.start(store)) {
-                var restored = api.client().getSession(session);
-                var turn = restored.submit("request", "Use echo");
-                assertEquals(turnId, turn.turnId());
-                assertFalse(turn.status().status().terminal());
-                assertFalse(turn.status().cancellationRequested());
-                finishTool.countDown();
-                var settled =
-                        turn.await(Duration.ofSeconds(AWAIT_DEADLINE_SECONDS))
-                                .toCompletableFuture()
-                                .get(AWAIT_DEADLINE_SECONDS + 5, TimeUnit.SECONDS);
-                assertEquals(TurnStatus.SUCCEEDED, settled.status(), settled.error());
-                assertEquals(
-                        "hands reply",
-                        settled.output().path("content").get(0).path("text").asText());
-                var resumed =
-                        api.replay(http, beforeRestart.get(beforeRestart.size() - 1).cursor());
-                assertTrue(
-                        resumed.stream().anyMatch(event -> event.type().equals("turn.succeeded")));
-                var replayed = new ArrayList<>(beforeRestart);
-                replayed.addAll(resumed);
-                assertEquals(restored.listEvents(null, 100).events(), replayed);
-                assertEquals(
-                        1,
-                        replayed.stream()
-                                .filter(event -> event.type().equals("turn.queued"))
-                                .count());
-                assertEquals(
-                        1,
-                        restored.history(null, 100).items().stream()
-                                .filter(item -> item.path("requestId").asText().equals("request"))
-                                .count());
-                verify(provider, times(1)).startExecution(any());
-            }
-        }
-    }
-
-    private record AcceptanceApi(
-            HttpServer server, ExecutorService requests, DurableRuntime host, DurableRuntime client)
-            implements AutoCloseable {
-        static AcceptanceApi start(JdbcRecordStore store) throws IOException {
-            var server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
-            var host =
-                    DurableRuntime.builder()
-                            .backend(new TransactionalSessionBackend(store))
-                            .definition("agent", "v1", AgentScopeCheckpointCodec.STATE_VERSION)
-                            .build();
-            var requests = Executors.newCachedThreadPool();
-            DurableRuntimeHandler.Authorizer authorizer =
-                    (exchange, operation, namespace, session) -> {};
-            server.createContext("/api", new DurableRuntimeHandler(host, authorizer));
-            server.createContext(
-                    "/events",
-                    new SessionEventHandler(host, authorizer, Duration.ofSeconds(1), POLL));
-            server.setExecutor(requests);
-            server.start();
-            var client =
-                    DurableRuntime.builder()
-                            .transport(new DurableHttp(base(server).resolve("/api")))
-                            .pollInterval(POLL)
-                            .build();
-            return new AcceptanceApi(server, requests, host, client);
-        }
-
-        List<PublicEvent> replay(HttpClient http, String cursor) throws Exception {
-            var request =
-                    HttpRequest.newBuilder(
-                                    base(server)
-                                            .resolve("/events?namespace=tenant&sessionId=session"))
-                            .timeout(Duration.ofSeconds(10));
-            if (cursor != null) request.header("Last-Event-ID", cursor);
-            var response = http.send(request.build(), HttpResponse.BodyHandlers.ofString());
-            assertEquals(200, response.statusCode());
-            var events =
-                    response.body()
-                            .lines()
-                            .filter(line -> line.startsWith("data: "))
-                            .map(
-                                    line ->
-                                            DurableJson.convert(
-                                                    DurableJson.parse(
-                                                            line.substring("data: ".length())),
-                                                    PublicEvent.class))
-                            .toList();
-            assertEquals(
-                    events.stream().map(event -> "id: " + event.cursor()).toList(),
-                    response.body().lines().filter(line -> line.startsWith("id: ")).toList());
-            return events;
-        }
-
-        private static URI base(HttpServer server) {
-            return URI.create("http://127.0.0.1:" + server.getAddress().getPort());
-        }
-
-        @Override
-        public void close() {
-            client.close();
-            server.stop(0);
-            requests.shutdownNow();
-            host.close();
         }
     }
 

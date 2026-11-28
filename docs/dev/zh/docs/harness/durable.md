@@ -1151,10 +1151,16 @@ make -C agentscope-durable acceptance
 ```
 
 验收覆盖 Java 和 HTTP 用户 API、Session 和 Thread 隔离、Turn 排队、steer 和取消、审批、checkpoint fork、
-SSE 断线重放，以及 Brain 和 Hands 的故障恢复。场景包括工具执行期间重启 API，以及响应丢失和消息重复投递等传输故障。
-默认使用临时 SQLite 数据库、预设行为的模型和工具，以及 RocketMQ 客户端测试替身，无需模型密钥或 Broker。
+SSE 断线重放，以及 Brain 和 Hands 的故障恢复。API 重启用例通过 Durable Worker 和本地传输，
+验证工具执行期间重启 API 后的续接。基础验收使用临时 SQLite 数据库和预设行为的模型与工具，无需模型密钥或 RocketMQ。
 
-设置 `DURABLE_TEST_JDBC_URL` 后，支持 PostgreSQL 的 JDBC 验收用例会在指定测试数据库上运行。
+修改 RocketMQ 拓扑、调度或传输后，运行扩展验收。它用客户端测试替身验证响应丢失、确认失败和消息重复投递等场景。
+
+```sh
+make -C agentscope-durable acceptance-rocketmq
+```
+
+任一命令设置 `DURABLE_TEST_JDBC_URL` 后，支持 PostgreSQL 的 JDBC 用例会在指定测试库上运行。
 测试账号需要有创建和删除 schema 的权限。
 
 ```sh

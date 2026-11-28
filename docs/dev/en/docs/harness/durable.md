@@ -1341,12 +1341,20 @@ make -C agentscope-durable acceptance
 
 The baseline exercises the Java and HTTP user APIs, session and thread isolation, turn queues,
 steering and cancellation, approvals, checkpoint forks, SSE reconnect and replay, and Brain and
-Hands recovery. It includes an API restart during an active tool call and transport failures such
-as lost replies and duplicate deliveries. The default run uses temporary SQLite databases,
-scripted models and tools, and a RocketMQ client test fixture, so no model keys or broker are needed.
+Hands recovery. The API restart test runs Durable's Worker and a local transport while a tool
+call is active. The baseline uses temporary SQLite databases and scripted models and tools. It
+runs without model keys or RocketMQ.
 
-Set `DURABLE_TEST_JDBC_URL` to run the JDBC-backed acceptance cases that support PostgreSQL against
-a test database. The test account needs permission to create and drop schemas.
+Run the RocketMQ extension suite when changing its topology, scheduling, or transport. It uses
+a client test fixture to exercise failures such as lost replies, failed acknowledgements, and
+duplicate deliveries.
+
+```sh
+make -C agentscope-durable acceptance-rocketmq
+```
+
+Set `DURABLE_TEST_JDBC_URL` with either command to run supported JDBC cases against a PostgreSQL
+test database. The test account needs permission to create and drop schemas.
 
 ```sh
 DURABLE_TEST_JDBC_URL='jdbc:postgresql://localhost:5432/durable_test?user=durable_test' \
