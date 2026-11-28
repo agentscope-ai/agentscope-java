@@ -1100,7 +1100,7 @@ public abstract class AgentBase implements Agent {
     }
 
     /**
-     * Observe multiple messages without generating a reply.
+     * Observe multiple messages in list order without generating a reply.
      * This is the public API that delegates to doObserve implementation.
      *
      * @param msgs Messages to observe
@@ -1111,7 +1111,7 @@ public abstract class AgentBase implements Agent {
         if (msgs == null || msgs.isEmpty()) {
             return Mono.empty();
         }
-        return Flux.fromIterable(msgs).flatMap(this::doObserve).then();
+        return Flux.fromIterable(msgs).concatMap(this::doObserve).then();
     }
 
     /**

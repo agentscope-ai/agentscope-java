@@ -245,11 +245,13 @@ Full event-type and field reference: [Message and event](/dev/en/docs/building-b
 
 ### observe
 
-Use `observe` to inject a message into the agent's context without triggering a reply — useful in multi-agent setups where one agent observes another agent's output.
+Use `observe` to inject a message into the agent's default session context without triggering a reply — useful in multi-agent setups where one agent observes another agent's output. When observing a list of messages, the agent receives them in list order.
 
 ```java
 agent.observe(otherAgentMsg).block();
 ```
+
+When an `AgentStateStore` is configured, subscribe to the returned `Mono` and wait for successful completion before continuing. The observed messages are then saved, so the next `call()` or a new instance using the same storage, agent identity, and session can read them. A storage failure is returned through the `Mono` as an error; handle it before proceeding with work that depends on those messages.
 
 ## Multi-user / multi-session concurrency
 
