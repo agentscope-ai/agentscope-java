@@ -553,22 +553,47 @@ public class WorkspaceTaskRepository implements TaskRepository {
 
         List<BackgroundTask> result = new ArrayList<>();
         for (TaskRecord wsRecord : records) {
-            LocalTaskKey key = localKey(effRc, sessionId, wsRecord.getTaskId());
-            BackgroundTask local = localTasks.get(key);
-            // Use local handle if available (live status); otherwise fall back to workspace record.
-            // Never override a terminal workspace status with a local RUNNING state from an old
-            // handle.
-            BackgroundTask effective;
-            if (local != null && !wsRecord.getStatus().isTerminal()) {
-                effective = local;
-            } else {
-                effective = syntheticTask(effRc, wsRecord);
-            }
+            BackgroundTask effective = effectiveTask(effRc, sessionId, wsRecord);
             if (filter == null || effective.getTaskStatus() == filter) {
                 result.add(effective);
             }
         }
         return result;
+    }
+
+    /**
+     * Builds the summary view from a single {@code listTaskRecords} read. Delivery status comes
+     * from the same snapshot, so the number of whole-file reads does not grow with the task count
+     * (#4459). Nothing is cached between calls, so a subsequent summary sees newly delivered
+     * tasks.
+     */
+    @Override
+    public List<TaskSummaryEntry> listTaskSummary(RuntimeContext rc, String sessionId) {
+        RuntimeContext effRc = rc != null ? rc : RuntimeContext.empty();
+        Collection<TaskRecord> records =
+                workspaceManager.listTaskRecords(effRc, parentAgentId, sessionId);
+        List<TaskSummaryEntry> entries = new ArrayList<>(records.size());
+        for (TaskRecord wsRecord : records) {
+            entries.add(
+                    new TaskSummaryEntry(
+                            effectiveTask(effRc, sessionId, wsRecord), wsRecord.isDelivered()));
+        }
+        return entries;
+    }
+
+    /**
+     * Resolves the task to expose for a persisted record: the live local handle while the record
+     * is non-terminal, otherwise a synthetic handle backed by the stored state. Never override a
+     * terminal workspace status with a local RUNNING state from an old handle.
+     */
+    private BackgroundTask effectiveTask(
+            RuntimeContext effRc, String sessionId, TaskRecord wsRecord) {
+        LocalTaskKey key = localKey(effRc, sessionId, wsRecord.getTaskId());
+        BackgroundTask local = localTasks.get(key);
+        if (local != null && !wsRecord.getStatus().isTerminal()) {
+            return local;
+        }
+        return syntheticTask(effRc, wsRecord);
     }
 
     @Override
