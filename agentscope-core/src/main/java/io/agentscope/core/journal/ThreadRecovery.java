@@ -15,6 +15,7 @@
  */
 package io.agentscope.core.journal;
 
+import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolResultMessage;
 import io.agentscope.core.util.JsonUtils;
@@ -39,19 +40,36 @@ public final class ThreadRecovery {
                 throw new IllegalArgumentException("Supply exactly the unresolved tool outcomes");
             var state = projection.restore();
             if (state == null) throw new JournalException("No recoverable state baseline");
+            var verifiedMessages = new ArrayList<ToolResultMessage>();
             for (var entry : outcomes.entrySet()) {
                 if (!entry.getKey().equals(entry.getValue().getId())
-                        || entry.getValue().isSuspended())
+                        || entry.getValue().isSuspended()
+                        || entry.getValue().hasUnknownOutcome())
                     throw new IllegalArgumentException(
-                            "Mismatched or suspended reconciliation result");
-                state.contextMutable()
-                        .add(ToolResultMessage.builder().result(entry.getValue()).build());
+                            "Reconciliation requires a verified result for the original call");
+                verifiedMessages.add(ToolResultMessage.builder().result(entry.getValue()).build());
             }
+            var context = state.contextMutable();
+            for (int i = context.size() - 1; i >= 0; i--) {
+                var message = context.get(i);
+                if (message.getRole() == MsgRole.ASSISTANT) break;
+                var retained =
+                        message.getContent().stream()
+                                .filter(
+                                        block ->
+                                                !(block instanceof ToolResultBlock result)
+                                                        || !outcomes.containsKey(result.getId()))
+                                .toList();
+                if (retained.size() == message.getContent().size()) continue;
+                if (retained.isEmpty()) context.remove(i);
+                else context.set(i, message.withContent(retained));
+            }
+            context.addAll(verifiedMessages);
             long seq = projection.asOfSeq();
             String run = projection.positionRunId();
             String turn = projection.positionTurnId();
             var repairs = new ArrayList<JournalEvent>();
-            for (var outcome : outcomes.values())
+            for (var message : verifiedMessages)
                 repairs.add(
                         new JournalEvent(
                                 JournalEvent.SCHEMA_VERSION,
@@ -63,14 +81,7 @@ public final class ThreadRecovery {
                                 turn,
                                 true,
                                 JsonUtils.getJsonCodec()
-                                        .toJson(
-                                                Map.of(
-                                                        "message",
-                                                        ToolResultMessage.builder()
-                                                                .result(outcome)
-                                                                .build(),
-                                                        "reconciled",
-                                                        true))));
+                                        .toJson(Map.of("message", message, "reconciled", true))));
             var repair =
                     new JournalEvent(
                             JournalEvent.SCHEMA_VERSION,

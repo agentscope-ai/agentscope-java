@@ -1,6 +1,6 @@
 # AgentScope Session Chat
 
-A local chat application built with HarnessAgent and agentscope-durable. It demonstrates persistent tasks, queuing, pause/resume, interaction answers, and SSE replay of public messages and tool progress.
+A local chat application built with HarnessAgent and agentscope-durable. It demonstrates persistent tasks, queuing, pause/resume, interaction answers, SSE replay, and live tool output.
 
 Ordinary single-request applications can still use Agent `call` / `streamEvents`. This example must continue after browser disconnects or application restarts, so `DurableRuntime` assembles the local backend and AgentScope adapter while business requests use `runtime`. See [Durable tasks](https://java.agentscope.io/dev/en/docs/harness/durable) for the concepts and general APIs.
 
@@ -32,7 +32,7 @@ Creating a conversation explicitly creates a Session and its primary Thread. Sen
 
 Send `/slow`. The offline model produces three rounds of text, invokes two `demo_lookup` tools in parallel, and then invokes `demo_verify`. These are local read-only tools executed through Toolkit; each emits four progress chunks.
 
-Refresh, switch Sessions, or disconnect while text, arguments or tools are running. Return and inspect every message and tool card. Snapshot `projection.messages` holds logical messages and versions; `projection.tools` holds arguments, states, progress and results. The page renders these public projections without parsing raw model chunks or private checkpoints.
+Refresh, switch Sessions, or disconnect while text, arguments or tools are running. Return and inspect every message and tool card. Snapshot `projection.messages` holds logical messages and versions. `projection.tools` holds arguments, states and results. Tool output previews arrive over the active SSE connection, and final results replace them.
 
 The snapshot cursor corresponds to the same committed prefix as its projection. SSE starts after that cursor; EventSource's Last-Event-ID takes precedence on reconnect. Cursors are opaque strings: clients neither construct nor decode them. Sequence is only for ordering and deduplication. Expired cursors trigger a fresh snapshot. Disconnecting stops observation while tasks continue.
 

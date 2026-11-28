@@ -45,9 +45,13 @@ public final class ContextRenderer {
                     .append(escape(item.kind()))
                     .append("\" source=\"")
                     .append(escape(item.sourceId()))
-                    .append("\" revision=\"")
-                    .append(escape(item.revision()))
-                    .append("\">\n")
+                    .append("\"");
+            // Content hashes remain in ContextItem/ContextManifest for change detection.
+            // Only semantic revisions (for example a todo revision) help the model.
+            if (!item.revision().equals(ContextItem.versionOf(item.content()))) {
+                text.append(" revision=\"").append(escape(item.revision())).append("\"");
+            }
+            text.append(">\n")
                     .append(neutralizeClosingTags(item.content(), tag, outerFrame))
                     .append("\n</")
                     .append(tag)

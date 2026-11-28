@@ -1,6 +1,6 @@
 # AgentScope Session Chat
 
-一个使用 HarnessAgent 和 agentscope-durable 的本地聊天应用。它演示持久任务、排队、暂停恢复、交互回答，以及公共消息和工具进度的 SSE 续传。
+一个使用 HarnessAgent 和 agentscope-durable 的本地聊天应用。它演示持久任务、排队、暂停恢复、交互回答、SSE 续传与工具输出预览。
 
 普通单次问答仍可使用 Agent 的 `call` / `streamEvents`。本例需要在浏览器关闭或应用重启后继续任务，因此通过 `DurableRuntime` 装配本地后端与 AgentScope adapter，业务请求统一使用 `runtime`。概念与通用 API 见 [Durable 持久任务](https://java.agentscope.io/dev/zh/docs/harness/durable)。
 
@@ -32,7 +32,7 @@ CHAT_WORKSPACE=/absolute/path/to/chat-workspace CHAT_PORT=8088 \
 
 发送 `/slow`。离线模型生成三轮文字，先并行调用两次 `demo_lookup`，再调用 `demo_verify`。这些是通过 Toolkit 运行的本地只读工具，每次报告四段进度。
 
-在文字生成、参数生成或工具运行时刷新、切换会话或断开事件连接，再回来检查所有消息和工具卡片。快照的 `projection.messages` 保存逻辑消息及版本，`projection.tools` 保存参数、状态、进度和结果。页面直接展示这些公共投影，不解析模型原始片段或私有 checkpoint。
+在文字生成、参数生成或工具运行时刷新、切换会话或断开事件连接，再回来检查所有消息和工具卡片。快照的 `projection.messages` 保存逻辑消息及版本，`projection.tools` 保存参数、状态和结果。工具输出预览经当前 SSE 连接到达，最终结果覆盖预览。
 
 快照的 `cursor` 与投影对应同一提交水位。SSE 从该 cursor 继续，EventSource 重连时以 Last-Event-ID 为准。cursor 是不透明字符串，客户端不拼接或解析；`sequence` 仅用于排序与去重。游标过期时重新读取快照。断连只结束观察，后台任务继续。
 

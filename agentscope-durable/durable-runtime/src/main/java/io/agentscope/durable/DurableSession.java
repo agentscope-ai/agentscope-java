@@ -17,6 +17,7 @@ package io.agentscope.durable;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import io.agentscope.durable.DurableMessages.Input;
+import io.agentscope.durable.DurableTypes.ActiveTurnCancellation;
 import io.agentscope.durable.DurableTypes.EventFilter;
 import io.agentscope.durable.DurableTypes.EventPage;
 import io.agentscope.durable.DurableTypes.HistoryPage;
@@ -71,6 +72,16 @@ public final class DurableSession {
         return DurableJson.convert(call("closeSession"), SessionView.class);
     }
 
+    /**
+     * Requests cancellation of the started head of one Thread, or of every open Thread when
+     * threadId is null. Retrying the same request returns its original targets.
+     */
+    public ActiveTurnCancellation cancelActiveTurns(String requestId, String threadId) {
+        return DurableJson.convert(
+                call("cancelActiveTurns", "requestId", requestId, "threadId", threadId),
+                ActiveTurnCancellation.class);
+    }
+
     public DurableThread mainThread() {
         return getThread(view().primaryThreadId());
     }
@@ -107,6 +118,12 @@ public final class DurableSession {
         return DurableJson.convert(
                 call("events", "filter", filter, "cursor", cursor, "limit", limit),
                 EventPage.class);
+    }
+
+    /** Pages committed events newest first, strictly before the supplied Session cursor. */
+    public EventPage listEventsBefore(String cursor, int limit) {
+        return DurableJson.convert(
+                call("eventsBefore", "cursor", cursor, "limit", limit), EventPage.class);
     }
 
     /** @deprecated Use {@link #listEvents(String, int)}. */

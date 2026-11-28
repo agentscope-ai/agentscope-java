@@ -20,6 +20,14 @@ flowchart TD
     F -- no --> H[Return reply; retain committed state for the next call]
 ```
 
+### Bounded material views
+
+Small skill catalogs keep their complete view. Large default skill catalogs use a compact index (12,000-character target), shortening descriptions and deferring files-root details to `load_skill_through_path`. Use `load_skill_through_path(query="", offset=...)` to continue the index, or search names, IDs and descriptions with `query`. Discovery and loading use the same per-call catalog and skill grants. Code-execution guidance (including custom instructions) is retained in the compact index. If the per-call skill loader is hidden or replaced by an external tool, the complete catalog is retained. Explicit `exposeAllMetadata=true` retains the full metadata view.
+
+Default content-hash revisions stay in the manifest and internal state rather than model-facing tags. Explicit semantic revisions remain visible. Message roles and ordering are unchanged.
+
+Pre-compaction memory extraction requires long-term memory to be enabled, both for ordinary compaction and context-overflow recovery. `flushBeforeCompact=false` disables this extraction without disabling conversation summaries. `disableMemoryTools()` controls tool visibility independently and is inherited by general-purpose and declared subagents even when long-term memory is off.
+
 ## Start from the session's working state
 
 At call entry, the Agent restores the session's committed working state and accepts the new input. The conversation can contain earlier user and assistant messages, tool calls, tool results, and a summary from an earlier compaction. New tool results join this working context before the next reasoning step. A single `call()` can therefore prepare many model requests.
@@ -229,7 +237,7 @@ These are the defaults: results exceeding 80,000 characters are eligible, and th
 
 ### Shorten accumulated conversation
 
-Conversation compaction addresses repeated rounds of work. Its lightweight passes first truncate old tool arguments when configured and prune sufficiently large aggregates of older tool output. If the remaining history meets the message or token trigger, it summarizes a prefix and keeps a recent tail, preserving tool-call/result boundaries.
+Conversation compaction addresses repeated rounds of work. Its lightweight passes first truncate old tool arguments when configured and prune sufficiently large aggregates of older tool output. If the remaining history meets the message or token trigger, it summarizes a prefix and keeps a recent tail, preserving tool-call/result boundaries. The built-in summarizer keeps the latest user input verbatim before the retained tool steps even when those steps fill the configured tail.
 
 Tool-result pruning also shortens only text, keeping non-text blocks and retained text in their original order. Each result shares one head/tail text allowance and keeps its tool-call ID, tool name, metadata, state, and execution details. Pruning does not create a recovery file for each result; use Session Log to retrieve the original evidence when enabled. Retained media still counts toward the final request budget.
 
@@ -265,9 +273,7 @@ Compaction changes the conversation list, not the independently stored task, pla
 
 ### Recover from provider overflow
 
-The estimator cannot exactly predict every provider's token accounting. When native session logging is active and the provider reports a recognized context overflow, enabled compaction can force a smaller conversation and retry that reasoning request once within the same execution. Recovery requires reducible history; it is not a guarantee that an oversized request will succeed. If compaction is disabled or recovery cannot reduce the input, the error propagates.
-
-In snapshot mode (`journalEnabled(false)`), Harness saves the compacted context and retries the call once. Calls made with a structured output class or `JsonNode` schema retain that output format during recovery, so a successful response remains available through `Msg.getStructuredData(...)`.
+The estimator cannot exactly predict every provider's token accounting. When the provider reports a recognized context overflow, enabled compaction can force a smaller conversation and retry that reasoning request once within the same execution. Both `call()` and `streamEvents()` use this recovery with native session logging or the legacy state store. The retry preserves the request's output constraints and continues with the results of tools that already ran. If compaction is disabled, recovery cannot reduce the input, or the retry fails, the error propagates.
 
 <span id="letting-the-agent-inspect-its-own-history" />
 
@@ -275,10 +281,14 @@ In snapshot mode (`journalEnabled(false)`), Harness saves the compacted context 
 
 Once validation succeeds, Harness commits the candidate working-history changes and sends the model request. If the model calls a tool, the ReAct loop handles permissions and execution, records the result, and returns to context preparation. Business sources and task projections are refreshed; the call's workspace material is reused. If the model replies, the call ends.
 
+When `ON_ACTING` middleware requests an ordinary stop, completed tool results are added to conversation history before the call ends. Stopping does not undo an executed action or require rerunning it to recover its result. `GenerateReason.PERMISSION_ASKING` instead leaves the operation suspended, without executing it before approval; continue through the permission-confirmation flow. Interpret the typed `GenerateReason` together with tool execution state, whether consuming `call()` or `streamEvents()`. A `returnDirect` tool can return its successful result without another reasoning step, but does not turn a failed, unexecuted or pending-approval operation into success.
+
+At `GenerateReason.MAX_ITERATIONS`, the closing response is a factual wrap-up, not execution of the remaining plan or a declaration of business success. It should distinguish actions already executed from actions not executed, pending confirmation and unfinished work. For example, “The file was edited; tests were not run; deployment awaits approval” preserves the next steps without claiming the change is verified. Check the recorded results and obtain any required approval before continuing unfinished work.
+
 Working context and durable history serve different purposes. Native Thread journal records committed conversation and execution facts; checkpoints retain the working state used for continuation. Compaction does not rewrite that full conversation history. With the session capability enabled, the Agent can inspect earlier evidence through:
 
 - `thread_list agentId="..."` — find prior sessions.
-- `thread_history agentId="..." sessionId="..." lastN=20` — read recent messages.
+- `thread_history agentId="..." sessionId="..." lastN=20` — read recent messages; pass `messageId="..."` to read one full message summarized by `thread_search`.
 - `thread_search query="..." agentId="..."` — search conversation history.
 
 Use stable agent/user/session identity and the same storage backend on the next call to restore committed state. Persistence details differ between native logging and legacy state-store mode; see [Context & AgentState](/dev/en/docs/building-blocks/context) and [Session operations, events and recovery](/dev/en/docs/harness/session-log).
@@ -313,7 +323,7 @@ Source names start with a letter or digit and contain only letters, digits, `_`,
 
 <Accordion title="Budget and compaction defaults">
 
-Default estimation includes messages, tool schemas, and multimodal placeholders. With a known model window, the default output reservation is one eighth of the window, capped at 4,096; the safety margin is 2%, with each at least one token. A larger explicit output request reserves more space. Unknown windows use a 64,000-token input fallback. Workspace `maxContextTokens` (default 8,000) limits material preparation; it is not the final request budget.
+Default estimation includes messages, tool schemas, and multimodal placeholders. With a known model window, the default output reservation is one eighth of the window, capped at 4,096; the safety margin is 2%, with each at least one token. A larger explicit output request reserves more space. Unknown windows use a 64,000-token input fallback; if a request still overflows, the window stated in the provider error is remembered and replaces this fallback for subsequent requests. Workspace `maxContextTokens` (default 8,000) limits material preparation; it is not the final request budget.
 
 Harness enables compaction and tool-result offloading by default. Use `disableCompaction()` or `disableToolResultEviction()` to disable them independently. Default compaction triggers at 50 messages or the conversation token allowance calculated from the final request. `triggerTokens(0)` selects that dynamic allowance; a positive value can lower the trigger. The dynamic tail targets 25% of the allowance, bounded to 2,000–8,000 tokens and capped at half the available conversation budget. Set `keepTokens(0)` to use `keepMessages` instead.
 

@@ -28,6 +28,7 @@ import io.agentscope.extensions.model.openai.dto.OpenAIChoice;
 import io.agentscope.extensions.model.openai.dto.OpenAIRequest;
 import io.agentscope.extensions.model.openai.dto.OpenAIResponse;
 import io.agentscope.extensions.model.openai.exception.OpenAIException;
+import java.io.EOFException;
 import java.net.URI;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
@@ -400,69 +401,101 @@ public class OpenAIClient {
                             .method("POST")
                             .headers(buildHeaders(effectiveApiKey, options))
                             .body(requestBody)
+                            .includeSseDoneMarker(true)
                             .build();
 
-            AtomicBoolean seenChunk = new AtomicBoolean(false);
-            return transport.stream(httpRequest)
-                    // The SSE `[DONE]` sentinel terminates the stream: complete the Flux here
-                    // rather than merely filtering it out, otherwise completion is deferred until
-                    // the underlying connection closes (keep-alive gateways may stall this for the
-                    // full idle timeout even though the model has finished responding).
-                    .takeWhile(data -> !SSE_DONE_MARKER.equals(data))
-                    .<OpenAIResponse>handle(
-                            (data, sink) -> {
-                                OpenAIResponse response = parseStreamData(data);
-                                if (response != null) {
-                                    // Check for error in streaming response chunk
-                                    if (response.isError()) {
-                                        String errorMessage = response.getEffectiveErrorMessage();
-                                        String errorCode = response.getEffectiveErrorCode();
-                                        int statusCode = resolveErrorStatusCode(200, errorCode);
-                                        sink.error(
-                                                OpenAIException.create(
-                                                        statusCode,
-                                                        "OpenAI API error in streaming response: "
-                                                                + errorMessage,
-                                                        errorCode,
-                                                        data));
-                                        return;
-                                    }
-                                    // Some OpenAI-compatible providers (e.g. MiniMax) emit an
-                                    // extra non-chunk chat.completion summary event after regular
-                                    // chunks. Drop duplicated summary message content, but only
-                                    // after seeing at least one chunk so stream-only full
-                                    // chat.completion events are preserved.
-                                    if (response.isChunk()) {
-                                        seenChunk.set(true);
-                                    } else if (seenChunk.get()) {
-                                        OpenAIChoice summaryChoice = response.getFirstChoice();
-                                        if (summaryChoice != null) {
-                                            summaryChoice.setMessage(null);
-                                        }
-                                    }
-                                    sink.next(response);
-                                }
-                                // If response is null (malformed chunk), skip it silently
-                            })
-                    .onErrorMap(
-                            ex -> {
-                                if (ex instanceof HttpTransportException hte) {
-                                    Integer code = hte.getStatusCode();
-                                    String msg =
-                                            "HTTP transport error during streaming: "
-                                                    + ex.getMessage();
-                                    if (code != null) {
-                                        return OpenAIException.create(
-                                                code, msg, null, hte.getResponseBody());
-                                    }
-                                    return new OpenAIException(msg, ex);
-                                }
-                                return ex;
-                            });
+            Integer choiceCount = request.getN();
+            int expectedChoices = choiceCount != null ? choiceCount : 1;
+            return Flux.defer(() -> decodeStream(httpRequest, expectedChoices))
+                    .onErrorMap(HttpTransportException.class, this::mapStreamTransportError);
         } catch (JsonException | HttpTransportException e) {
             return Flux.error(
                     new OpenAIException("Failed to initialize request: " + e.getMessage(), e));
         }
+    }
+
+    private Flux<OpenAIResponse> decodeStream(HttpRequest request, int expectedChoices) {
+        var seenChunk = new AtomicBoolean();
+        var done = new AtomicBoolean();
+        var choices = new HashMap<Integer, Boolean>();
+        return transport.stream(request)
+                // Stop at [DONE] even if the gateway keeps the connection open.
+                .takeWhile(
+                        data -> {
+                            boolean terminal = SSE_DONE_MARKER.equals(data);
+                            done.set(terminal);
+                            return !terminal;
+                        })
+                .<OpenAIResponse>handle(
+                        (data, sink) -> {
+                            OpenAIResponse response = parseStreamData(data);
+                            if (response == null) {
+                                return;
+                            }
+                            if (response.isError()) {
+                                String errorCode = response.getEffectiveErrorCode();
+                                sink.error(
+                                        OpenAIException.create(
+                                                resolveErrorStatusCode(200, errorCode),
+                                                "OpenAI API error in streaming response: "
+                                                        + response.getEffectiveErrorMessage(),
+                                                errorCode,
+                                                data));
+                                return;
+                            }
+                            // Some compatible providers repeat the final content in a summary
+                            // event.
+                            if (response.isChunk()) {
+                                seenChunk.set(true);
+                            } else if (seenChunk.get()) {
+                                OpenAIChoice summaryChoice = response.getFirstChoice();
+                                if (summaryChoice != null) {
+                                    summaryChoice.setMessage(null);
+                                }
+                            }
+                            recordStreamFinishes(response, choices);
+                            sink.next(response);
+                        })
+                .concatWith(
+                        Flux.defer(
+                                () -> {
+                                    boolean finished =
+                                            choices.size() >= expectedChoices
+                                                    && !choices.containsValue(false);
+                                    if (!choices.isEmpty() && (done.get() || finished)) {
+                                        return Flux.empty();
+                                    }
+                                    return Flux.error(
+                                            new OpenAIException(
+                                                    "OpenAI stream ended without a model"
+                                                            + " completion",
+                                                    new EOFException(
+                                                            "Incomplete model SSE stream")));
+                                }));
+    }
+
+    private static void recordStreamFinishes(
+            OpenAIResponse response, Map<Integer, Boolean> choices) {
+        var received = response.getChoices();
+        if (received == null) {
+            return;
+        }
+        for (int i = 0; i < received.size(); i++) {
+            var choice = received.get(i);
+            int index = choice.getIndex() == null ? i : choice.getIndex();
+            String reason = choice.getFinishReason();
+            boolean finished = reason != null && !reason.isBlank() && !"null".equals(reason);
+            choices.merge(index, finished, Boolean::logicalOr);
+        }
+    }
+
+    private OpenAIException mapStreamTransportError(HttpTransportException error) {
+        Integer status = error.getStatusCode();
+        String message = "HTTP transport error during streaming: " + error.getMessage();
+        if (status != null) {
+            return OpenAIException.create(status, message, null, error.getResponseBody());
+        }
+        return new OpenAIException(message, error);
     }
 
     /**

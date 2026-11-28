@@ -15,29 +15,30 @@
  */
 package io.agentscope.extensions.durable.rocketmq;
 
-import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTimeoutPreemptively;
 import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-import io.agentscope.durable.DurableJson;
 import io.agentscope.extensions.durable.jdbc.JdbcRecordStore;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.time.Duration;
-import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicReference;
 import org.apache.rocketmq.client.apis.ClientServiceProvider;
-import org.apache.rocketmq.client.apis.consumer.SimpleConsumer;
+import org.apache.rocketmq.client.apis.consumer.ConsumeResult;
+import org.apache.rocketmq.client.apis.consumer.LitePushConsumer;
+import org.apache.rocketmq.client.apis.consumer.MessageListener;
 import org.apache.rocketmq.client.apis.message.MessageView;
 import org.apache.rocketmq.client.apis.producer.Producer;
 import org.junit.jupiter.api.Test;
@@ -48,100 +49,91 @@ class RocketMqLoopTest {
 
     @Test
     void closeWaitsForAdmittedCallbackBeforeBorrowedStoreCanBeClosed() throws Exception {
-        var consumer = mock(SimpleConsumer.class);
+        var consumer = mock(LitePushConsumer.class);
         var producer = mock(Producer.class);
-        var message = message(consumer);
+        var listener = new AtomicReference<MessageListener>();
         var entered = new CountDownLatch(1);
-        var interrupted = new CountDownLatch(1);
         var release = new CountDownLatch(1);
-        var closer = Executors.newSingleThreadExecutor();
+        var executor = Executors.newFixedThreadPool(2);
         try (var records = JdbcRecordStore.sqlite(directory.resolve("close.db"));
                 var loop =
                         new RocketMqLoop(
                                 mock(ClientServiceProvider.class),
                                 producer,
-                                consumer,
+                                callback -> {
+                                    listener.set(callback);
+                                    return consumer;
+                                },
                                 "commands",
                                 ignored -> {},
                                 null,
-                                records,
-                                1)) {
+                                records)) {
             loop.start(
-                    body -> {
+                    (body, message) -> {
                         entered.countDown();
-                        boolean waiting = true;
-                        while (waiting) {
-                            try {
-                                release.await();
-                                waiting = false;
-                            } catch (InterruptedException closing) {
-                                interrupted.countDown();
-                            }
+                        try {
+                            release.await();
+                        } catch (InterruptedException error) {
+                            Thread.currentThread().interrupt();
+                            throw new AssertionError(error);
                         }
                         records.transaction(
                                 "received",
                                 tx -> {
-                                    tx.put("receipt", DurableJson.value(body));
+                                    tx.put("receipt", body);
                                     return null;
                                 });
                     },
-                    () -> {},
+                    null,
                     Duration.ofMillis(10));
+            var delivery = executor.submit(() -> listener.get().consume(message()));
             try {
                 assertTrue(entered.await(5, TimeUnit.SECONDS));
-                var closing = closer.submit(loop::close);
-                assertTrue(interrupted.await(5, TimeUnit.SECONDS));
-                assertFalse(
-                        closing.isDone(),
-                        "Close returned while the store callback was still running");
+                var closing = executor.submit(loop::close);
+                assertThrows(TimeoutException.class, () -> closing.get(200, TimeUnit.MILLISECONDS));
                 release.countDown();
+                assertEquals(ConsumeResult.SUCCESS, delivery.get(5, TimeUnit.SECONDS));
                 closing.get(5, TimeUnit.SECONDS);
                 assertNotNull(records.transaction("received", tx -> tx.get("receipt")));
-                verify(consumer).ack(message);
-                verify(consumer, never()).close();
+                verify(consumer).close();
                 verify(producer, never()).close();
             } finally {
                 release.countDown();
             }
         } finally {
-            closer.shutdownNow();
+            executor.shutdownNow();
         }
     }
 
     @Test
     void closeFromCallbackDoesNotWaitForItsOwnThread() throws Exception {
-        var consumer = mock(SimpleConsumer.class);
-        message(consumer);
-        var returned = new CountDownLatch(1);
+        var listener = new AtomicReference<MessageListener>();
+        var stopped = new CountDownLatch(1);
         try (var records = JdbcRecordStore.sqlite(directory.resolve("self-close.db"));
                 var loop =
                         new RocketMqLoop(
                                 mock(ClientServiceProvider.class),
                                 mock(Producer.class),
-                                consumer,
+                                callback -> {
+                                    listener.set(callback);
+                                    return stopped::countDown;
+                                },
                                 "commands",
                                 ignored -> {},
                                 null,
-                                records,
-                                1)) {
-            loop.start(
-                    body -> {
-                        loop.close();
-                        returned.countDown();
-                    },
-                    () -> {},
-                    Duration.ofMillis(10));
-            assertTrue(returned.await(2, TimeUnit.SECONDS));
+                                records)) {
+            loop.start((body, message) -> loop.close(), null, Duration.ofMillis(10));
+            assertTimeoutPreemptively(
+                    Duration.ofSeconds(2),
+                    () -> assertEquals(ConsumeResult.SUCCESS, listener.get().consume(message())));
+            assertTrue(stopped.await(2, TimeUnit.SECONDS));
         }
     }
 
-    private MessageView message(SimpleConsumer consumer) throws Exception {
+    private static MessageView message() {
         var message = mock(MessageView.class);
         when(message.getTopic()).thenReturn("commands");
         when(message.getBody()).thenReturn(ByteBuffer.wrap("{}".getBytes(StandardCharsets.UTF_8)));
-        var offered = new AtomicBoolean();
-        when(consumer.receive(anyInt(), any()))
-                .thenAnswer(ignored -> offered.getAndSet(true) ? List.of() : List.of(message));
         return message;
     }
 }

@@ -30,7 +30,11 @@ import io.agentscope.durable.DurableTypes.SessionKey;
 import io.agentscope.durable.DurableTypes.SessionView;
 import io.agentscope.durable.DurableTypes.Snapshot;
 import io.agentscope.durable.DurableTypes.TurnView;
+import io.agentscope.durable.EventStreamOptions;
+import io.agentscope.durable.EventStreamOptions.EventDeltaType;
 import io.agentscope.durable.SessionBackend;
+import io.agentscope.durable.SessionEventSubscription;
+import io.agentscope.durable.SessionStreamEvent.EventDelta;
 import io.agentscope.durable.agentscope.AgentScopeAdapter;
 import io.agentscope.extensions.durable.jdbc.LocalBackend;
 import io.agentscope.harness.agent.HarnessAgent;
@@ -39,6 +43,7 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.function.Consumer;
 
 /** Local application wiring. Business operations use the same Runtime API as remote hosts. */
 public final class ChatSessions implements AutoCloseable {
@@ -163,6 +168,19 @@ public final class ChatSessions implements AutoCloseable {
         return session(sessionId).snapshot();
     }
 
+    public SessionEventSubscription observeToolOutput(
+            String sessionId, String cursor, Consumer<EventDelta> previews) {
+        return session(sessionId)
+                .subscribeEvents(
+                        EventStreamOptions.builder()
+                                .after(cursor)
+                                .deltas(EventDeltaType.TOOL_OUTPUT)
+                                .build(),
+                        event -> {
+                            if (event instanceof EventDelta delta) previews.accept(delta);
+                        });
+    }
+
     public TurnView submit(String sessionId, String requestId, String text) {
         validateText(text);
         return session(sessionId).submit(id(requestId), text).status();
@@ -171,6 +189,31 @@ public final class ChatSessions implements AutoCloseable {
     public CommandReceipt steer(String sessionId, String turnId, String requestId, String text) {
         validateText(text);
         return turn(sessionId, turnId).steer(id(requestId), text);
+    }
+
+    public CommandReceipt steerQueued(
+            String sessionId,
+            String activeTurnId,
+            String operationId,
+            String sourceTurnId,
+            long expectedInputRevision) {
+        return session(sessionId)
+                .mainThread()
+                .convertQueuedToSteer(
+                        id(operationId), id(sourceTurnId), id(activeTurnId), expectedInputRevision);
+    }
+
+    public CommandReceipt editQueued(
+            String sessionId,
+            String turnId,
+            String requestId,
+            long expectedInputRevision,
+            String text) {
+        validateText(text);
+        return session(sessionId)
+                .mainThread()
+                .editQueuedInput(
+                        id(requestId), id(turnId), expectedInputRevision, Input.text(text));
     }
 
     public CommandReceipt inject(String sessionId, String turnId, String requestId, String text) {

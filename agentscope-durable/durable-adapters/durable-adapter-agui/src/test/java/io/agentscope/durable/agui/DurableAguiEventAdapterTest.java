@@ -22,6 +22,7 @@ import io.agentscope.core.agui.event.AguiEvent;
 import io.agentscope.durable.DurableJson;
 import io.agentscope.durable.DurableTypes.PublicEvent;
 import io.agentscope.durable.DurableTypes.SessionKey;
+import io.agentscope.durable.DurableTypes.ToolOutputDelta;
 import io.agentscope.durable.EventStreamOptions.EventDeltaType;
 import io.agentscope.durable.SessionStreamEvent;
 import java.util.List;
@@ -53,6 +54,44 @@ class DurableAguiEventAdapterTest {
         assertInstanceOf(AguiEvent.TextMessageStart.class, events.get(0));
         assertEquals("complete", ((AguiEvent.TextMessageContent) events.get(1)).delta());
         assertInstanceOf(AguiEvent.TextMessageEnd.class, events.get(2));
+    }
+
+    @Test
+    void committedResultApplicationDoesNotRepeatTheToolResult() {
+        var applied =
+                new PublicEvent(
+                        "1",
+                        "applied",
+                        session,
+                        "main",
+                        "turn",
+                        "run",
+                        "step",
+                        "2",
+                        "cursor",
+                        0,
+                        "tool.call.updated",
+                        DurableJson.value(
+                                Map.of("callId", "tool", "status", "SUCCEEDED", "applied", true)));
+        assertEquals(List.of(), adapter.committed(applied));
+    }
+
+    @Test
+    void toolOutputPreviewDoesNotBecomeAnAguiToolResult() {
+        var data = new ToolOutputDelta("call", "execution", 1, 0, 0, 3, "YWJj");
+        var delta =
+                new SessionStreamEvent.EventDelta(
+                        "call",
+                        EventDeltaType.TOOL_OUTPUT,
+                        null,
+                        "main",
+                        "turn",
+                        "run",
+                        "step",
+                        DurableJson.value(data));
+        var preview = assertInstanceOf(AguiEvent.Custom.class, adapter.map(delta).get(0));
+        assertEquals("agentscope.tool_output_delta", preview.name());
+        assertEquals(DurableJson.value(data), DurableJson.value(preview.value()));
     }
 
     private SessionStreamEvent.PreviewStarted started(String id) {
@@ -89,6 +128,7 @@ class DurableAguiEventAdapterTest {
                 "step",
                 "1",
                 "cursor",
+                1,
                 "message.completed",
                 DurableJson.value(
                         Map.of(

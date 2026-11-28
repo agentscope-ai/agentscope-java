@@ -60,7 +60,12 @@ public interface ExecutionStore {
             int unknown,
             int pendingPublications,
             long oldestPendingAgeMillis,
-            long oldestPublicationBacklogAgeMillis) {}
+            long oldestPublicationBacklogAgeMillis,
+            int readyToStart,
+            int leased,
+            int awaitingProvider,
+            int deferred,
+            long oldestReadyAgeMillis) {}
 
     /** Bounded operational inspection. Counts are lower bounds when truncated is true. */
     Statistics statistics(int limit);
@@ -70,9 +75,13 @@ public interface ExecutionStore {
     /** Claim an exact admitted identity without exposing a provider's physical storage keys. */
     Optional<Work> claim(ExecutionRequest request, String owner, Duration lease);
 
-    void renew(Work work, Duration lease);
+    /** Renews ownership and returns the current durable cancellation flag. */
+    boolean renew(Work work, Duration lease);
 
     Work begin(Work work);
+
+    /** Records a business denial of an admitted call before its first provider attempt. */
+    void denyStart(Work work, String reason);
 
     void configureOutput(Work work, boolean enabled);
 

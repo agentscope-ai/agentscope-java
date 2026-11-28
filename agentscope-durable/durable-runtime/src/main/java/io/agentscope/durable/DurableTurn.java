@@ -17,6 +17,7 @@ package io.agentscope.durable;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import io.agentscope.durable.DurableMessages.Input;
+import io.agentscope.durable.DurableMessages.ToolResponse;
 import io.agentscope.durable.DurableTypes.CommandReceipt;
 import io.agentscope.durable.DurableTypes.ControlCommand;
 import io.agentscope.durable.DurableTypes.ControlKind;
@@ -26,6 +27,7 @@ import io.agentscope.durable.DurableTypes.Interaction;
 import io.agentscope.durable.DurableTypes.LiveEvent;
 import io.agentscope.durable.DurableTypes.ModelCallPage;
 import io.agentscope.durable.DurableTypes.ModelCallView;
+import io.agentscope.durable.DurableTypes.OutputPage;
 import io.agentscope.durable.DurableTypes.PublicEvent;
 import io.agentscope.durable.DurableTypes.RunPage;
 import io.agentscope.durable.DurableTypes.RunView;
@@ -34,6 +36,8 @@ import io.agentscope.durable.DurableTypes.Snapshot;
 import io.agentscope.durable.DurableTypes.StepPage;
 import io.agentscope.durable.DurableTypes.StepView;
 import io.agentscope.durable.DurableTypes.ThreadKey;
+import io.agentscope.durable.DurableTypes.ToolExecutionView;
+import io.agentscope.durable.DurableTypes.TurnProgress;
 import io.agentscope.durable.DurableTypes.TurnView;
 import java.time.Duration;
 import java.util.List;
@@ -58,12 +62,39 @@ public final class DurableTurn {
         return thread.key().session();
     }
 
+    /** Looks up a recorded native or routed tool call in this Turn. */
+    public ToolExecutionView getToolCall(String callId) {
+        return DurableJson.convert(
+                thread.call("getToolExecution", "turnId", id, "callId", callId),
+                ToolExecutionView.class);
+    }
+
+    /** Looks up a routed tool execution in this Turn. */
+    public ToolExecutionView getToolExecution(String executionId) {
+        return DurableJson.convert(
+                thread.call("getToolExecution", "turnId", id, "executionId", executionId),
+                ToolExecutionView.class);
+    }
+
+    public OutputPage toolOutput(String executionId, long offset) {
+        return DurableJson.convert(
+                thread.call(
+                        "toolOutput", "turnId", id, "executionId", executionId, "offset", offset),
+                OutputPage.class);
+    }
+
     public ThreadKey threadKey() {
         return thread.key();
     }
 
     public TurnView status() {
         return DurableJson.convert(thread.call("getTurn", "turnId", id), TurnView.class);
+    }
+
+    /** Explains current blockers and exposes retained acceptance checks for this Turn. */
+    public TurnProgress progress() {
+        return DurableJson.convert(
+                thread.call("getTurnProgress", "turnId", id), TurnProgress.class);
     }
 
     /** Returns a terminal outcome, including failure/cancellation; never hides it as success. */
@@ -172,6 +203,10 @@ public final class DurableTurn {
 
     public CommandReceipt respond(String requestId, String interactionId, boolean approved) {
         return respond(requestId, interactionId, DurableJson.value(approved));
+    }
+
+    public CommandReceipt respondTool(String requestId, String interactionId, ToolResponse result) {
+        return respond(requestId, interactionId, DurableJson.value(result));
     }
 
     /** Request a durable pause; observe PAUSED before assuming the invocation has stopped. */

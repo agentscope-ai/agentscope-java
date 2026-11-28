@@ -46,6 +46,7 @@ import okhttp3.Request;
 import okhttp3.RequestBody;
 import okhttp3.Response;
 import okhttp3.ResponseBody;
+import okio.BufferedSink;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Flux;
@@ -125,6 +126,8 @@ public class OkHttpTransport implements HttpTransport {
                         // timeouts in HttpTransportConfig.
                         .readTimeout(config.getReadTimeout().toMillis(), TimeUnit.MILLISECONDS)
                         .writeTimeout(config.getWriteTimeout().toMillis(), TimeUnit.MILLISECONDS)
+                        .retryOnConnectionFailure(config.isRetryOnConnectionFailure())
+                        .pingInterval(config.getHttp2PingInterval())
                         .connectionPool(
                                 new ConnectionPool(
                                         config.getMaxIdleConnections(),
@@ -275,10 +278,14 @@ public class OkHttpTransport implements HttpTransport {
                                                                                         SSE_DATA_PREFIX
                                                                                                 .length())
                                                                                 .trim())
-                                                        .takeWhile(
+                                                        .takeUntil(SSE_DONE_MARKER::equals)
+                                                        .filter(
                                                                 data ->
-                                                                        !SSE_DONE_MARKER.equals(
-                                                                                data))
+                                                                        request
+                                                                                        .includesSseDoneMarker()
+                                                                                || !SSE_DONE_MARKER
+                                                                                        .equals(
+                                                                                                data))
                                                         .filter(data -> !data.isEmpty());
                                             },
                                             this::closeQuietly)
@@ -338,10 +345,8 @@ public class OkHttpTransport implements HttpTransport {
                 builder.get();
                 break;
             case "POST":
-                builder.post(
-                        body != null
-                                ? RequestBody.create(body, JSON_MEDIA_TYPE)
-                                : RequestBody.create("", JSON_MEDIA_TYPE));
+                RequestBody post = RequestBody.create(body != null ? body : "", JSON_MEDIA_TYPE);
+                builder.post(client.retryOnConnectionFailure() ? post : new OneShotBody(post));
                 break;
             case "PUT":
                 builder.put(
@@ -362,6 +367,35 @@ public class OkHttpTransport implements HttpTransport {
         }
 
         return builder.build();
+    }
+
+    // Also suppress response-driven follow-ups that would resend a POST body.
+    private static final class OneShotBody extends RequestBody {
+        private final RequestBody delegate;
+
+        private OneShotBody(RequestBody delegate) {
+            this.delegate = delegate;
+        }
+
+        @Override
+        public MediaType contentType() {
+            return delegate.contentType();
+        }
+
+        @Override
+        public long contentLength() throws IOException {
+            return delegate.contentLength();
+        }
+
+        @Override
+        public boolean isOneShot() {
+            return true;
+        }
+
+        @Override
+        public void writeTo(BufferedSink sink) throws IOException {
+            delegate.writeTo(sink);
+        }
     }
 
     private HttpResponse buildHttpResponse(Response response) throws IOException {

@@ -28,6 +28,8 @@ import io.agentscope.core.event.ToolResultEndEvent;
 import io.agentscope.core.message.MessageMetadataKeys;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.message.ToolErrorKind;
+import io.agentscope.core.message.ToolErrorMetadata;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolResultState;
 import io.agentscope.core.message.ToolUseBlock;
@@ -133,6 +135,9 @@ class TruncatedToolCallIntegrityTest {
             ToolResultBlock result = findToolResult(agent.getAgentState().getContext(), "trunc-1");
             assertNotNull(result, "an ERROR tool_result must pair the truncated tool_use");
             assertEquals(ToolResultState.ERROR, result.getState());
+            assertEquals(
+                    ToolErrorMetadata.of(ToolErrorKind.INVALID_ARGUMENT, "write_text_file"),
+                    result.getMetadata());
             String resultMessage = resultText(result);
             assertTrue(resultMessage.contains("output token limit"));
             assertTrue(resultMessage.contains("Do not repeat the same large arguments"));
@@ -154,6 +159,7 @@ class TruncatedToolCallIntegrityTest {
                             .orElse(null);
             assertNotNull(end, "lifecycle events must be published for the truncated call");
             assertEquals(ToolResultState.ERROR, end.getState());
+            assertEquals(result.getMetadata(), end.getMetadata());
         }
     }
 

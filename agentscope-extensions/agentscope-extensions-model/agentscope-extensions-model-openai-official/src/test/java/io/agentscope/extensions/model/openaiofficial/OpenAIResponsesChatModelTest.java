@@ -847,7 +847,7 @@ class OpenAIResponsesChatModelTest {
                             .modelName(MODEL_NAME)
                             .build();
             int expected =
-                    io.agentscope.core.model.ModelContextWindows.lookup(
+                    io.agentscope.core.model.ModelContextWindows.resolve(
                             MODEL_NAME, io.agentscope.core.model.ModelContextWindows.OPENAI);
             assertEquals(expected, model.getContextWindowSize());
         }

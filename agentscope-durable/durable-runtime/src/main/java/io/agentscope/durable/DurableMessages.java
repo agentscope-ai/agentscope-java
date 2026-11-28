@@ -19,6 +19,7 @@ package io.agentscope.durable;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonSubTypes;
 import com.fasterxml.jackson.annotation.JsonTypeInfo;
+import com.fasterxml.jackson.databind.JsonNode;
 import java.util.List;
 
 /** Public content only. Native reasoning, tool bookkeeping and checkpoints stay in the adapter. */
@@ -61,6 +62,25 @@ public final class DurableMessages {
 
         public static Input text(String text) {
             return new Input("1", List.of(new Text(text)));
+        }
+    }
+
+    /** Structured result from a caller completing a manual external-tool interaction. */
+    public record ToolResponse(String type, boolean error, List<Content> content) {
+        private static final String TYPE = "tool_response";
+
+        public ToolResponse {
+            if (!TYPE.equals(type))
+                throw new IllegalArgumentException("Invalid tool response type");
+            content = List.copyOf(content);
+        }
+
+        public ToolResponse(boolean error, List<Content> content) {
+            this(TYPE, error, content);
+        }
+
+        public static boolean matches(JsonNode value) {
+            return TYPE.equals(value.path("type").asText());
         }
     }
 

@@ -50,7 +50,19 @@ public class McpAsyncClientWrapper extends McpClientWrapper {
      * @param client the underlying async MCP client
      */
     public McpAsyncClientWrapper(String name, McpAsyncClient client) {
-        super(name);
+        this(name, client, List.of());
+    }
+
+    /**
+     * Constructs a new asynchronous MCP client wrapper with result metadata customizers.
+     *
+     * @param name unique identifier for this client
+     * @param client the underlying async MCP client
+     * @param resultCustomizers ordered customizers applied to every tool result
+     */
+    public McpAsyncClientWrapper(
+            String name, McpAsyncClient client, List<McpToolResultCustomizer> resultCustomizers) {
+        super(name, resultCustomizers);
         this.client = client;
     }
 

@@ -24,16 +24,20 @@ flowchart LR
 ## Infrastructure
 
 Following the [official RocketMQ quick start](https://rocketmq.apache.org/docs/quick-start/), prepare
-Java 17+, Maven, a reachable RocketMQ 5 **gRPC proxy endpoint** (not the NameServer address),
-and three normal topics:
+Java 17+, Maven, and a LiteTopic-capable Broker with a reachable Cluster Proxy **gRPC endpoint**.
+Provision these LITE parents:
 
+- `durable-turn-dispatch`
+- `durable-turn-signal`
+- `durable-turn-owner`
 - `durable-hands-commands`
 - `durable-hands-controls`
 - `durable-hands-updates`
 
 Topics and consumer groups derive from the default MQ namespace `durable` and executor route
-`hands`. Groups are `durable-hands-brain`, `durable-hands-worker`, and
-`durable-hands-worker-controls`; grant their producer/consumer access. The script creates no
+`hands`. Configure a Shared consumer group per parent, using an explicit subscription for
+`durable-turn-owner` and wildcard delivery for the other parents. Grant access as described
+in the [Durable LiteTopic setup](../../../../docs/dev/en/docs/harness/durable.md). The script creates no
 infrastructure and configures no credentials. Production hosts add authentication and TLS to
 `ClientConfiguration`. Do not mix independent Brain databases in one consumer group.
 

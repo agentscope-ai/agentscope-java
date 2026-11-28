@@ -4,13 +4,15 @@ const $ = id => document.getElementById(id);
 const labels = {
     RUNNING: '执行中', WAITING: '等待结果或补充', PAUSING: '正在暂停', PAUSED: '已暂停',
     CANCELLING: '正在取消', SUCCEEDED: '已完成', FAILED: '执行失败', CANCELLED: '已取消',
-    QUEUED: '已排队', GENERATING_ARGUMENTS: '生成参数中', REQUESTED: '等待执行',
-    SUCCESS: '已完成', ERROR: '执行失败', DENIED: '已拒绝', UNKNOWN: '结果待核实',
+    QUEUED: '已排队', CONVERTED: '已转为插话', GENERATING_ARGUMENTS: '生成参数中', REQUESTED: '等待执行',
+    DISPATCHED: '已派发', SUCCESS: '已完成', ERROR: '执行失败', DENIED: '已拒绝', UNKNOWN: '结果待核实',
     SUSPENDED: '等待补充', INTERRUPTED: '已停止', completed: '已完成', generating: '生成中'
 };
 let session = new URLSearchParams(location.search).get('session')
     || localStorage.getItem('session-chat.selected');
 let source, snapshot, sequence = 0n, eventSequence = 0n, trace = new Map();
+const toolPreviews = new Map();
+let previewRenderPending = false;
 let reloadTimer, refreshing = false, refreshAgain = false;
 let connectVersion = 0, selectionVersion = 0, connected = true;
 const short = value => value ? value.slice(0, 8) : '—';
@@ -41,6 +43,36 @@ function notice(error) { $('notice').textContent = error?.message || error || ''
 function text(blocks) {
     return (blocks || []).map(block => block.type === 'text' ? block.text || '' : '').filter(Boolean).join('\n');
 }
+const previewKey = (threadId, turnId, callId) => JSON.stringify([threadId, turnId, callId]);
+const finishedTool = status => ['SUCCEEDED', 'FAILED', 'CANCELLED', 'DENIED', 'UNKNOWN'].includes(status);
+function receiveToolPreview(delta) {
+    const data = delta.data;
+    const key = previewKey(delta.threadId, delta.turnId, data.callId);
+    let preview = toolPreviews.get(key);
+    if (preview && (data.attempt < preview.attempt ||
+        (data.attempt === preview.attempt && data.revision < preview.revision))) return;
+    if (!preview || data.attempt !== preview.attempt || data.revision !== preview.revision) {
+        preview = {
+            attempt: data.attempt, revision: data.revision, nextOffset: data.offset,
+            text: '', decoder: new TextDecoder()
+        };
+    }
+    if (data.offset < preview.nextOffset) return;
+    if (data.offset > preview.nextOffset) {
+        preview.decoder = new TextDecoder();
+        preview.text = '';
+    }
+    const bytes = Uint8Array.from(atob(data.data), byte => byte.charCodeAt(0));
+    preview.text = (preview.text + preview.decoder.decode(bytes, { stream: true })).slice(-4096);
+    preview.nextOffset = data.nextOffset;
+    toolPreviews.delete(key);
+    toolPreviews.set(key, preview);
+    if (toolPreviews.size > 64) toolPreviews.delete(toolPreviews.keys().next().value);
+    if (!previewRenderPending) {
+        previewRenderPending = true;
+        requestAnimationFrame(() => { previewRenderPending = false; render(); });
+    }
+}
 function bubble(role, value, className) {
     const node = document.createElement('article'); node.className = `message ${className}`;
     const label = document.createElement('div'); label.className = 'role'; label.textContent = role;
@@ -55,9 +87,12 @@ function renderItem(item) {
         const result = text(data.content || data.result?.output?.content);
         node = bubble(`${data.name || '工具'} · ${labels[item.status] || item.status}`,
             `参数：${args || '等待参数'}${result ? '\n结果：' + result : ''}`, 'tool');
-        if (data.progress?.length) {
+        const key = previewKey(item.threadId, item.turnId, data.callId);
+        if (finishedTool(item.status)) toolPreviews.delete(key);
+        const preview = toolPreviews.get(key)?.text || text(data.progress);
+        if (preview) {
             const progress = document.createElement('div'); progress.className = 'tool-progress';
-            progress.textContent = '执行进度\n' + text(data.progress); node.append(progress);
+            progress.textContent = '执行进度\n' + preview; node.append(progress);
         }
     } else {
         node = bubble(item.status === 'completed' ? item.role : `${item.role} · ${labels[item.status]}`,
@@ -77,8 +112,47 @@ function render() {
     $('resume').hidden = active?.status !== 'PAUSED';
     $('cancel').hidden = !active || active.status === 'CANCELLING';
     $('send').disabled = !snapshot || ($('input-mode').value !== 'submit' && !active);
-    $('queue').textContent = (snapshot?.turns || []).filter(turn => turn.status === 'QUEUED')
-        .map(turn => `排队任务 ${short(turn.turnId)}`).join(' · ');
+    const queued = (snapshot?.turns || []).filter(turn => turn.status === 'QUEUED');
+    const submissions = new Map(Object.values(snapshot?.projection?.messages || {})
+        .filter(message => message.inputKind === 'submit')
+        .map(message => [message.turnId, message]));
+    $('queue').replaceChildren(...queued.map(turn => {
+        const row = document.createElement('div');
+        const submission = submissions.get(turn.turnId);
+        row.append(submission?.text || `排队任务 ${short(turn.turnId)}`);
+        if (submission) {
+            const edit = document.createElement('button');
+            edit.textContent = '编辑';
+            edit.onclick = () => {
+                const message = window.prompt('编辑排队消息', submission.text);
+                if (message === null || message === submission.text) return;
+                edit.disabled = true;
+                action(() => mutate(`${turnPath(turn.turnId)}/edit-queued`,
+                    { message, expectedInputRevision: turn.inputRevision })).finally(() => edit.disabled = false);
+            };
+            row.append(' ', edit);
+        }
+        if (submission && active && ['RUNNING', 'WAITING', 'PAUSED', 'PAUSING'].includes(active.status)) {
+            const button = document.createElement('button');
+            button.textContent = '改为插话';
+            button.onclick = () => {
+                button.disabled = true;
+                action(() => mutate(`${turnPath(active.turnId)}/steer-queued`,
+                    { sourceTurnId: turn.turnId, expectedInputRevision: turn.inputRevision }))
+                    .finally(() => button.disabled = false);
+            };
+            row.append(' ', button);
+        }
+        const cancel = document.createElement('button');
+        cancel.textContent = '取消';
+        cancel.onclick = () => {
+            cancel.disabled = true;
+            action(() => mutate(`${turnPath(turn.turnId)}/cancel`, {}))
+                .finally(() => cancel.disabled = false);
+        };
+        row.append(' ', cancel);
+        return row;
+    }));
     const nodes = items(snapshot).map(renderItem);
     const messages = $('messages');
     const atBottom = messages.scrollHeight - messages.scrollTop - messages.clientHeight < 80;
@@ -141,6 +215,11 @@ async function connect() {
     events.onopen = () => { if (source === events) { $('connection').textContent = '事件已连接'; scheduleSnapshot(); } };
     events.onerror = () => { if (source === events) $('connection').textContent = '连接中断，自动重连中'; };
     events.addEventListener('reset', () => { if (source === events) connect().catch(notice); });
+    events.addEventListener('tool-output', message => {
+        if (selected === session && source === events) {
+            try { receiveToolPreview(JSON.parse(message.data)); } catch (error) { notice(error); }
+        }
+    });
     events.addEventListener('committed', message => {
         if (selected !== session || source !== events) return;
         try {
@@ -165,6 +244,7 @@ async function select(id) {
     source?.close(); source = undefined; selectionVersion++; connectVersion++;
     clearTimeout(reloadTimer); reloadTimer = undefined; refreshAgain = false;
     session = id; sequence = 0n; eventSequence = 0n; snapshot = undefined; trace.clear();
+    toolPreviews.clear();
     localStorage.setItem('session-chat.selected', session);
     history.replaceState(null, '', `?session=${encodeURIComponent(session)}`);
     notice(''); render(); await loadList(); await connect();

@@ -27,9 +27,7 @@ import io.agentscope.core.middleware.AgentInput;
 import io.agentscope.harness.agent.IsolationScope;
 import io.agentscope.harness.agent.coordination.LocalPeriodicGate;
 import io.agentscope.harness.agent.coordination.PeriodicGate;
-import io.agentscope.harness.agent.filesystem.AbstractFilesystem;
 import io.agentscope.harness.agent.filesystem.model.FileInfo;
-import io.agentscope.harness.agent.filesystem.model.GlobResult;
 import io.agentscope.harness.agent.memory.MemoryBackgroundTasks;
 import io.agentscope.harness.agent.memory.MemoryConsolidator;
 import io.agentscope.harness.agent.workspace.WorkspaceConstants;
@@ -37,6 +35,7 @@ import io.agentscope.harness.agent.workspace.WorkspaceManager;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.LocalDate;
+import java.time.format.DateTimeParseException;
 import java.util.EnumSet;
 import java.util.Set;
 import java.util.function.Function;
@@ -244,41 +243,56 @@ public class MemoryMaintenanceMiddleware implements HarnessRuntimeMiddleware {
     }
 
     private void expireDailyFiles(RuntimeContext rc) {
-        AbstractFilesystem fs = workspaceManager.getFilesystem();
-        if (fs == null) {
-            return;
-        }
-        GlobResult glob = fs.glob(rc, "*.md", WorkspaceConstants.MEMORY_DIR);
-        if (glob == null || glob.matches() == null) {
-            return;
-        }
-
         Clock clock = rc == null ? null : rc.get(Clock.class);
         LocalDate cutoff =
                 LocalDate.now(clock == null ? Clock.systemDefaultZone() : clock)
                         .minusDays(dailyFileRetentionDays);
-        for (FileInfo fi : glob.matches()) {
+        for (FileInfo fi : workspaceManager.listMemoryFileInfos(rc)) {
             if (fi.isDirectory()) {
                 continue;
             }
-            String fileName = fileName(fi.path());
-            if (fileName.startsWith(".")) {
+            String listedPath;
+            try {
+                listedPath = WorkspaceManager.requireSafeRelativePath(fi.path());
+            } catch (IllegalArgumentException e) {
+                log.debug("Skipping invalid memory ledger path");
                 continue;
             }
-            String baseName =
-                    fileName.endsWith(".md")
-                            ? fileName.substring(0, fileName.length() - 3)
-                            : fileName;
+            String fileName = fileName(listedPath);
+            if (fileName.startsWith(".") || !fileName.endsWith(".md")) {
+                continue;
+            }
+            LocalDate fileDate;
             try {
-                LocalDate fileDate = LocalDate.parse(baseName);
-                if (fileDate.isBefore(cutoff)) {
-                    String fromPath = WorkspaceConstants.MEMORY_DIR + "/" + fileName;
-                    String toPath = WorkspaceConstants.MEMORY_DIR + "/archive/" + fileName;
-                    fs.move(rc, fromPath, toPath);
+                fileDate = LocalDate.parse(fileName.substring(0, fileName.length() - 3));
+            } catch (DateTimeParseException e) {
+                continue;
+            }
+            if (!fileDate.isBefore(cutoff)) {
+                continue;
+            }
+
+            String fromPath = WorkspaceConstants.MEMORY_DIR + "/" + fileName;
+            String toPath = WorkspaceConstants.MEMORY_DIR + "/archive/" + fileName;
+            try {
+                String namespacedPath =
+                        workspaceManager.toWorkspaceRelativeString(
+                                workspaceManager.resolveRuntimeDataPath(rc, fromPath));
+                // Some backends glob recursively; do not widen the current namespace.
+                if (!listedPath.equals(fromPath) && !listedPath.equals(namespacedPath)) {
+                    log.debug("Skipping daily ledger {}: unexpected memory listing path", fileName);
+                    continue;
+                }
+                var moved = workspaceManager.moveMemoryFile(rc, fromPath, toPath);
+                if (moved.isSuccess()) {
                     log.debug("Archived expired daily file: {}", fileName);
+                } else if (workspaceManager.isDailyMemoryFileArchived(rc, fileDate)) {
+                    log.debug("Skipping already archived daily file: {}", fileName);
+                } else {
+                    log.warn("Failed to archive daily file {}: {}", fileName, moved.error());
                 }
             } catch (Exception e) {
-                // not a date-named file, skip
+                log.warn("Failed to archive daily file {}: {}", fileName, e.toString());
             }
         }
     }

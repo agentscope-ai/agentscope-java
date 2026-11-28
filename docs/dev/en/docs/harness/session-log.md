@@ -48,6 +48,26 @@ Reads neither claim a writer nor repair state or invoke a model. Harness also su
 
 `ThreadHistory.Transcript` contains complete messages and `asOfSeq`, not a public UI snapshot with task controls, partial text and tool progress. Durable applications restore the UI through Session/Thread/Turn `snapshot()`, `history()` and event APIs instead of inferring Turn state from native logs. See the runnable [recoverable chat example](/dev/en/blogs/best-practices/session-chat).
 
+## Page through history with tools
+
+The Agent can use `thread_search` and `thread_list` to find earlier evidence without requesting all results at once. Both accept an optional non-negative `offset`, defaulting to `0`. When more results remain, continue with the returned `nextOffset` rather than calculate it from a requested limit or array length. `thread_search` still returns a pure array of matches, with continuation information on the last returned match; `thread_list` places it in its existing trailing note. Keep `query`, `matchMode` and `agentId` unchanged when continuing a search, and keep `agentId` unchanged when continuing a list.
+
+```text
+thread_search query="deployment error" agentId="change-assistant" offset=0
+thread_list agentId="change-assistant" offset=0
+```
+
+Each page rechecks access within the current caller's namespace. Offsets and message IDs do not authorize access or allow locating another user's identity. Offset pagination is not a transactional snapshot: concurrent changes can shift results between pages. Keep the authorized caller context unchanged and recheck the original messages before relying on evidence collected across changing pages.
+
+To walk backward through one Thread, call `thread_history` with `lastN` (default `20`, maximum `100`), then pass the returned `nextBeforeMessageId` as `beforeMessageId`. This cursor is exclusive, so the boundary message is not included again. `nextBeforeMessageId` identifies the oldest message actually returned, not the oldest message requested; use it even when the output budget shortened the page. `hasMore` indicates whether earlier messages remain. In the second call below, replace `oldest-returned-id` with the returned cursor and retain the same Thread identity.
+
+```text
+thread_history agentId="change-assistant" sessionId="conversation-001" lastN=20
+thread_history agentId="change-assistant" sessionId="conversation-001" lastN=20 beforeMessageId="oldest-returned-id"
+```
+
+Paged results retain their existing output budgets and previews. To recover one full original message, pass its exact `messageId` to `thread_history`; this original-text read is unchanged and cannot be combined with `beforeMessageId`. Each page's `asOfSeq` describes that page's current view, not a fixed snapshot shared by the pagination sequence. Use the returned IDs for continuation instead of treating `asOfSeq` as a paging cursor.
+
 ## Event envelope and reads
 
 `AgentEvent` carries live invocation notifications; `JournalEvent` carries committed native facts. Live emission is not a persistence acknowledgment. Native `seq` increases within one Thread and is not interchangeable with Durable's Session-wide public cursor.

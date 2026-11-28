@@ -34,6 +34,9 @@ import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.Model;
 import io.agentscope.core.model.ToolSchema;
 import io.agentscope.core.state.AgentState;
+import io.agentscope.core.tool.SchemaOnlyTool;
+import io.agentscope.core.tool.ToolMergeMode;
+import io.agentscope.core.tool.ToolRequestConfig;
 import io.agentscope.core.tool.Toolkit;
 import io.agentscope.harness.agent.context.ContextItem;
 import io.agentscope.harness.agent.context.ContextManifest;
@@ -50,6 +53,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import reactor.core.publisher.Flux;
@@ -57,6 +61,55 @@ import reactor.core.publisher.Flux;
 class HarnessSkillMiddlewareContextIsolationTest {
 
     @TempDir Path workspace;
+
+    @Test
+    void largeCatalogIsNotAbbreviatedWhenTheLoaderIsHiddenOrExternal() throws IOException {
+        for (int i = 0; i < 100; i++) {
+            Path skill = Files.createDirectories(workspace.resolve("skills/skill-" + i));
+            Files.writeString(
+                    skill.resolve("SKILL.md"),
+                    "---\nname: skill-"
+                            + i
+                            + "\ndescription: "
+                            + "full description ".repeat(30)
+                            + "\n---\nbody");
+        }
+        var fs = new LocalFilesystem(workspace);
+        var repository = new WorkspaceSkillRepository(fs, "skills", "workspace", false);
+        var toolkit = new Toolkit();
+        var middleware = new HarnessSkillMiddleware(List.of(repository), toolkit);
+        Agent agent = mock(Agent.class);
+        when(agent.getToolkit()).thenReturn(toolkit);
+        var external =
+                new SchemaOnlyTool(
+                        ToolSchema.builder()
+                                .name("load_skill_through_path")
+                                .description("external")
+                                .parameters(Map.of("type", "object"))
+                                .build());
+        for (var request :
+                List.of(
+                        ToolRequestConfig.NONE,
+                        new ToolRequestConfig(Map.of(), ToolMergeMode.EXTERNAL_ONLY),
+                        new ToolRequestConfig(
+                                Map.of("load_skill_through_path", external),
+                                ToolMergeMode.MERGE_EXTERNAL_PRIORITY))) {
+            var rc = RuntimeContext.builder().toolRequestConfig(request).build();
+            middleware.onSystemPrompt(agent, rc, "").block();
+            String rendered =
+                    rc.get(WorkspaceContextMaterials.class).items().stream()
+                            .filter(i -> i.sourceId().equals("harness:skills"))
+                            .findFirst()
+                            .orElseThrow()
+                            .content();
+            if (request == ToolRequestConfig.NONE) assertTrue(rendered.length() <= 12000);
+            else {
+                assertTrue(rendered.contains("<name>skill-99</name>"));
+                assertTrue(rendered.contains("full description ".repeat(29)));
+                assertFalse(rendered.contains("Catalog entries"));
+            }
+        }
+    }
 
     @Test
     void usesCallContextWhenSharedActiveContextPointsToAnotherSession() throws IOException {

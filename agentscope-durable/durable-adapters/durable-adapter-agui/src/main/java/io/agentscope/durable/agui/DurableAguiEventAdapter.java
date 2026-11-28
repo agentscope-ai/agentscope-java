@@ -20,6 +20,7 @@ import io.agentscope.core.agui.event.AguiEvent;
 import io.agentscope.durable.DurableJson;
 import io.agentscope.durable.DurableTypes.LiveEvent;
 import io.agentscope.durable.DurableTypes.PublicEvent;
+import io.agentscope.durable.DurableTypes.ToolOutputDelta;
 import io.agentscope.durable.EventStreamOptions.EventDeltaType;
 import io.agentscope.durable.SessionStreamEvent;
 import java.util.ArrayList;
@@ -49,6 +50,8 @@ public final class DurableAguiEventAdapter {
                     preview.threadId(), require(preview.runId(), "runId"), preview.data());
         }
         if (event instanceof SessionStreamEvent.EventDelta delta) {
+            if (delta.deltaType() == EventDeltaType.TOOL_OUTPUT)
+                return toolOutput(delta.threadId(), delta.runId(), delta.data());
             String runId = require(delta.runId(), "runId");
             if (delta.deltaType() == EventDeltaType.MESSAGE)
                 return messageDelta(delta.threadId(), runId, delta.data());
@@ -87,6 +90,8 @@ public final class DurableAguiEventAdapter {
     List<AguiEvent> live(LiveEvent event) {
         Objects.requireNonNull(event);
         String threadId = event.threadId();
+        if (ToolOutputDelta.TYPE.equals(event.type()))
+            return toolOutput(threadId, event.runId(), event.data());
         String runId = require(event.runId(), "runId");
         var data = event.data();
         return switch (event.type()) {
@@ -95,6 +100,16 @@ public final class DurableAguiEventAdapter {
             case "tool.arguments.delta" -> toolArguments(threadId, runId, data);
             default -> List.of();
         };
+    }
+
+    private static List<AguiEvent> toolOutput(String threadId, String runId, JsonNode data) {
+        if (runId == null) return List.of();
+        return List.of(
+                new AguiEvent.Custom(
+                        threadId,
+                        runId,
+                        "agentscope.tool_output_delta",
+                        DurableJson.convert(data, Object.class)));
     }
 
     private List<AguiEvent> runEnded(PublicEvent event) {
@@ -171,6 +186,7 @@ public final class DurableAguiEventAdapter {
     private List<AguiEvent> tool(PublicEvent event) {
         if (event.runId() == null) return List.of();
         var data = event.data();
+        if (data.path("applied").asBoolean() && !data.has("content")) return List.of();
         String callId = data.required("callId").asText();
         String status = data.required("status").asText();
         var result = new ArrayList<AguiEvent>();

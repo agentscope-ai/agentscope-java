@@ -25,6 +25,8 @@ import io.agentscope.core.journal.InvocationRecorder;
 import io.agentscope.core.journal.ModelInvocation;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.Msg;
+import io.agentscope.core.message.ToolResultBlock;
+import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.ChatUsage;
 import io.agentscope.core.model.GenerateOptions;
@@ -41,6 +43,7 @@ import io.agentscope.durable.DurableTypes.WaitCondition;
 import io.agentscope.durable.HarnessContext;
 import io.agentscope.durable.ModelExecutions;
 import io.agentscope.durable.ModelReplyProtocol;
+import io.agentscope.durable.TransactionalSessionBackend;
 import io.agentscope.durable.codec.agentscope.DurableEventSchemas;
 import java.time.Clock;
 import java.time.Duration;
@@ -78,6 +81,7 @@ final class AgentScopeExecutionHost implements AgentExecutionHost, ModelInvocati
     private final QueuedModelRequest.Publisher publisher;
     private final ModelExecutions modelExecutions;
     private final String modelRoute;
+    private final ToolHookJournal toolHooks;
     private QueuedModelRequest pendingRequest;
     private boolean queuedFallback;
 
@@ -101,8 +105,11 @@ final class AgentScopeExecutionHost implements AgentExecutionHost, ModelInvocati
 
     private Frame frame;
     private long replayAfter;
+    private boolean replayingModelReply;
     private final Set<String> replayed = new HashSet<>();
     private boolean completed;
+    private boolean yieldingForDrain;
+    private boolean waitingForNativeReconciliation;
     private volatile boolean active;
     private RuntimeContext context;
     private final AtomicInteger slot = new AtomicInteger();
@@ -110,9 +117,10 @@ final class AgentScopeExecutionHost implements AgentExecutionHost, ModelInvocati
 
     @Override
     public Mono<Void> beforeBoundary(Boundary boundary, RuntimeContext runtime, AgentState state) {
-        return Mono.<Void>fromRunnable(
+        return Mono.defer(
                         () -> {
-                            checkControl();
+                            var current = durable.frame();
+                            checkControl(current.turn());
                             if (boundary == Boundary.REASONING) {
                                 context = runtime;
                                 if (pendingRequest != null
@@ -122,9 +130,28 @@ final class AgentScopeExecutionHost implements AgentExecutionHost, ModelInvocati
                                                 > pendingIteration) pendingRequest = null;
                                 if (pendingRequest == null) {
                                     queuedFallback = false;
-                                    applyInputs(runtime, state);
+                                    return toolHooks
+                                            .normalizeRecovered(runtime, state)
+                                            .defaultIfEmpty(false)
+                                            .doOnNext(
+                                                    normalized -> {
+                                                        var ready =
+                                                                normalized
+                                                                        ? durable.frame()
+                                                                        : current;
+                                                        checkControl(ready.turn());
+                                                        if (!replayingModelReply)
+                                                            AgentScopeToolResults
+                                                                    .joinCompletedBatch(
+                                                                            state.contextMutable());
+                                                        replayingModelReply = false;
+                                                        applyInputs(
+                                                                runtime, state, ready.signals());
+                                                    })
+                                            .then();
                                 }
                             }
+                            return Mono.<Void>empty();
                         })
                 .subscribeOn(Schedulers.boundedElastic());
     }
@@ -133,16 +160,28 @@ final class AgentScopeExecutionHost implements AgentExecutionHost, ModelInvocati
         checkControl(durable.frame().turn());
     }
 
-    private static void checkControl(TurnView turn) {
+    boolean yieldingForDrain() {
+        return yieldingForDrain;
+    }
+
+    boolean waitingForNativeReconciliation() {
+        return waitingForNativeReconciliation;
+    }
+
+    private void checkControl(TurnView turn) {
         if (turn.cancellationRequested())
             throw new DurableException(
                     DurableException.Code.FENCED, "Cancellation requests a durable handoff");
         if (turn.status() == TurnStatus.PAUSING) throw new AgentExecutionHost.Paused();
+        if (durable.draining()) {
+            yieldingForDrain = true;
+            throw new AgentExecutionHost.Paused();
+        }
     }
 
-    private void applyInputs(RuntimeContext runtime, AgentState state) {
+    private void applyInputs(RuntimeContext runtime, AgentState state, List<Signal> signals) {
         var pending =
-                durable.frame().signals().stream()
+                signals.stream()
                         .filter(
                                 signal ->
                                         Set.of("input:steer", "input:inject")
@@ -156,7 +195,9 @@ final class AgentScopeExecutionHost implements AgentExecutionHost, ModelInvocati
         state.getContext().forEach(message -> known.add(message.getId()));
         var ids = new ArrayList<String>();
         for (var signal : pending) {
-            var message = AgentScopeMessages.input(signal.value(), "signal:" + signal.id());
+            String messageId =
+                    signal.messageId() == null ? "signal:" + signal.id() : signal.messageId();
+            var message = AgentScopeMessages.input(signal.value(), messageId);
             if (known.add(message.getId())) state.contextMutable().add(message);
             ids.add(signal.id());
         }
@@ -185,23 +226,59 @@ final class AgentScopeExecutionHost implements AgentExecutionHost, ModelInvocati
                 : UUID.randomUUID().toString();
     }
 
+    @Override
+    public Mono<ToolPlan> prepareTools(
+            RuntimeContext runtime, AgentState state, List<ToolUseBlock> calls) {
+        return toolHooks.prepare(runtime, state, calls);
+    }
+
+    @Override
+    public Mono<ToolResultBlock> normalizeToolResult(
+            RuntimeContext runtime, ToolUseBlock call, ToolResultBlock result) {
+        var lease = durable.lease();
+        if (log.unsettledNativeTool(lease.turnId(), call.getId())) {
+            waitingForNativeReconciliation = true;
+            return Mono.error(new AgentExecutionHost.Paused());
+        }
+        String executionId =
+                TransactionalSessionBackend.executionId(
+                        lease.thread(), lease.turnId(), call.getId());
+        return toolHooks.normalize(
+                executionId,
+                call,
+                result,
+                fact ->
+                        InvocationRecorder.from(runtime)
+                                .recordNow(DurableEventSchemas.TOOL_NORMALIZED, fact));
+    }
+
     AgentScopeExecutionHost(
             HarnessContext durable,
             BackendThreadJournal log,
             QueuedModelRequest.Publisher publisher,
             ModelExecutions modelExecutions,
             String modelRoute,
-            Duration replyTimeout) {
+            Duration replyTimeout,
+            ToolHookJournal toolHooks) {
         this.durable = durable;
         this.log = log;
         this.publisher = publisher;
         this.modelExecutions = modelExecutions;
         this.modelRoute = modelRoute;
+        this.toolHooks = toolHooks;
         this.replyIdleMillis = replyTimeout.toMillis();
         for (var event : log.scan(0, log.head().seq())) {
-            if ("state/checkpoint".equals(event.type())) replayAfter = event.seq();
+            if ("state/checkpoint".equals(event.type())) {
+                replayAfter = event.seq();
+                replayingModelReply = false;
+            }
             if (!durable.lease().turnId().equals(event.turnId())) continue;
             var data = event.data();
+            // A recorded local reply must replay against its original request, including on
+            // upgrade.
+            if ("model/end".equals(event.type())
+                    && "completed".equals(data.get("status"))
+                    && data.containsKey(ModelCapture.OUTCOME)) replayingModelReply = true;
             if (DurableEventSchemas.QUEUED_MODEL.equals(event.type())) {
                 pendingRequest =
                         DurableJson.convert(

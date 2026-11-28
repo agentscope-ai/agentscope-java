@@ -43,13 +43,7 @@ public final class AgentScopeCheckpoints {
     }
 
     public static CommitReceipt restore(SessionBackend backend, CheckpointRestore request) {
-        return new AgentScopeCheckpoints(backend)
-                .restore(
-                        request.source(),
-                        request.position(),
-                        request.target(),
-                        request.expectedPosition(),
-                        request.requestId());
+        return new AgentScopeCheckpoints(backend).restore(request);
     }
 
     public CommitReceipt restore(
@@ -58,6 +52,18 @@ public final class AgentScopeCheckpoints {
             ThreadSpec target,
             long expectedTargetPosition,
             String requestId) {
+        return restore(
+                new CheckpointRestore(source, position, target, expectedTargetPosition, requestId));
+    }
+
+    public CommitReceipt restore(CheckpointRestore request) {
+        var source = request.source();
+        long position = request.position();
+        var target = request.target();
+        String requestId = request.requestId();
+        if (request.createSession() && source.session().equals(target.key().session()))
+            throw new DurableException(
+                    DurableException.Code.INVALID, "Fork requires a distinct destination Session");
         var snapshot = backend.checkpoint(source, position);
         snapshot.metadata().verify(snapshot.definition(), snapshot.checkpoint());
         if (!snapshot.settled())
@@ -131,10 +137,11 @@ public final class AgentScopeCheckpoints {
         return backend.restore(
                 new Restoration(
                         requestId,
-                        expectedTargetPosition,
+                        request.expectedPosition(),
                         target,
                         checkpoint,
                         List.of(DurableJson.value(event)),
-                        backend.checkpointResources(source, position)));
+                        backend.checkpointResources(source, position),
+                        request.createSession()));
     }
 }
