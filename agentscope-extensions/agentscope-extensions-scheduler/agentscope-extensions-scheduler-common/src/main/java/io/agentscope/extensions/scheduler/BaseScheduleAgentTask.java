@@ -146,8 +146,9 @@ public class BaseScheduleAgentTask implements ScheduleAgentTask<Msg> {
     /**
      * Execute the scheduled task immediately.
      *
-     * <p>This method creates a fresh Agent instance and executes it with the provided input messages.
-     * Each execution increments the execution count for tracking purposes.
+     * <p>Each subscription creates a fresh Agent instance and executes it with the provided input
+     * messages. The execution count tracks subscribed attempts, including failed attempts, rather
+     * than calls to this method. A task cancelled before subscription will not execute.
      *
      * @param msgs The input messages to pass to the agent (optional, can be empty or null)
      * @return A Mono that emits the agent's response message when execution completes
@@ -158,14 +159,21 @@ public class BaseScheduleAgentTask implements ScheduleAgentTask<Msg> {
         if (cancelled.get()) {
             throw new IllegalStateException("Cannot run a cancelled task: " + getName());
         }
-        // Create a fresh Agent instance for this execution
-        Agent agent = createAgent();
-
-        Mono<Msg> result =
-                agent.call(msgs == null || msgs.length == 0 ? List.of() : Arrays.asList(msgs));
-        // Increment execution count for tracking
-        incrementExecutionCount();
-        return result;
+        return Mono.defer(
+                () -> {
+                    if (cancelled.get()) {
+                        throw new IllegalStateException(
+                                "Cannot run a cancelled task: " + getName());
+                    }
+                    Agent agent = createAgent();
+                    Mono<Msg> result =
+                            agent.call(
+                                    msgs == null || msgs.length == 0
+                                            ? List.of()
+                                            : Arrays.asList(msgs));
+                    incrementExecutionCount();
+                    return result;
+                });
     }
 
     /**
@@ -259,7 +267,8 @@ public class BaseScheduleAgentTask implements ScheduleAgentTask<Msg> {
      * Get the total number of times this task has been executed.
      *
      * <p>This count includes both scheduled executions and manual executions via {@link #run(Msg...)}.
-     * It tracks successful executions; if execution fails with an exception, the count is still incremented.
+     * Each subscription that starts an agent call increments the count, including failed attempts.
+     * Creating a publisher without subscribing does not increment the count.
      *
      * @return The total execution count (starts at 0)
      */
