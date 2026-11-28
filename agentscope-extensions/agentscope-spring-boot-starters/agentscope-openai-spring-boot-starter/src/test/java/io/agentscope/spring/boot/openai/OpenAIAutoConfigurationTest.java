@@ -25,6 +25,7 @@ import io.agentscope.core.model.Model;
 import io.agentscope.core.model.ToolSchema;
 import io.agentscope.extensions.model.openai.OpenAIChatModel;
 import io.agentscope.spring.boot.AgentscopeAutoConfiguration;
+import java.time.Duration;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
@@ -64,11 +65,22 @@ class OpenAIAutoConfigurationTest {
                         "agentscope.openai.model-name=gpt-4.1-mini",
                         "agentscope.openai.base-url=https://example.com/v1",
                         "agentscope.openai.endpoint-path=/v4/chat/completions",
-                        "agentscope.openai.stream=false")
+                        "agentscope.openai.stream=false",
+                        "agentscope.openai.http2-ping-interval=7s",
+                        "agentscope.openai.read-timeout=30s",
+                        "agentscope.openai.retry-on-connection-failure=false",
+                        "agentscope.openai.max-attempts=2")
                 .run(
                         context -> {
                             OpenAIChatModel model = context.getBean(OpenAIChatModel.class);
                             assertThat(model.getModelName()).isEqualTo("gpt-4.1-mini");
+                            var properties = context.getBean(OpenAIProperties.class);
+                            assertThat(properties.getHttp2PingInterval())
+                                    .isEqualTo(Duration.ofSeconds(7));
+                            assertThat(properties.getReadTimeout())
+                                    .isEqualTo(Duration.ofSeconds(30));
+                            assertThat(properties.getRetryOnConnectionFailure()).isFalse();
+                            assertThat(properties.getMaxAttempts()).isEqualTo(2);
                         });
     }
 

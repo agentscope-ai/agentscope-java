@@ -15,6 +15,8 @@
  */
 package io.agentscope.spring.boot.openai;
 
+import io.agentscope.core.model.ExecutionConfig;
+import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.Model;
 import io.agentscope.extensions.model.openai.OpenAIChatModel;
 import io.agentscope.spring.boot.AgentscopeAutoConfiguration;
@@ -66,6 +68,31 @@ public class OpenAIAutoConfiguration {
         String endpointPath = trimToNull(properties.getEndpointPath());
         if (endpointPath != null) {
             builder.endpointPath(endpointPath);
+        }
+
+        if (properties.getHttp2PingInterval() != null
+                || properties.getReadTimeout() != null
+                || properties.getRetryOnConnectionFailure() != null) {
+            var transport = OpenAIChatModel.httpTransportDefaults();
+            if (properties.getHttp2PingInterval() != null) {
+                transport.http2PingInterval(properties.getHttp2PingInterval());
+            }
+            if (properties.getReadTimeout() != null) {
+                transport.readTimeout(properties.getReadTimeout());
+            }
+            if (properties.getRetryOnConnectionFailure() != null) {
+                transport.retryOnConnectionFailure(properties.getRetryOnConnectionFailure());
+            }
+            builder.httpTransportConfig(transport.build());
+        }
+        if (properties.getMaxAttempts() != null) {
+            builder.generateOptions(
+                    GenerateOptions.builder()
+                            .executionConfig(
+                                    ExecutionConfig.builder()
+                                            .maxAttempts(properties.getMaxAttempts())
+                                            .build())
+                            .build());
         }
 
         customizerObjectProvider
