@@ -16,6 +16,7 @@
 package io.agentscope.harness.agent.gateway;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.message.Msg;
@@ -23,6 +24,7 @@ import io.agentscope.core.message.MsgRole;
 import io.agentscope.harness.agent.bus.WorkspaceMessageBus;
 import io.agentscope.harness.agent.filesystem.local.LocalFilesystem;
 import java.time.Duration;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
@@ -141,6 +143,68 @@ class WakeupDispatcherTest {
                 "Dispatcher must forward the userId carried by the wakeup entry");
     }
 
+    @Test
+    @DisplayName("Wakeup dispatch propagates the owning agent id to the target")
+    void wakeupDispatch_propagatesAgentId() throws Exception {
+        target.addKnown("sess-support");
+        dispatcher.start();
+
+        messageBus.enqueueWakeup("user-42", "sess-support", "agent-support").block();
+
+        assertTrue(
+                target.awaitWakeup(1, 6, TimeUnit.SECONDS),
+                "Expected runWakeup to be called within 6s");
+        assertEquals(List.of("agent-support"), target.wokenAgents);
+    }
+
+    @Test
+    void agentAwareWakeupSupportsUserAwareTargets() {
+        var reply = Msg.builder().role(MsgRole.ASSISTANT).textContent("woken").build();
+        WakeupDispatcher.WakeupTarget legacyTarget =
+                new WakeupDispatcher.WakeupTarget() {
+                    @Override
+                    public boolean isSessionRunning(String sessionId) {
+                        return false;
+                    }
+
+                    @Override
+                    public Mono<Msg> runWakeup(String sessionId) {
+                        throw new AssertionError("The user-aware overload must be called");
+                    }
+
+                    @Override
+                    public Mono<Msg> runWakeup(String userId, String sessionId) {
+                        assertEquals("user-42", userId);
+                        assertEquals("sess-legacy", sessionId);
+                        return Mono.just(reply);
+                    }
+                };
+
+        assertSame(
+                reply, legacyTarget.runWakeup("user-42", "sess-legacy", "agent-support").block());
+    }
+
+    @Test
+    void agentAwareWakeupSupportsSessionOnlyTargets() {
+        var reply = Msg.builder().role(MsgRole.ASSISTANT).textContent("woken").build();
+        WakeupDispatcher.WakeupTarget legacyTarget =
+                new WakeupDispatcher.WakeupTarget() {
+                    @Override
+                    public boolean isSessionRunning(String sessionId) {
+                        return false;
+                    }
+
+                    @Override
+                    public Mono<Msg> runWakeup(String sessionId) {
+                        assertEquals("sess-legacy", sessionId);
+                        return Mono.just(reply);
+                    }
+                };
+
+        assertSame(
+                reply, legacyTarget.runWakeup("user-42", "sess-legacy", "agent-support").block());
+    }
+
     // ------------------------------------------------------------------
     //  Test double
     // ------------------------------------------------------------------
@@ -149,6 +213,7 @@ class WakeupDispatcherTest {
 
         final CopyOnWriteArrayList<String> wokenSessions = new CopyOnWriteArrayList<>();
         final CopyOnWriteArrayList<String> wokenUsers = new CopyOnWriteArrayList<>();
+        final CopyOnWriteArrayList<String> wokenAgents = new CopyOnWriteArrayList<>();
         private final Set<String> runningSessions = ConcurrentHashMap.newKeySet();
         private final Set<String> knownSessions = ConcurrentHashMap.newKeySet();
         private volatile CountDownLatch wakeupLatch = new CountDownLatch(1);
@@ -180,6 +245,12 @@ class WakeupDispatcherTest {
             wokenUsers.add(userId);
             wakeupLatch.countDown();
             return Mono.just(Msg.builder().role(MsgRole.ASSISTANT).textContent("woken").build());
+        }
+
+        @Override
+        public Mono<Msg> runWakeup(String userId, String sessionId, String agentId) {
+            wokenAgents.add(agentId);
+            return runWakeup(userId, sessionId);
         }
 
         boolean awaitWakeup(int expected, long timeout, TimeUnit unit) throws InterruptedException {

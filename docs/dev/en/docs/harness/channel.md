@@ -262,6 +262,8 @@ chat.send(SendOptions.userId("user-1"), "What products?").block();
 chat.send(SendOptions.userId("user-1").withAgentId("support"), "Billing issue").block();
 ```
 
+Background completions delivered through `WakeupDispatcher` resume the owning agent in the same user session, including agents registered under a different gateway alias. The wakeup's `agentId` selects that agent; if it is omitted, the gateway uses its default agent.
+
 ### Thread exposure with GatewayBootstrap
 
 To enable `expose_to_user` on subagents, wire the gateway bridge into each agent's subagent middleware:

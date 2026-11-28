@@ -30,7 +30,7 @@ import reactor.core.publisher.Mono;
  *
  * <p>Subscribes to the shared wakeup signal channel on {@link MessageBus#subscribeWakeup()} and
  * drains the durable wakeup queue on each signal. For each queued entry whose target session is
- * idle, triggers a new reasoning round via {@link WakeupTarget#runWakeup(String)}.
+ * idle, triggers a new reasoning round via {@link WakeupTarget#runWakeup(String, String, String)}.
  *
  * It serves as the universal activator for all cross-session communication:
  *
@@ -66,8 +66,8 @@ public class WakeupDispatcher implements AutoCloseable {
          *
          * @param sessionId the session to wake up
          * @return the agent's response, or {@link Mono#empty()} if the session is unknown
-         * @deprecated implementers should override {@link #runWakeup(String, String)} instead, so
-         *     the dispatcher can propagate the owning user id. Required for runtimes that isolate
+         * @deprecated implementers should override {@link #runWakeup(String, String, String)} so
+         *     the dispatcher can propagate the owning user and agent ids. Required for runtimes that isolate
          *     agent state by {@code (userId, sessionId)}: without it, a wakeup-driven round loads
          *     state from an anonymous slot and the original conversation is lost. This overload is
          *     retained for backward compatibility and defaults to ignoring the user id.
@@ -90,6 +90,22 @@ public class WakeupDispatcher implements AutoCloseable {
          */
         default Mono<Msg> runWakeup(String userId, String sessionId) {
             return runWakeup(sessionId);
+        }
+
+        /**
+         * Triggers a wakeup run for the owning agent and user of an idle session.
+         *
+         * <p>Implementations supporting multiple agents should override this method to honor the
+         * owning agent id. The default delegates to the two-argument overload for compatibility
+         * with existing targets.
+         *
+         * @param userId the owning user id, when present
+         * @param sessionId the session to wake up
+         * @param agentId the owning agent id carried by the wakeup entry, when present
+         * @return the agent's response, or {@link Mono#empty()} if the session is unknown
+         */
+        default Mono<Msg> runWakeup(String userId, String sessionId, String agentId) {
+            return runWakeup(userId, sessionId);
         }
     }
 
@@ -166,7 +182,7 @@ public class WakeupDispatcher implements AutoCloseable {
                 sessionId,
                 userId,
                 agentId);
-        target.runWakeup(userId, sessionId)
+        target.runWakeup(userId, sessionId, agentId)
                 .subscribe(
                         msg ->
                                 log.debug(
