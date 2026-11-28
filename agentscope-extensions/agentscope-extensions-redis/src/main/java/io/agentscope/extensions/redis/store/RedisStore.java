@@ -17,12 +17,15 @@ package io.agentscope.extensions.redis.store;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.agentscope.extensions.redis.state.jedis.JedisClientAdapter;
 import io.agentscope.harness.agent.filesystem.remote.store.BaseStore;
 import io.agentscope.harness.agent.filesystem.remote.store.StoreItem;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import redis.clients.jedis.UnifiedJedis;
 
 /**
@@ -36,8 +39,8 @@ import redis.clients.jedis.UnifiedJedis;
  *   <li><b>Item hash</b> {@code <prefix>item:<ns>\0<k>} — a Redis hash with fields {@code value}
  *       (JSON-encoded {@code Map<String,Object>}) and {@code version} (a stringified long).
  *   <li><b>Namespace index</b> {@code <prefix>idx:<ns>} — a sorted set (all scores {@code 0})
- *       holding every {@code k} written under that exact namespace, enabling lexicographic
- *       {@link #search} via {@code ZRANGEBYLEX} without scanning the keyspace.
+ *       holding every {@code k} written under that exact namespace. Prefix searches discover
+ *       descendant namespace indexes with {@code SCAN} and combine their indexed items.
  * </ul>
  *
  * <p>{@code <ns>} is the namespace components joined with {@code "\0"}.
@@ -174,20 +177,30 @@ public class RedisStore implements BaseStore {
             return List.of();
         }
         int safeOffset = Math.max(offset, 0);
-        String idxKey = indexKey(namespace);
-        List<String> keys = jedis.zrangeByLex(idxKey, "-", "+", safeOffset, limit);
-        if (keys == null || keys.isEmpty()) {
-            return List.of();
-        }
-        List<StoreItem> items = new ArrayList<>(keys.size());
-        for (String k : keys) {
-            Map<String, String> hash = jedis.hgetAll(itemKey(namespace, k));
-            if (hash == null || hash.isEmpty()) {
-                continue; // stale index entry — tolerated
+        String exactIndex = indexKey(namespace);
+        String descendantPrefix = exactIndex + (namespace.isEmpty() ? "" : NS_SEPARATOR);
+        Set<String> indexes =
+                JedisClientAdapter.of(jedis)
+                        .findKeysByPattern(escapeRedisGlobLiteral(descendantPrefix) + "*");
+        indexes.add(exactIndex);
+
+        List<StoreItem> items = new ArrayList<>();
+        String indexPrefix = keyPrefix + "idx:";
+        for (String index : indexes.stream().sorted().toList()) {
+            String itemPrefix =
+                    keyPrefix + "item:" + index.substring(indexPrefix.length()) + NS_SEPARATOR;
+            for (String key : jedis.zrangeByLex(index, "-", "+")) {
+                Map<String, String> hash = jedis.hgetAll(itemPrefix + key);
+                if (hash == null || hash.isEmpty()) {
+                    continue; // stale index entry — tolerated
+                }
+                items.add(toItem(key, hash));
             }
-            items.add(toItem(k, hash));
         }
-        return items;
+        items.sort(Comparator.comparing(StoreItem::key));
+        int start = Math.min(safeOffset, items.size());
+        int end = start + Math.min(limit, items.size() - start);
+        return new ArrayList<>(items.subList(start, end));
     }
 
     @Override
@@ -242,6 +255,14 @@ public class RedisStore implements BaseStore {
 
     private String indexKey(List<String> namespace) {
         return keyPrefix + "idx:" + namespacePath(namespace);
+    }
+
+    private static String escapeRedisGlobLiteral(String value) {
+        return value.replace("\\", "\\\\")
+                .replace("*", "\\*")
+                .replace("?", "\\?")
+                .replace("[", "\\[")
+                .replace("]", "\\]");
     }
 
     private static String namespacePath(List<String> namespace) {

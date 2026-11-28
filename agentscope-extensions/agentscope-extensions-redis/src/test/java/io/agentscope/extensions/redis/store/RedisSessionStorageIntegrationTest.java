@@ -22,6 +22,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import io.agentscope.core.journal.AtomicThreadJournal;
 import io.agentscope.core.journal.JournalEvent;
 import io.agentscope.core.journal.JournalException;
+import io.agentscope.harness.agent.filesystem.remote.store.StoreItem;
 import io.agentscope.harness.agent.journal.StoreJournalStorage;
 import java.time.Duration;
 import java.util.List;
@@ -37,6 +38,47 @@ import redis.clients.jedis.UnifiedJedis;
 /** Real Redis Lua CAS and journal fencing, with an isolated namespace per invocation. */
 @EnabledIfEnvironmentVariable(named = "AGENTSCOPE_TEST_REDIS_URL", matches = ".+")
 class RedisSessionStorageIntegrationTest {
+    @Test
+    void namespaceSearchIncludesLegacyDescendantsAndPaginatesCombinedResults() {
+        String prefix = "regression:" + UUID.randomUUID() + ":";
+        try (var client = new UnifiedJedis(System.getenv("AGENTSCOPE_TEST_REDIS_URL"))) {
+            var store = new RedisStore(client, prefix);
+            try {
+                // Seed the existing hash/index layout without rewriting items through put().
+                client.hset(
+                        prefix + "item:a\0parent",
+                        Map.of("value", "{\"where\":\"a\"}", "version", "3"));
+                client.zadd(prefix + "idx:a", 0, "parent");
+                client.hset(
+                        prefix + "item:a\0b\0child",
+                        Map.of("value", "{\"where\":\"a/b\"}", "version", "7"));
+                client.zadd(prefix + "idx:a\0b", 0, "child");
+                store.put(List.of("ab"), "sibling", Map.of("where", "ab"));
+                client.zadd(prefix + "idx:a", 0, "missing-hash");
+
+                assertEquals(
+                        List.of("child", "parent"),
+                        store.search(List.of("a"), 100, 0).stream().map(StoreItem::key).toList());
+                assertEquals(
+                        List.of("child", "parent", "sibling"),
+                        store.search(List.of(), 100, 0).stream().map(StoreItem::key).toList());
+                assertEquals(
+                        List.of("parent"),
+                        store.search(List.of("a"), 1, 1).stream().map(StoreItem::key).toList());
+                assertEquals(7, store.search(List.of("a"), 1, 0).get(0).version());
+
+                store.delete(List.of("a", "b"), "child");
+                assertEquals(
+                        List.of("parent"),
+                        store.search(List.of("a"), Integer.MAX_VALUE, 0).stream()
+                                .map(StoreItem::key)
+                                .toList());
+            } finally {
+                for (String key : client.keys(prefix + "*")) client.del(key);
+            }
+        }
+    }
+
     @Test
     void independentClientsRaceCasAndRecoverTheFencedCommittedPrefix() throws Exception {
         String prefix = "regression:" + UUID.randomUUID() + ":";

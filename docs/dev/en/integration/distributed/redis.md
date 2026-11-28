@@ -79,6 +79,10 @@ BaseStore store = new RedisStore(jedis, "myapp:store:");
 
 Concurrency-safe: `put` / `putIfVersion` use Lua scripts for atomicity.
 
+`search(namespace, limit, offset)` includes the namespace and all descendant namespaces. For example, searching `List.of("team")` also returns items stored under `List.of("team", "notes")`, while `List.of()` searches every namespace. Results are sorted by item key, and pagination applies to the combined results. Existing namespace indexes remain readable without a data migration.
+
+Prefix searches use incremental `SCAN` across the Redis keyspace to discover matching namespace indexes, then read their indexed items before sorting and pagination. A specific namespace prefix reduces the records read and sorted, while index discovery still traverses the keyspace.
+
 ### 3. RedisSnapshotSpec
 
 Sandbox snapshots stored as Redis binary keys. Best for small workspaces + short TTL.
