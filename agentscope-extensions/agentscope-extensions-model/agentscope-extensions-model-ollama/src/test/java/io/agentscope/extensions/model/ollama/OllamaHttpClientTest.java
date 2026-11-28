@@ -29,17 +29,21 @@ import io.agentscope.core.model.transport.HttpRequest;
 import io.agentscope.core.model.transport.HttpResponse;
 import io.agentscope.core.model.transport.HttpTransport;
 import io.agentscope.core.model.transport.HttpTransportException;
+import io.agentscope.core.model.transport.TransportConstants;
 import io.agentscope.extensions.model.ollama.dto.OllamaEmbeddingRequest;
 import io.agentscope.extensions.model.ollama.dto.OllamaEmbeddingResponse;
 import io.agentscope.extensions.model.ollama.dto.OllamaRequest;
 import io.agentscope.extensions.model.ollama.dto.OllamaResponse;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.MockitoAnnotations;
+import reactor.core.publisher.Flux;
 
 /**
  * Unit tests for OllamaHttpClient.
@@ -79,6 +83,171 @@ class OllamaHttpClientTest {
                 OllamaHttpClient.builder().baseUrl(TEST_BASE_URL).transport(mockTransport).build();
 
         assertEquals(TEST_BASE_URL, client.getBaseUrl());
+    }
+
+    private static OllamaRequest newChatRequest() {
+        OllamaRequest request = new OllamaRequest();
+        request.setModel("test-model");
+        request.setMessages(Collections.emptyList());
+        return request;
+    }
+
+    @Test
+    @DisplayName("Should send bearer authorization on sync calls when apiKey is set")
+    void testApiKeySentOnSyncCall() {
+        OllamaHttpClient client =
+                OllamaHttpClient.builder()
+                        .baseUrl(TEST_BASE_URL)
+                        .transport(mockTransport)
+                        .apiKey("secret-key")
+                        .build();
+        when(mockTransport.execute(any(HttpRequest.class)))
+                .thenReturn(HttpResponse.builder().statusCode(200).body("{}").build());
+
+        client.chat(newChatRequest());
+
+        ArgumentCaptor<HttpRequest> captor = ArgumentCaptor.forClass(HttpRequest.class);
+        verify(mockTransport).execute(captor.capture());
+        assertEquals("Bearer secret-key", captor.getValue().getHeaders().get("Authorization"));
+    }
+
+    @Test
+    @DisplayName("Should send bearer authorization on streaming calls when apiKey is set")
+    void testApiKeySentOnStreamCall() {
+        OllamaHttpClient client =
+                OllamaHttpClient.builder()
+                        .baseUrl(TEST_BASE_URL)
+                        .transport(mockTransport)
+                        .apiKey("secret-key")
+                        .build();
+        when(mockTransport.stream(any(HttpRequest.class))).thenReturn(Flux.just("{}"));
+
+        client.stream(newChatRequest()).collectList().block();
+
+        ArgumentCaptor<HttpRequest> captor = ArgumentCaptor.forClass(HttpRequest.class);
+        verify(mockTransport).stream(captor.capture());
+        Map<String, String> headers = captor.getValue().getHeaders();
+        assertEquals("Bearer secret-key", headers.get("Authorization"));
+        assertEquals(
+                TransportConstants.STREAM_FORMAT_NDJSON,
+                headers.get(TransportConstants.STREAM_FORMAT_HEADER));
+    }
+
+    @Test
+    @DisplayName("Should not send authorization when no apiKey is set")
+    void testNoApiKeyOmitsAuthorization() {
+        when(mockTransport.execute(any(HttpRequest.class)))
+                .thenReturn(HttpResponse.builder().statusCode(200).body("{}").build());
+
+        httpClient.chat(newChatRequest());
+
+        ArgumentCaptor<HttpRequest> captor = ArgumentCaptor.forClass(HttpRequest.class);
+        verify(mockTransport).execute(captor.capture());
+        assertNull(captor.getValue().getHeaders().get("Authorization"));
+    }
+
+    @Test
+    @DisplayName("Should not send authorization when apiKey is empty or blank")
+    void testBlankApiKeyOmitsAuthorization() {
+        OllamaHttpClient client =
+                OllamaHttpClient.builder()
+                        .baseUrl(TEST_BASE_URL)
+                        .transport(mockTransport)
+                        .apiKey("   ")
+                        .build();
+        when(mockTransport.execute(any(HttpRequest.class)))
+                .thenReturn(HttpResponse.builder().statusCode(200).body("{}").build());
+
+        client.chat(newChatRequest());
+
+        ArgumentCaptor<HttpRequest> captor = ArgumentCaptor.forClass(HttpRequest.class);
+        verify(mockTransport).execute(captor.capture());
+        assertNull(captor.getValue().getHeaders().get("Authorization"));
+    }
+
+    @Test
+    @DisplayName("Should pass extra headers on sync calls")
+    void testExtraHeadersOnSyncCall() {
+        when(mockTransport.execute(any(HttpRequest.class)))
+                .thenReturn(HttpResponse.builder().statusCode(200).body("{}").build());
+
+        httpClient.chat(newChatRequest(), Map.of("X-Custom", "value"));
+
+        ArgumentCaptor<HttpRequest> captor = ArgumentCaptor.forClass(HttpRequest.class);
+        verify(mockTransport).execute(captor.capture());
+        assertEquals("value", captor.getValue().getHeaders().get("X-Custom"));
+    }
+
+    @Test
+    @DisplayName("Should pass extra headers on streaming calls")
+    void testExtraHeadersOnStreamCall() {
+        when(mockTransport.stream(any(HttpRequest.class))).thenReturn(Flux.just("{}"));
+
+        httpClient.stream(newChatRequest(), Map.of("X-Custom", "value")).collectList().block();
+
+        ArgumentCaptor<HttpRequest> captor = ArgumentCaptor.forClass(HttpRequest.class);
+        verify(mockTransport).stream(captor.capture());
+        assertEquals("value", captor.getValue().getHeaders().get("X-Custom"));
+    }
+
+    @Test
+    @DisplayName("Client-owned headers win over forged user headers")
+    void testClientOwnedHeadersWin() {
+        when(mockTransport.stream(any(HttpRequest.class))).thenReturn(Flux.just("{}"));
+
+        httpClient.stream(
+                        newChatRequest(),
+                        Map.of(
+                                "X-Custom",
+                                "v",
+                                "Content-Type",
+                                "text/plain",
+                                TransportConstants.STREAM_FORMAT_HEADER,
+                                "bogus"))
+                .collectList()
+                .block();
+
+        ArgumentCaptor<HttpRequest> captor = ArgumentCaptor.forClass(HttpRequest.class);
+        verify(mockTransport).stream(captor.capture());
+        Map<String, String> headers = captor.getValue().getHeaders();
+        assertEquals("v", headers.get("X-Custom"));
+        assertEquals("application/json", headers.get("Content-Type"));
+        assertEquals(
+                TransportConstants.STREAM_FORMAT_NDJSON,
+                headers.get(TransportConstants.STREAM_FORMAT_HEADER));
+    }
+
+    @Test
+    @DisplayName("Builder apiKey wins over user-supplied Authorization header")
+    void testApiKeyWinsOverUserAuthorization() {
+        OllamaHttpClient client =
+                OllamaHttpClient.builder()
+                        .baseUrl(TEST_BASE_URL)
+                        .transport(mockTransport)
+                        .apiKey("secret-key")
+                        .build();
+        when(mockTransport.execute(any(HttpRequest.class)))
+                .thenReturn(HttpResponse.builder().statusCode(200).body("{}").build());
+
+        client.chat(newChatRequest(), Map.of("Authorization", "Bearer user-token"));
+
+        ArgumentCaptor<HttpRequest> captor = ArgumentCaptor.forClass(HttpRequest.class);
+        verify(mockTransport).execute(captor.capture());
+        assertEquals("Bearer secret-key", captor.getValue().getHeaders().get("Authorization"));
+    }
+
+    @Test
+    @DisplayName("Legacy two-arg constructor sends no authorization")
+    void testLegacyConstructorOmitsAuthorization() {
+        OllamaHttpClient client = new OllamaHttpClient(mockTransport, TEST_BASE_URL);
+        when(mockTransport.execute(any(HttpRequest.class)))
+                .thenReturn(HttpResponse.builder().statusCode(200).body("{}").build());
+
+        client.chat(newChatRequest());
+
+        ArgumentCaptor<HttpRequest> captor = ArgumentCaptor.forClass(HttpRequest.class);
+        verify(mockTransport).execute(captor.capture());
+        assertNull(captor.getValue().getHeaders().get("Authorization"));
     }
 
     @Test

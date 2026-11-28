@@ -39,6 +39,34 @@ OllamaChatModel model = OllamaChatModel.builder()
     .build();
 ```
 
+## 鉴权
+
+本地 Ollama 服务默认无需凭证。对接需鉴权的端点（Ollama cloud 或网关）时，在 builder 上设置
+`apiKey`，它会以 `Authorization: Bearer <apiKey>` 发送：
+
+```java
+OllamaChatModel model = OllamaChatModel.builder()
+    .modelName("llama3")
+    .baseUrl("https://ollama.example.com")
+    .apiKey(System.getenv("OLLAMA_API_KEY"))
+    .build();
+```
+
+`GenerateOptions.additionalHeaders` 会透传到每个请求。客户端自有头（`Content-Type`、流式格式
+标记）与 builder 凭证优先于冲突条目，因此 `additionalHeaders` 中的 `Authorization` 条目不会
+覆盖 `apiKey`。
+
+Spring Boot 应用可配置 `agentscope.ollama.api-key`：
+
+```yaml
+agentscope:
+  model:
+    provider: ollama
+  ollama:
+    base-url: https://ollama.example.com
+    api-key: ${OLLAMA_API_KEY}
+```
+
 ## Spring Boot
 
 Spring Boot 应用可以使用 Ollama starter：

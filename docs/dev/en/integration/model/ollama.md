@@ -39,6 +39,34 @@ OllamaChatModel model = OllamaChatModel.builder()
     .build();
 ```
 
+## Authentication
+
+Local Ollama servers need no credentials by default. For authenticated endpoints (Ollama cloud
+or a gateway), set `apiKey` on the builder; it is sent as `Authorization: Bearer <apiKey>`:
+
+```java
+OllamaChatModel model = OllamaChatModel.builder()
+    .modelName("llama3")
+    .baseUrl("https://ollama.example.com")
+    .apiKey(System.getenv("OLLAMA_API_KEY"))
+    .build();
+```
+
+`GenerateOptions.additionalHeaders` is passed through to every request. Client-owned headers
+(`Content-Type`, the streaming format marker) and the builder credential take precedence over
+conflicting entries, so an `Authorization` entry in `additionalHeaders` cannot override `apiKey`.
+
+Spring Boot applications can configure `agentscope.ollama.api-key`:
+
+```yaml
+agentscope:
+  model:
+    provider: ollama
+  ollama:
+    base-url: https://ollama.example.com
+    api-key: ${OLLAMA_API_KEY}
+```
+
 ## Spring Boot
 
 Spring Boot applications can use the Ollama starter:
