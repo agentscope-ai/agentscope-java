@@ -156,6 +156,24 @@ public class TodoTools {
             if (prior != null && prior.getMetadata() != null) {
                 metadata.putAll(prior.getMetadata());
             }
+            if (item.getMetadata() != null) {
+                item.getMetadata()
+                        .forEach(
+                                (key, value) -> {
+                                    // Priority is controlled by the existing validated top-level
+                                    // field.
+                                    if (!"priority".equals(key)) {
+                                        if (value == null) metadata.remove(key);
+                                        else metadata.put(key, value);
+                                    }
+                                });
+            }
+            if (item.getExpectedOutcome() != null) {
+                metadata.put("expectedOutcome", item.getExpectedOutcome());
+            }
+            if (item.getOutcome() != null) {
+                metadata.put("outcome", item.getOutcome());
+            }
             String priority = normalizePriority(item.getPriority());
             if (priority != null) {
                 metadata.put("priority", priority);
@@ -163,7 +181,12 @@ public class TodoTools {
             Task.Builder b =
                     Task.builder()
                             .subject(item.getContent())
-                            .description(item.getContent())
+                            .description(
+                                    item.getDescription() != null
+                                            ? item.getDescription()
+                                            : prior != null
+                                                    ? prior.getDescription()
+                                                    : item.getContent())
                             .state(parsed)
                             .metadata(metadata.isEmpty() ? null : metadata);
             if (prior != null) {
@@ -205,8 +228,21 @@ public class TodoTools {
                 sb.append(" (priority: ").append(priority).append(')');
             }
             sb.append('\n');
+            if (!t.getDescription().equals(t.getSubject()) && !t.getDescription().isBlank()) {
+                sb.append("  ").append(t.getDescription()).append('\n');
+            }
+            if (t.getMetadata() != null) {
+                appendDisplayField(sb, "Expected outcome", t.getMetadata().get("expectedOutcome"));
+                appendDisplayField(sb, "Outcome", t.getMetadata().get("outcome"));
+            }
         }
         return sb.toString().stripTrailing();
+    }
+
+    private static void appendDisplayField(StringBuilder sb, String label, Object value) {
+        if (value instanceof String text && !text.isBlank()) {
+            sb.append("  ").append(label).append(": ").append(text).append('\n');
+        }
     }
 
     static String marker(Task.State state) {
@@ -248,15 +284,60 @@ public class TodoTools {
         private final String content;
         private final String status;
         private final String priority;
+        private final String description;
+        private final String expectedOutcome;
+        private final String outcome;
+        private final Map<String, Object> metadata;
+
+        /** Compatibility constructor for a minimal task item. */
+        public TodoItem(String content, String status, String priority) {
+            this(content, status, priority, null, null, null, null);
+        }
 
         @JsonCreator
         public TodoItem(
                 @JsonProperty("content") String content,
                 @JsonProperty("status") String status,
-                @JsonProperty("priority") String priority) {
+                @JsonProperty("priority") String priority,
+                @JsonProperty("description") String description,
+                @JsonProperty("expectedOutcome") String expectedOutcome,
+                @JsonProperty("outcome") String outcome,
+                @JsonProperty("metadata") Map<String, Object> metadata) {
             this.content = content;
             this.status = status;
             this.priority = priority;
+            this.description = description;
+            this.expectedOutcome = expectedOutcome;
+            this.outcome = outcome;
+            this.metadata = metadata == null ? null : new LinkedHashMap<>(metadata);
+        }
+
+        @JsonProperty("description")
+        @JsonPropertyDescription(
+                "Optional display description. Omit to retain the previous description.")
+        public String getDescription() {
+            return description;
+        }
+
+        @JsonProperty("expectedOutcome")
+        @JsonPropertyDescription(
+                "Optional expected result of this task; does not change execution semantics.")
+        public String getExpectedOutcome() {
+            return expectedOutcome;
+        }
+
+        @JsonProperty("outcome")
+        @JsonPropertyDescription("Optional actual result of this task; does not change its status.")
+        public String getOutcome() {
+            return outcome;
+        }
+
+        @JsonProperty("metadata")
+        @JsonPropertyDescription(
+                "Optional application metadata merged with existing metadata. Null values remove"
+                        + " keys. Priority must use the top-level field.")
+        public Map<String, Object> getMetadata() {
+            return metadata;
         }
 
         @JsonProperty("content")

@@ -19,14 +19,19 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolResultState;
+import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.state.AgentState;
 import io.agentscope.core.state.Task;
 import io.agentscope.core.state.TaskRequirement;
+import io.agentscope.core.tool.ToolCallParam;
 import io.agentscope.core.tool.Toolkit;
 import io.agentscope.core.tool.builtin.TodoTools.TodoItem;
+import io.agentscope.core.util.JsonSchemaUtils;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
@@ -220,6 +225,133 @@ class TodoToolsTest {
                         ToolResultState.ERROR);
         assertFalse(out.isBlank());
         assertTrue(out.toLowerCase().contains("error"));
+    }
+
+    @Test
+    void displayFieldsSurviveToolInputAndStateSerialization() throws Exception {
+        ObjectMapper mapper = new ObjectMapper();
+        TodoItem item =
+                mapper.readValue(
+                        """
+                        {"content":"Compare notices","status":"completed","priority":"high",
+                         "description":"Compare Anhui and Nanjing notices",
+                         "expectedOutcome":"A concise comparison","outcome":"Found two differences",
+                         "metadata":{"region":"east","display":{"expanded":true}}}
+                        """,
+                        TodoItem.class);
+        AgentState state = AgentState.builder().build();
+        String result = assertText(tool.write(List.of(item), state), ToolResultState.SUCCESS);
+        AgentState restored = mapper.readValue(mapper.writeValueAsString(state), AgentState.class);
+        Task task = restored.getTasksContext().getTasks().get(0);
+        assertEquals("Compare Anhui and Nanjing notices", task.getDescription());
+        assertEquals("A concise comparison", task.getMetadata().get("expectedOutcome"));
+        assertEquals("Found two differences", task.getMetadata().get("outcome"));
+        assertEquals("east", task.getMetadata().get("region"));
+        assertEquals(Map.of("expanded", true), task.getMetadata().get("display"));
+        assertEquals("high", task.getMetadata().get("priority"));
+        assertTrue(result.contains("Compare Anhui and Nanjing notices"));
+        assertTrue(result.contains("Found two differences"));
+    }
+
+    @Test
+    void optionalDisplayFieldsDoNotBecomeRequired() {
+        Map<String, Object> schema = JsonSchemaUtils.generateSchemaFromClass(TodoItem.class);
+        Map<?, ?> properties = (Map<?, ?>) schema.get("properties");
+        for (String name : List.of("description", "expectedOutcome", "outcome", "metadata")) {
+            assertTrue(properties.containsKey(name), name);
+            assertFalse(((List<?>) schema.getOrDefault("required", List.of())).contains(name));
+        }
+    }
+
+    @Test
+    void statusOnlyRewritePreservesDisplayFieldsAndAllowsExplicitUpdates() throws Exception {
+        ObjectMapper mapper = new ObjectMapper();
+        AgentState state = AgentState.builder().build();
+        TodoItem item =
+                mapper.readValue(
+                        """
+                        {"content":"Task","description":"Details","expectedOutcome":"Expected",
+                         "outcome":"Working","metadata":{"region":"east","priority":"invalid"}}
+                        """,
+                        TodoItem.class);
+        tool.write(List.of(item), state);
+        Task first = state.getTasksContext().getTasks().get(0);
+        assertFalse(first.getMetadata().containsKey("priority"));
+        tool.write(List.of(new TodoItem("Task", "completed", "low")), state);
+        Task updated = state.getTasksContext().getTasks().get(0);
+        assertEquals(first.getId(), updated.getId());
+        assertEquals(first.getCreatedAt(), updated.getCreatedAt());
+        assertEquals("Details", updated.getDescription());
+        assertEquals("Expected", updated.getMetadata().get("expectedOutcome"));
+        assertEquals("Working", updated.getMetadata().get("outcome"));
+        assertEquals("east", updated.getMetadata().get("region"));
+        assertEquals(Task.State.COMPLETED, updated.getState());
+        TodoItem cleared =
+                mapper.readValue(
+                        """
+                        {"content":"Task","status":"completed","description":"","outcome":"Done",
+                         "metadata":{"region":null,"expectedOutcome":null,"priority":"invalid"}}
+                        """,
+                        TodoItem.class);
+        tool.write(List.of(cleared), state);
+        Task last = state.getTasksContext().getTasks().get(0);
+        assertEquals("", last.getDescription());
+        assertEquals(Map.of("priority", "low", "outcome", "Done"), last.getMetadata());
+    }
+
+    @Test
+    void legacyJsonRetainsExistingTextAndDescription() throws Exception {
+        TodoItem item =
+                new ObjectMapper()
+                        .readValue(
+                                "{\"content\":\"Task\",\"status\":\"pending\",\"priority\":\"high\"}",
+                                TodoItem.class);
+        AgentState state = AgentState.builder().build();
+        assertEquals(
+                "1 open todo(s):\n- [ ] Task (priority: high)",
+                assertText(tool.write(List.of(item), state), ToolResultState.SUCCESS));
+        assertEquals("Task", state.getTasksContext().getTasks().get(0).getDescription());
+    }
+
+    @Test
+    void toolkitAcceptsDisplayMetadataThroughModelFacingSchema() {
+        AgentState state = AgentState.builder().build();
+        Toolkit toolkit = new Toolkit();
+        toolkit.registerTool(tool);
+        Map<String, Object> input =
+                Map.of(
+                        "todos",
+                        List.of(
+                                Map.of(
+                                        "content",
+                                        "Task",
+                                        "status",
+                                        "pending",
+                                        "description",
+                                        "Details",
+                                        "expectedOutcome",
+                                        "Expected",
+                                        "outcome",
+                                        "Working",
+                                        "metadata",
+                                        Map.of("display", Map.of("expanded", true)))));
+        ToolResultBlock result =
+                toolkit.callTool(
+                                ToolCallParam.builder()
+                                        .toolUseBlock(
+                                                ToolUseBlock.builder()
+                                                        .id("todo-call")
+                                                        .name("todo_write")
+                                                        .input(input)
+                                                        .build())
+                                        .runtimeContext(
+                                                RuntimeContext.builder().agentState(state).build())
+                                        .build())
+                        .block();
+        assertText(result, ToolResultState.SUCCESS);
+        Task task = state.getTasksContext().getTasks().get(0);
+        assertEquals("Details", task.getDescription());
+        assertEquals(Map.of("expanded", true), task.getMetadata().get("display"));
     }
 
     private static String assertText(ToolResultBlock result, ToolResultState expected) {
