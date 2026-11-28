@@ -407,6 +407,39 @@ class ProjectAwareOverlayTest {
             assertEquals("hello", r.fileData().content());
         }
 
+        /**
+         * The project layer this overlay writes to is namespace-scoped, so reads have to consult
+         * it before the shared project: otherwise the write succeeds at {@code <project>/u1/...}
+         * while every read looks at {@code <project>/...} and reports the file missing.
+         */
+        @Test
+        void projectWrite_isReadableBackAtTheKeyItUsed() throws IOException {
+            assertTrue(nsOverlay.write(nsRc, "src/App.java", "class App {}").isSuccess());
+
+            assertTrue(
+                    nsOverlay.exists(nsRc, "src/App.java"),
+                    "the project write layer is missing from the read view");
+            ReadResult read = nsOverlay.read(nsRc, "src/App.java", 0, 10);
+            assertTrue(read.isSuccess(), () -> "read failed: " + read.error());
+            assertEquals("class App {}", read.fileData().content());
+            assertTrue(
+                    nsOverlay.ls(nsRc, "src").entries().stream()
+                            .anyMatch(e -> e.path().equals("src/App.java")),
+                    "ls() lost the project write: " + nsOverlay.ls(nsRc, "src").entries());
+            assertFalse(
+                    nsOverlay.grep(nsRc, "class App", "src", null).matches().isEmpty(),
+                    "grep() lost the project write");
+            assertFalse(
+                    nsOverlay.glob(nsRc, "**/*.java", "src").matches().isEmpty(),
+                    "glob() lost the project write");
+
+            // The shared project stays readable where the caller has no copy of its own.
+            Files.writeString(
+                    project.resolve("README.md"), "shared readme", StandardCharsets.UTF_8);
+            ReadResult shared = nsOverlay.read(nsRc, "README.md", 0, 10);
+            assertTrue(shared.isSuccess(), () -> "shared read failed: " + shared.error());
+        }
+
         @Test
         void edit_absolutePath_copiesProjectOriginalToWorkspace() throws IOException {
             Files.createDirectories(project.resolve("src"));

@@ -24,12 +24,56 @@ import java.nio.charset.CharacterCodingException;
 import java.nio.charset.CharsetDecoder;
 import java.nio.charset.CodingErrorAction;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.LinkOption;
+import java.nio.file.Path;
 import java.util.Set;
 
 /**
  * Shared utility functions for filesystem implementations.
  */
 public final class FilesystemUtils {
+
+    /**
+     * Comparable key for a listed entry: separators unified, leading {@code ./} and leading or
+     * trailing slashes dropped. Layers spell the same entry differently -- a virtual layer reports
+     * {@code /src/}, a namespaced one {@code src/} -- so merging on the raw spelling lists one entry
+     * twice and never lets the upper layer win.
+     */
+    public static String entryKey(String path) {
+        String key = path == null ? "" : path.replace('\\', '/');
+        while (key.startsWith("./")) {
+            key = key.substring(2);
+        }
+        while (key.startsWith("/")) {
+            key = key.substring(1);
+        }
+        while (key.endsWith("/")) {
+            key = key.substring(0, key.length() - 1);
+        }
+        return key;
+    }
+
+    /**
+     * Resolves {@code path} to where it lands on disk, through the nearest existing ancestor, so
+     * a file that does not exist yet still resolves through a linked directory. Symbolic links are
+     * followed and casing matches the on-disk form. {@code null} when nothing along it resolves.
+     */
+    public static Path physicalPath(Path path) {
+        Path absolute = path.toAbsolutePath().normalize();
+        Path existing = absolute;
+        while (existing != null && !Files.exists(existing, LinkOption.NOFOLLOW_LINKS)) {
+            existing = existing.getParent();
+        }
+        if (existing == null) {
+            return null;
+        }
+        try {
+            return existing.toRealPath().resolve(existing.relativize(absolute));
+        } catch (java.io.IOException e) {
+            return null;
+        }
+    }
 
     private FilesystemUtils() {}
 
