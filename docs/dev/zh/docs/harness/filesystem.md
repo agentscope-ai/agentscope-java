@@ -14,6 +14,12 @@ en_link: /dev/en/docs/harness/filesystem
 - 共享存储 —— 多副本 / 多 pod 共享同一份长期记忆；
 - 沙箱 —— 文件与命令都在隔离容器里执行，跨调用恢复同一份工作区。
 
+## 条件文本写入
+
+`AbstractFilesystem.atomicTextFile(rc, path, inheritLower)` 提供 UTF-8 读取和 `compareAndSet(expected, updated)`。文件不存在时读取返回 `null`，与空文件不同；预期内容已过期时返回 `false`。`inheritLower` 控制 overlay 首次写入前是否读取下层内容。本地文件使用操作系统文件锁和原子替换，远程文件要求 `BaseStore` 支持版本写入。不支持的后端会报错，不退回无保护写入。
+
+记忆追加使用这套协议。共享同一文件的写者须遵守同一协议；外部编辑器、shell 写入及归档移动不属于该事务。自定义文件系统须为自己的存储后端实现 `atomicTextFile`。
+
 ## 三种声明式模式
 
 在 `HarnessAgent.Builder` 上用 `filesystem(...)` 三选一（不调就是默认模式 3）：

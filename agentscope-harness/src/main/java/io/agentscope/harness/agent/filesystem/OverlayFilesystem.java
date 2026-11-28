@@ -28,6 +28,7 @@ import io.agentscope.harness.agent.filesystem.model.LsResult;
 import io.agentscope.harness.agent.filesystem.model.ReadResult;
 import io.agentscope.harness.agent.filesystem.model.WriteResult;
 import io.agentscope.harness.agent.filesystem.sandbox.AbstractSandboxFilesystem;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -54,6 +55,35 @@ import java.util.Map;
  * </ul>
  */
 public class OverlayFilesystem implements AbstractFilesystem {
+
+    @Override
+    public AtomicTextFile atomicTextFile(RuntimeContext rc, String path, boolean inheritLower) {
+        AtomicTextFile target = upper.atomicTextFile(rc, path, inheritLower);
+        if (!inheritLower) return target;
+        return new AtomicTextFile() {
+            private String inherited() {
+                if (!lower.exists(rc, path)) return null;
+                FileDownloadResponse downloaded = lower.downloadFiles(rc, List.of(path)).get(0);
+                if (!downloaded.isSuccess() || downloaded.content() == null)
+                    throw new IllegalStateException(
+                            "Cannot read overlay lower file " + path + ": " + downloaded.error());
+                return new String(downloaded.content(), StandardCharsets.UTF_8);
+            }
+
+            @Override
+            public String read() {
+                String content = target.read();
+                return content == null ? inherited() : content;
+            }
+
+            @Override
+            public boolean compareAndSet(String expected, String updated) {
+                if (target.read() != null) return target.compareAndSet(expected, updated);
+                return java.util.Objects.equals(expected, inherited())
+                        && target.compareAndSet(null, updated);
+            }
+        };
+    }
 
     @Override
     public io.agentscope.core.journal.AtomicJournalStorage journalStorage(RuntimeContext rc) {

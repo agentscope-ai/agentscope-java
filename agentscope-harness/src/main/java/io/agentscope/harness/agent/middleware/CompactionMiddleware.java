@@ -36,6 +36,7 @@ import io.agentscope.core.util.ExceptionUtils;
 import io.agentscope.core.util.JsonException;
 import io.agentscope.core.util.JsonUtils;
 import io.agentscope.harness.agent.context.LearnedContextWindows;
+import io.agentscope.harness.agent.memory.MemoryConfig;
 import io.agentscope.harness.agent.memory.MemoryFlushManager;
 import io.agentscope.harness.agent.memory.compaction.CompactionConfig;
 import io.agentscope.harness.agent.memory.compaction.ConversationCompactor;
@@ -94,6 +95,7 @@ public class CompactionMiddleware implements HarnessRuntimeMiddleware {
     private final CompactionConfig config;
     private final LearnedContextWindows learnedWindows;
     private final boolean memoryEnabled;
+    private final MemoryConfig memoryConfig;
 
     public CompactionMiddleware(
             WorkspaceManager workspaceManager, Model model, CompactionConfig config) {
@@ -115,11 +117,29 @@ public class CompactionMiddleware implements HarnessRuntimeMiddleware {
             CompactionConfig config,
             LearnedContextWindows learnedWindows,
             boolean memoryEnabled) {
+        this(
+                workspaceManager,
+                model,
+                config,
+                learnedWindows,
+                memoryEnabled,
+                MemoryConfig.defaults());
+    }
+
+    /** Carries the caller's memory settings into the flush this middleware may trigger. */
+    public CompactionMiddleware(
+            WorkspaceManager workspaceManager,
+            Model model,
+            CompactionConfig config,
+            LearnedContextWindows learnedWindows,
+            boolean memoryEnabled,
+            MemoryConfig memoryConfig) {
         this.workspaceManager = workspaceManager;
         this.model = model;
         this.config = config;
         this.learnedWindows = learnedWindows;
         this.memoryEnabled = memoryEnabled;
+        this.memoryConfig = memoryConfig;
     }
 
     /** Narrow declaration: subclasses overriding more hooks must extend this set. */
@@ -254,7 +274,8 @@ public class CompactionMiddleware implements HarnessRuntimeMiddleware {
                                                                     config.isFlushBeforeCompact())
                                                             .build(),
                                                     learnedWindows,
-                                                    memoryEnabled);
+                                                    memoryEnabled,
+                                                    memoryConfig);
                                     return forced.prepareCandidate(
                                                     agent,
                                                     ctx,
@@ -427,7 +448,12 @@ public class CompactionMiddleware implements HarnessRuntimeMiddleware {
                             new ConversationCompactor(
                                     compactModel,
                                     memoryEnabled
-                                            ? new MemoryFlushManager(workspaceManager, compactModel)
+                                            ? new MemoryFlushManager(
+                                                    workspaceManager,
+                                                    compactModel,
+                                                    memoryConfig.flushPrompt(),
+                                                    memoryConfig.admission(),
+                                                    memoryConfig.flushTimeout())
                                             : null,
                                     tokenCounter,
                                     toolResultTokenCounter);

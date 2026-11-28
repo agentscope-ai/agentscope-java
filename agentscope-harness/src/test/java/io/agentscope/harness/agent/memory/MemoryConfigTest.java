@@ -38,6 +38,18 @@ class MemoryConfigTest {
         assertEquals(MemoryConfig.DEFAULT_CONSOLIDATION_MIN_GAP, cfg.consolidationMinGap());
         assertEquals(MemoryConfig.DEFAULT_DAILY_FILE_RETENTION_DAYS, cfg.dailyFileRetentionDays());
         assertEquals(MemoryConfig.FlushMode.ALWAYS, cfg.flushTrigger().mode());
+        assertEquals(Duration.ofMinutes(2), cfg.flushTimeout());
+    }
+
+    @Test
+    void flushTimeoutMustBePositive() {
+        for (Duration invalid : new Duration[] {null, Duration.ZERO, Duration.ofSeconds(-1)})
+            assertThrows(
+                    IllegalArgumentException.class,
+                    () -> MemoryConfig.builder().flushTimeout(invalid));
+        assertEquals(
+                Duration.ofSeconds(3),
+                MemoryConfig.builder().flushTimeout(Duration.ofSeconds(3)).build().flushTimeout());
     }
 
     @Test

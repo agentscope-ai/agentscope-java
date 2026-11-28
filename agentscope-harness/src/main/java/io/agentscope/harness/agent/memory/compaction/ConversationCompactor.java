@@ -57,8 +57,9 @@ import reactor.core.publisher.Mono;
  *   <li><b>Check trigger</b> — token count or message count exceeds threshold</li>
  *   <li><b>Determine cutoff</b> — choose a recent tail by the "keep" budget, preserve tool-call
  *       pairs, and carry the latest user input forward verbatim.</li>
- *   <li><b>Memory flush</b> (optional) — extract long-term memories from the prefix via
- *       {@link MemoryFlushManager#flushMemories}</li>
+ *   <li><b>Memory flush</b> (optional, legacy only) — extract long-term memories from the prefix
+ *       via {@link MemoryFlushManager#flushMemories}; native execution journals the originals and
+ *       extracts them incrementally instead</li>
  *   <li><b>Summarize</b> — one LLM call to distill the prefix into a structured summary</li>
  *   <li><b>Rebuild</b> — return {@code [summaryUserMsg] + preservedTail}</li>
  * </ol>
@@ -132,6 +133,8 @@ public class ConversationCompactor {
             String agentId,
             String sessionId) {
         var recorder = InvocationRecorder.from(rc);
+        if (recorder != null && conversationMessages != null)
+            recorder.captureMessages(conversationMessages);
         int beforeMsgCount = conversationMessages == null ? 0 : conversationMessages.size();
         long beforeTokenCount = tokenCounter.applyAsLong(conversationMessages);
         boolean triggered =
@@ -304,9 +307,11 @@ public class ConversationCompactor {
                 cutoff,
                 tail.size());
 
-        // Step 2: Flush long-term memories only from newly compacted raw messages (best-effort).
+        // Legacy execution extracts before replacement; native execution consumes its journal.
         Mono<Void> flushStep =
-                config.isFlushBeforeCompact() && flushManager != null
+                config.isFlushBeforeCompact()
+                                && flushManager != null
+                                && InvocationRecorder.from(rc) == null
                         ? flushManager
                                 .flushMemories(rc, flushInput)
                                 .doOnSuccess(v -> log.debug("Memory flush before compaction done"))

@@ -42,6 +42,16 @@ import java.util.Map;
  * should pass {@link RuntimeContext#empty()}.
  */
 public interface AbstractFilesystem {
+    /**
+     * Optional conditional text updates. {@code inheritLower} enables overlay reads from lower
+     * layers; disable it for private progress files.
+     */
+    default AtomicTextFile atomicTextFile(
+            RuntimeContext context, String path, boolean inheritLower) {
+        throw new UnsupportedOperationException(
+                "Filesystem does not support atomic text updates: " + getClass().getName());
+    }
+
     /** Optional durable atomic storage capability. No silent fallback to local or unversioned writes. */
     default io.agentscope.core.journal.AtomicJournalStorage journalStorage(RuntimeContext context) {
         throw new UnsupportedOperationException(

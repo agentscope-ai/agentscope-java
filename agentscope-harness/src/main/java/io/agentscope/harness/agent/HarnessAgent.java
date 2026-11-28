@@ -3079,7 +3079,9 @@ public class HarnessAgent implements Agent, AutoCloseable {
                                 effectiveFlushPrompt,
                                 memoryConfig.flushTrigger(),
                                 effectiveIsolationScope,
-                                periodicGate));
+                                periodicGate,
+                                memoryConfig.admission(),
+                                memoryConfig.flushTimeout()));
 
                 String effectiveConsolidationPrompt =
                         memoryConfig.consolidationPrompt() != null
@@ -3115,7 +3117,8 @@ public class HarnessAgent implements Agent, AutoCloseable {
                                     compactionConfig.getModel(),
                                     compactionConfig,
                                     learnedWindows,
-                                    memoryEnabled);
+                                    memoryEnabled,
+                                    memoryConfig);
                     inner.middleware(compactionHook.overflowRecovery());
                 }
             }
