@@ -158,6 +158,7 @@ env:
 | 方法 | 关掉的是 |
 |------|---------|
 | `disableWorkspaceContext()` | 工作区指令和参考材料加载（`AGENTS.md` / `MEMORY.md` / `knowledge/`） |
+| `disableKnowledgeContext()` | `## Domain Knowledge` 引导、`knowledge/KNOWLEDGE.md` 内容与 `Knowledge files:` 文件目录。与 `disableWorkspaceContext()` 不同，此开关保留 `AGENTS.md`、`MEMORY.md` 与记忆工具 |
 | `disableMemoryHooks()` | 记忆 flush + 后台维护；同时去掉 Persistence 段里「对话结束自动抽取」的文案。与 `disableMemoryTools()` 一起用时，也不再注入 `HARNESS_CONTEXT` 中的 memory 材料（`MEMORY.md`）。只在 `enableLongTermMemory()` 之后有意义 |
 | `disableMemoryTools()` | `memory_search` / `memory_get` / `memory_save` / `thread_search` 工具；同时去掉 Memory Recall 与依赖这些工具的 Persistence 引导。`memory_*` 在未开启长期记忆时本就不注册；Thread 工具则始终可单独关掉 |
 | `disableSubagents()` | 整个子 agent 子系统 |
