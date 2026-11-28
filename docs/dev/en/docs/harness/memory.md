@@ -62,6 +62,11 @@ Flush (path 1) is triggered at three different moments:
 
 All three sites share the **same** `flushPrompt`, so customizing it changes all three.
 
+Set it through `HarnessAgent.builder().memory(MemoryConfig.builder().flushPrompt(...).build())`.
+Pre-compaction extraction uses this prompt for both threshold-triggered compaction and
+context-overflow recovery, with either `call()` or `streamEvents()`. Leaving it unset uses
+`MemoryFlushManager.DEFAULT_FLUSH_PROMPT`; it does not change the compaction summary prompt.
+
 Per-call long-term memory flush runs in the background; pre-compaction flush belongs to the compaction step. Native Thread journal commits at execution boundaries: it is not a background copy, and failure to commit required facts stops further execution.
 
 Flush appends extracted text only after the complete extraction stream finishes normally. Explicit output-limit termination such as `length`, output containing tool blocks even when mixed with text, empty output, `NO_REPLY`, model errors and cancellation do not append partial text to the daily ledger. A missing finish reason remains accepted for older providers that do not report it. If useful facts were not saved, retrieve them from the conversation history and save the confirmed facts explicitly rather than treat a partial extraction as durable memory.

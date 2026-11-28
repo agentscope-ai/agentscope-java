@@ -94,6 +94,7 @@ public class CompactionMiddleware implements HarnessRuntimeMiddleware {
     private final CompactionConfig config;
     private final LearnedContextWindows learnedWindows;
     private final boolean memoryEnabled;
+    private final String flushPrompt;
 
     public CompactionMiddleware(
             WorkspaceManager workspaceManager, Model model, CompactionConfig config) {
@@ -115,11 +116,26 @@ public class CompactionMiddleware implements HarnessRuntimeMiddleware {
             CompactionConfig config,
             LearnedContextWindows learnedWindows,
             boolean memoryEnabled) {
+        this(workspaceManager, model, config, learnedWindows, memoryEnabled, null);
+    }
+
+    /**
+     * @param flushPrompt system prompt for pre-compaction memory extraction; {@code null} uses
+     *     {@link MemoryFlushManager#DEFAULT_FLUSH_PROMPT}
+     */
+    public CompactionMiddleware(
+            WorkspaceManager workspaceManager,
+            Model model,
+            CompactionConfig config,
+            LearnedContextWindows learnedWindows,
+            boolean memoryEnabled,
+            String flushPrompt) {
         this.workspaceManager = workspaceManager;
         this.model = model;
         this.config = config;
         this.learnedWindows = learnedWindows;
         this.memoryEnabled = memoryEnabled;
+        this.flushPrompt = flushPrompt;
     }
 
     /** Narrow declaration: subclasses overriding more hooks must extend this set. */
@@ -254,7 +270,8 @@ public class CompactionMiddleware implements HarnessRuntimeMiddleware {
                                                                     config.isFlushBeforeCompact())
                                                             .build(),
                                                     learnedWindows,
-                                                    memoryEnabled);
+                                                    memoryEnabled,
+                                                    flushPrompt);
                                     return forced.prepareCandidate(
                                                     agent,
                                                     ctx,
@@ -427,7 +444,8 @@ public class CompactionMiddleware implements HarnessRuntimeMiddleware {
                             new ConversationCompactor(
                                     compactModel,
                                     memoryEnabled
-                                            ? new MemoryFlushManager(workspaceManager, compactModel)
+                                            ? new MemoryFlushManager(
+                                                    workspaceManager, compactModel, flushPrompt)
                                             : null,
                                     tokenCounter,
                                     toolResultTokenCounter);

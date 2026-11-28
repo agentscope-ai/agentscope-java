@@ -61,6 +61,10 @@ Flush（路径 1）会在以下三个时机被触发：
 
 这三处用的是 **同一份** `flushPrompt`，定制后三处行为一致。
 
+通过 `HarnessAgent.builder().memory(MemoryConfig.builder().flushPrompt(...).build())` 设置。
+无论使用 `call()` 还是 `streamEvents()`，达到阈值触发压缩和上下文溢出恢复时的预提取都会使用这份提示词。
+未设置时使用 `MemoryFlushManager.DEFAULT_FLUSH_PROMPT`；该配置不改变压缩摘要的提示词。
+
 每轮结束后的长期记忆 Flush 在后台执行；压缩前 Flush 属于压缩步骤。原生 Thread 日志 在执行边界提交，不能把它当作异步日志副本：关键事实提交失败会阻止继续执行。
 
 Flush 只在完整的提炼流正常结束后追加提取的文字。明确因输出上限终止（如 `length`）、包含工具块的输出（即使混有文字）、空输出、`NO_REPLY`、模型异常和取消都不会把部分文字追加到日流水账。旧 provider 未报告 finish reason 时仍兼容接受。若有用事实未被保存，应从对话历史取回，并显式保存已确认的事实，不要把部分提炼结果当成持久记忆。
