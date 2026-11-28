@@ -37,7 +37,9 @@ import java.util.Set;
  *   <li>Trigger at 80,000 characters (~20 K tokens at 4 chars/token)</li>
  *   <li>Preview: first + last 2,000 characters of the original output</li>
  *   <li>Eviction path prefix: {@code large_tool_results} (relative to the workspace)</li>
- *   <li>Excluded tools: filesystem read/write/edit + memory tools (small or self-paginating)</li>
+ *   <li>Excluded tools: those declaring {@code @Tool(evictable = false)} (e.g. filesystem
+ *       read/write/edit and the memory tools — small or self-paginating), plus any user-configured
+ *       names</li>
  * </ul>
  */
 public class ToolResultEvictionConfig {
@@ -52,7 +54,13 @@ public class ToolResultEvictionConfig {
     public static final String DEFAULT_EVICTION_PATH = "large_tool_results";
 
     /**
-     * Tools excluded from eviction by default.
+     * Tools excluded from eviction by default in earlier releases.
+     *
+     * <p>Kept only for source compatibility. These exclusions now live on the tools themselves —
+     * the framework tools declare {@code @Tool(evictable = false)} — so exclusion follows the
+     * tool's own declaration instead of its name, and a custom tool that happens to share a
+     * name is no longer silently exempt. The builder starts from an empty set; use {@code
+     * excludedToolNames(...)} for additional user overrides.
      *
      * <ul>
      *   <li>{@code read_file} — evicting would cause re-read loops; pagination handles size</li>
@@ -64,7 +72,11 @@ public class ToolResultEvictionConfig {
      * Shell ({@code execute}) is intentionally NOT excluded: command output can be very large.
      * {@code thread_search} is NOT excluded either: its result count is capped, but each match
      * carries a whole stored message, so a few matching tool outputs can exceed the threshold.
+     *
+     * @deprecated exclusions are declared per tool ({@code @Tool(evictable = false)}); the
+     *     builder no longer applies these names
      */
+    @Deprecated
     public static final Set<String> DEFAULT_EXCLUDED_TOOLS =
             Set.of("read_file", "write_file", "edit_file", "memory_search", "memory_get");
 
@@ -115,7 +127,7 @@ public class ToolResultEvictionConfig {
         private int maxResultChars = DEFAULT_MAX_RESULT_CHARS;
         private int previewChars = DEFAULT_PREVIEW_CHARS;
         private String evictionPath = DEFAULT_EVICTION_PATH;
-        private Set<String> excludedToolNames = DEFAULT_EXCLUDED_TOOLS;
+        private Set<String> excludedToolNames = Set.of();
 
         /** Sets the character threshold above which eviction is triggered. */
         public Builder maxResultChars(int maxResultChars) {
@@ -135,7 +147,10 @@ public class ToolResultEvictionConfig {
             return this;
         }
 
-        /** Replaces the default set of excluded tool names. */
+        /**
+         * Sets tool names that are never evicted on top of the tools' own {@code
+         * @Tool(evictable = false)} declarations; replaces any previously configured names.
+         */
         public Builder excludedToolNames(Set<String> excludedToolNames) {
             this.excludedToolNames = Set.copyOf(excludedToolNames);
             return this;

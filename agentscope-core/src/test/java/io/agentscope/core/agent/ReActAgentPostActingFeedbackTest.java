@@ -18,33 +18,43 @@ package io.agentscope.core.agent;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.test.MockModel;
 import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.event.AgentResultEvent;
+import io.agentscope.core.event.RequestStopEvent;
+import io.agentscope.core.event.ToolResultEndEvent;
 import io.agentscope.core.hook.Hook;
 import io.agentscope.core.hook.HookEvent;
 import io.agentscope.core.hook.PostActingEvent;
 import io.agentscope.core.message.GenerateReason;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.message.ToolCallState;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolResultState;
 import io.agentscope.core.message.ToolUseBlock;
+import io.agentscope.core.middleware.ActingInput;
 import io.agentscope.core.middleware.MiddlewareBase;
 import io.agentscope.core.middleware.ModelCallInput;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.permission.PermissionContextState;
 import io.agentscope.core.permission.PermissionDecision;
+import io.agentscope.core.state.InMemoryAgentStateStore;
 import io.agentscope.core.tool.ToolBase;
 import io.agentscope.core.tool.ToolCallParam;
+import io.agentscope.core.tool.ToolSuspendException;
 import io.agentscope.core.tool.Toolkit;
+import io.agentscope.core.tool.ToolkitConfig;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.EnumSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Consumer;
 import java.util.function.Function;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -223,6 +233,559 @@ class ReActAgentPostActingFeedbackTest {
         assertFalse(
                 model.getRecordedMessages().get(0).stream()
                         .anyMatch(m -> m.hasContentBlocks(ToolResultBlock.class)));
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void middlewareStopPersistsTheWholeExecutedBatchInCallOrder(boolean streaming) {
+        MockModel model =
+                batchModel(
+                        List.of(
+                                call("first", "fixture"),
+                                call("missing", "absent"),
+                                call("last", "fixture")));
+        AtomicInteger executions = new AtomicInteger();
+        Toolkit toolkit = new Toolkit();
+        toolkit.registerAgentTool(
+                fixture(
+                        executions,
+                        p ->
+                                Mono.just(
+                                        ToolResultBlock.success(
+                                                "output-" + p.getToolUseBlock().getId()))));
+        InMemoryAgentStateStore store = new InMemoryAgentStateStore();
+        RuntimeContext ctx = RuntimeContext.builder().userId("u").sessionId("acting-stop").build();
+        List<String> hooks = new ArrayList<>();
+        try (ReActAgent agent =
+                ReActAgent.builder()
+                        .name("assistant")
+                        .model(model)
+                        .toolkit(toolkit)
+                        .stateStore(store)
+                        .middleware(stopAfterActing())
+                        .hook(
+                                hook(
+                                        event -> {
+                                            hooks.add(event.getToolUse().getId());
+                                            event.stopAgent(); // Must not cancel later
+                                            // hooks/writes or override the
+                                            // reason.
+                                        }))
+                        .build()) {
+            Msg result = invokeRun(agent, ctx, streaming);
+            assertEquals(GenerateReason.MIDDLEWARE_STOP_REQUESTED, result.getGenerateReason());
+            assertEquals(List.of("first", "missing", "last"), hooks);
+            List<ToolResultBlock> persisted = allResults(agent.getAgentState(ctx).getContext());
+            assertEquals(
+                    List.of("first", "missing", "last"),
+                    persisted.stream().map(ToolResultBlock::getId).toList());
+            assertEquals(
+                    List.of(
+                            ToolResultState.SUCCESS,
+                            ToolResultState.ERROR,
+                            ToolResultState.SUCCESS),
+                    persisted.stream().map(ToolResultBlock::getState).toList());
+            assertEquals(
+                    "output-first", ((TextBlock) persisted.get(0).getOutput().get(0)).getText());
+            assertEquals(
+                    "Error: Tool not found: absent",
+                    ((TextBlock) persisted.get(1).getOutput().get(0)).getText());
+            assertEquals(
+                    "output-last", ((TextBlock) persisted.get(2).getOutput().get(0)).getText());
+            assertEquals(3, result.getContentBlocks(ToolResultBlock.class).size());
+            assertEquals(1, model.getCallCount(), "no extra reasoning or retry on stop");
+            assertEquals(2, executions.get());
+        }
+        // A new agent loads the persisted slot, not the previous agent's in-memory context.
+        try (ReActAgent restored =
+                ReActAgent.builder()
+                        .name("assistant")
+                        .model(model)
+                        .toolkit(toolkit)
+                        .stateStore(store)
+                        .build()) {
+            List<Msg> loaded = restored.getAgentState(ctx).getContext();
+            assertEquals(
+                    List.of("first", "missing", "last"),
+                    allResults(loaded).stream().map(ToolResultBlock::getId).toList());
+            assertTrue(
+                    io.agentscope.core.util.MessageUtils.extractPendingToolCalls(
+                                    loaded, "assistant")
+                            .isEmpty());
+            assertEquals(2, executions.get(), "loading state must not repeat side effects");
+        }
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void middlewareStopReturnsPostHookFactsIncludingMessageRewritesAndNormalizedState(
+            boolean streaming) {
+        MockModel model =
+                batchModel(
+                        List.of(
+                                call("block", "fixture"),
+                                call("message", "fixture"),
+                                call("running", "fixture")));
+        AtomicInteger executions = new AtomicInteger();
+        Toolkit toolkit = new Toolkit();
+        toolkit.registerAgentTool(
+                fixture(executions, p -> Mono.just(ToolResultBlock.text("raw output"))));
+        List<String> hooks = new ArrayList<>();
+        RuntimeContext ctx = RuntimeContext.builder().sessionId("rewritten-stop").build();
+        try (ReActAgent agent =
+                ReActAgent.builder()
+                        .name("assistant")
+                        .model(model)
+                        .toolkit(toolkit)
+                        .middleware(stopAfterActing())
+                        .hook(
+                                hook(
+                                        event -> {
+                                            String id = event.getToolUse().getId();
+                                            hooks.add(id);
+                                            if ("block".equals(id)) {
+                                                event.setToolResult(
+                                                        ToolResultBlock.error("rewritten failure"));
+                                                event.stopAgent();
+                                            } else if ("message".equals(id)) {
+                                                event.setToolResultMsg(
+                                                        event.getToolResultMsg()
+                                                                .withContent(
+                                                                        List.of(
+                                                                                TextBlock.builder()
+                                                                                        .text(
+                                                                                                "message-only"
+                                                                                                    + " annotation")
+                                                                                        .build(),
+                                                                                ToolResultBlock
+                                                                                        .error(
+                                                                                                "explicit"
+                                                                                                    + " message")
+                                                                                        .withIdAndName(
+                                                                                                id,
+                                                                                                "fixture"))));
+                                                event.setToolResult(
+                                                        ToolResultBlock.success(
+                                                                "ignored block rewrite"));
+                                            }
+                                        }))
+                        .build()) {
+            Msg result;
+            if (streaming) {
+                List<AgentEvent> events =
+                        agent.streamEvents(List.of(), ctx)
+                                .collectList()
+                                .block(Duration.ofSeconds(10));
+                assertNotNull(events);
+                result =
+                        events.stream()
+                                .filter(AgentResultEvent.class::isInstance)
+                                .map(AgentResultEvent.class::cast)
+                                .map(AgentResultEvent::getResult)
+                                .findFirst()
+                                .orElseThrow();
+                assertTrue(
+                        events.get(events.size() - 1)
+                                instanceof io.agentscope.core.event.AgentEndEvent);
+            } else {
+                result = agent.call(List.of(), ctx).block(Duration.ofSeconds(10));
+            }
+            assertNotNull(result);
+            assertEquals(GenerateReason.MIDDLEWARE_STOP_REQUESTED, result.getGenerateReason());
+            assertEquals(
+                    List.of("block", "message", "running"),
+                    hooks,
+                    "an early post-hook stop does not truncate completed siblings");
+            List<Msg> written =
+                    agent.getAgentState(ctx).getContext().stream()
+                            .filter(m -> m.hasContentBlocks(ToolResultBlock.class))
+                            .toList();
+            assertEquals(3, written.size());
+            List<io.agentscope.core.message.ContentBlock> expected = new ArrayList<>();
+            for (int i = 0; i < written.size(); i++) {
+                expected.add(result.getContentBlocks(ToolUseBlock.class).get(i));
+                expected.addAll(written.get(i).getContent());
+            }
+            assertEquals(
+                    expected,
+                    result.getContent(),
+                    "terminal carries the effective messages written to history, not raw blocks");
+            assertEquals(
+                    List.of(ToolResultState.ERROR, ToolResultState.ERROR, ToolResultState.SUCCESS),
+                    allResults(written).stream().map(ToolResultBlock::getState).toList());
+            assertEquals(
+                    "Error: rewritten failure",
+                    ((TextBlock) allResults(written).get(0).getOutput().get(0)).getText());
+            assertEquals(
+                    "Error: explicit message",
+                    ((TextBlock) allResults(written).get(1).getOutput().get(0)).getText());
+            assertEquals(
+                    "raw output",
+                    ((TextBlock) allResults(written).get(2).getOutput().get(0)).getText());
+            assertEquals(3, executions.get());
+            assertEquals(1, model.getCallCount());
+        }
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void stopOnResultEventKeepsCompletedFactsBeforeBatchSettlement(boolean streaming) {
+        MockModel model =
+                batchModel(List.of(call("completed", "fixture"), call("unfinished", "fixture")));
+        AtomicInteger invocations = new AtomicInteger();
+        Toolkit toolkit = new Toolkit(ToolkitConfig.builder().parallel(false).build());
+        toolkit.registerAgentTool(
+                fixture(
+                        invocations,
+                        p ->
+                                "completed".equals(p.getToolUseBlock().getId())
+                                        ? Mono.just(ToolResultBlock.error("completed failure"))
+                                        : Mono.never()));
+        MiddlewareBase earlyStop =
+                new MiddlewareBase() {
+                    @Override
+                    public Set<ExtensionPoint> activePoints() {
+                        return Set.of(ExtensionPoint.ON_ACTING);
+                    }
+
+                    @Override
+                    public Flux<AgentEvent> onActing(
+                            Agent agent,
+                            RuntimeContext ctx,
+                            ActingInput input,
+                            Function<ActingInput, Flux<AgentEvent>> next) {
+                        return next.apply(input)
+                                .takeUntil(ToolResultEndEvent.class::isInstance)
+                                .concatWith(
+                                        Flux.just(
+                                                new RequestStopEvent(
+                                                        "stop on first result",
+                                                        GenerateReason.MIDDLEWARE_STOP_REQUESTED)));
+                    }
+                };
+        List<String> hooks = new ArrayList<>();
+        InMemoryAgentStateStore store = new InMemoryAgentStateStore();
+        RuntimeContext ctx = RuntimeContext.builder().sessionId("early-stop").build();
+        try (ReActAgent agent =
+                ReActAgent.builder()
+                        .name("assistant")
+                        .model(model)
+                        .toolkit(toolkit)
+                        .stateStore(store)
+                        .middleware(earlyStop)
+                        .hook(hook(event -> hooks.add(event.getToolUse().getId())))
+                        .build()) {
+            Msg result = invokeRun(agent, ctx, streaming);
+            assertEquals(GenerateReason.MIDDLEWARE_STOP_REQUESTED, result.getGenerateReason());
+            assertEquals(List.of("completed"), hooks);
+            List<ToolResultBlock> facts = allResults(agent.getAgentState(ctx).getContext());
+            assertEquals(1, facts.size());
+            assertEquals("completed", facts.get(0).getId());
+            assertEquals(ToolResultState.ERROR, facts.get(0).getState());
+            assertEquals(
+                    "Error: completed failure",
+                    ((TextBlock) facts.get(0).getOutput().get(0)).getText());
+            assertEquals(1, result.getContentBlocks(ToolResultBlock.class).size());
+            assertTrue(invocations.get() <= 2, "no invocation is retried");
+            assertEquals(1, model.getCallCount());
+        }
+        try (ReActAgent restored =
+                ReActAgent.builder()
+                        .name("assistant")
+                        .model(model)
+                        .toolkit(toolkit)
+                        .stateStore(store)
+                        .build()) {
+            List<Msg> loaded = restored.getAgentState(ctx).getContext();
+            assertEquals(
+                    List.of("completed"),
+                    allResults(loaded).stream().map(ToolResultBlock::getId).toList());
+            assertEquals(
+                    List.of("unfinished"),
+                    io.agentscope.core.util.MessageUtils.extractPendingToolCalls(
+                                    loaded, "assistant")
+                            .stream()
+                            .map(ToolUseBlock::getId)
+                            .toList());
+        }
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void middlewareStopDoesNotConvertErrorsOrSuspensionsIntoSuccess(boolean streaming) {
+        for (boolean stop : List.of(false, true)) {
+            MockModel model =
+                    batchModel(
+                            List.of(
+                                    call("success", "fixture"),
+                                    call("error", "fixture"),
+                                    call("pending", "fixture")));
+            AtomicInteger executions = new AtomicInteger();
+            Toolkit toolkit = new Toolkit();
+            toolkit.registerAgentTool(
+                    fixture(
+                            executions,
+                            p ->
+                                    switch (p.getToolUseBlock().getId()) {
+                                        case "error" ->
+                                                Mono.just(ToolResultBlock.error("actual failure"));
+                                        case "pending" ->
+                                                Mono.error(
+                                                        new ToolSuspendException(
+                                                                "external result needed"));
+                                        default -> Mono.just(ToolResultBlock.success("executed"));
+                                    }));
+            List<String> hooks = new ArrayList<>();
+            ReActAgent.Builder builder =
+                    ReActAgent.builder()
+                            .name("assistant")
+                            .model(model)
+                            .toolkit(toolkit)
+                            .hook(hook(event -> hooks.add(event.getToolUse().getId())));
+            if (stop) {
+                builder.middleware(stopAfterActing());
+            }
+            try (ReActAgent agent = builder.build()) {
+                RuntimeContext ctx = RuntimeContext.builder().sessionId("suspension").build();
+                Msg result = invokeRun(agent, ctx, streaming);
+                assertEquals(
+                        stop
+                                ? GenerateReason.MIDDLEWARE_STOP_REQUESTED
+                                : GenerateReason.TOOL_SUSPENDED,
+                        result.getGenerateReason());
+                assertEquals(3, executions.get());
+                assertEquals(List.of("success", "error"), hooks);
+                List<ToolResultBlock> history = allResults(agent.getAgentState(ctx).getContext());
+                assertEquals(
+                        List.of(ToolResultState.SUCCESS, ToolResultState.ERROR),
+                        history.stream().map(ToolResultBlock::getState).toList());
+                assertEquals(
+                        "Error: actual failure",
+                        ((TextBlock) history.get(1).getOutput().get(0)).getText());
+                List<ToolUseBlock> pending =
+                        io.agentscope.core.util.MessageUtils.extractPendingToolCalls(
+                                agent.getAgentState(ctx).getContext(), "assistant");
+                assertEquals(
+                        List.of("pending"), pending.stream().map(ToolUseBlock::getId).toList());
+                ToolResultBlock suspended =
+                        result.getContentBlocks(ToolResultBlock.class).stream()
+                                .filter(block -> "pending".equals(block.getId()))
+                                .findFirst()
+                                .orElseThrow();
+                assertEquals(ToolResultState.SUSPENDED, suspended.getState());
+                assertEquals(
+                        "external result needed",
+                        suspended.getMetadata().get(ToolResultBlock.METADATA_SUSPEND_REASON));
+                assertEquals(1, model.getCallCount());
+            }
+        }
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void permissionAskingKeepsTheAssistantRequestAndDoesNotExecute(boolean streaming) {
+        MockModel model = batchModel(List.of(call("ask", "approval")));
+        AtomicInteger executions = new AtomicInteger();
+        Toolkit toolkit = new Toolkit();
+        toolkit.registerAgentTool(
+                new ToolBase(
+                        ToolBase.builder()
+                                .name("approval")
+                                .description("Fake approval tool")
+                                .inputSchema(Map.of("type", "object"))) {
+                    @Override
+                    public Mono<PermissionDecision> checkPermissions(
+                            Map<String, Object> input, PermissionContextState context) {
+                        return Mono.just(PermissionDecision.ask("confirm"));
+                    }
+
+                    @Override
+                    public Mono<ToolResultBlock> callAsync(ToolCallParam param) {
+                        executions.incrementAndGet();
+                        return Mono.just(ToolResultBlock.success("never execute"));
+                    }
+                });
+        List<String> hooks = new ArrayList<>();
+        InMemoryAgentStateStore store = new InMemoryAgentStateStore();
+        RuntimeContext ctx = RuntimeContext.builder().sessionId("approval").build();
+        try (ReActAgent agent =
+                ReActAgent.builder()
+                        .name("assistant")
+                        .model(model)
+                        .toolkit(toolkit)
+                        .stateStore(store)
+                        .hook(hook(event -> hooks.add(event.getToolUse().getId())))
+                        .build()) {
+            Msg result = invokeRun(agent, ctx, streaming);
+            assertEquals(GenerateReason.PERMISSION_ASKING, result.getGenerateReason());
+            assertEquals(
+                    List.of("ask"),
+                    result.getContentBlocks(ToolUseBlock.class).stream()
+                            .map(ToolUseBlock::getId)
+                            .toList());
+            assertTrue(result.getContentBlocks(ToolResultBlock.class).isEmpty());
+            assertTrue(allResults(agent.getAgentState(ctx).getContext()).isEmpty());
+            assertEquals(
+                    ToolCallState.ASKING,
+                    result.getContentBlocks(ToolUseBlock.class).get(0).getState());
+            assertTrue(hooks.isEmpty());
+            assertEquals(0, executions.get());
+            assertEquals(1, model.getCallCount());
+        }
+        try (ReActAgent restored =
+                ReActAgent.builder()
+                        .name("assistant")
+                        .model(model)
+                        .toolkit(toolkit)
+                        .stateStore(store)
+                        .build()) {
+            List<ToolUseBlock> pending =
+                    io.agentscope.core.util.MessageUtils.extractPendingToolCalls(
+                            restored.getAgentState(ctx).getContext(), "assistant");
+            assertEquals(1, pending.size());
+            assertEquals(ToolCallState.ASKING, pending.get(0).getState());
+        }
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void eventObserversRunInRegistrationOrderAndCannotChangeToolFacts(boolean streaming) {
+        List<String> observed = new ArrayList<>();
+        AtomicInteger optedOut = new AtomicInteger();
+        MiddlewareBase throwingObserver =
+                new MiddlewareBase() {
+                    @Override
+                    public void onAgentEvent(Agent agent, RuntimeContext ctx, AgentEvent event) {
+                        assertNotNull(
+                                event.getExecution(), "production identity precedes notification");
+                        assertNotNull(ctx.getAgentState());
+                        if (event instanceof ToolResultEndEvent) {
+                            observed.add("first");
+                            throw new IllegalStateException("observer failure");
+                        }
+                    }
+                };
+        MiddlewareBase secondObserver =
+                new MiddlewareBase() {
+                    @Override
+                    public void onAgentEvent(Agent agent, RuntimeContext ctx, AgentEvent event) {
+                        if (event instanceof ToolResultEndEvent) {
+                            observed.add("second");
+                        }
+                    }
+                };
+        MiddlewareBase disabledObserver =
+                new MiddlewareBase() {
+                    @Override
+                    public Set<ExtensionPoint> activePoints() {
+                        return Set.of();
+                    }
+
+                    @Override
+                    public void onAgentEvent(Agent agent, RuntimeContext ctx, AgentEvent event) {
+                        optedOut.incrementAndGet();
+                    }
+                };
+        try (ReActAgent agent =
+                builder(toolThenDoneModel())
+                        .middlewares(List.of(throwingObserver, disabledObserver, secondObserver))
+                        .build()) {
+            Msg result = invoke(agent, streaming);
+            assertEquals("done", result.getTextContent());
+            assertFeedback(
+                    toolResult(agent.getAgentState().getContext()),
+                    "raw output",
+                    ToolResultState.SUCCESS);
+        }
+        assertEquals(
+                List.of("first", "second"),
+                observed,
+                "notifications are once per produced result, with isolated failures");
+        assertEquals(0, optedOut.get());
+    }
+
+    private static ToolBase fixture(
+            AtomicInteger executions, Function<ToolCallParam, Mono<ToolResultBlock>> result) {
+        return new ToolBase(
+                ToolBase.builder()
+                        .name("fixture")
+                        .description("Fake fixture")
+                        .inputSchema(Map.of("type", "object"))
+                        .readOnly(true)
+                        .returnDirect(true)) {
+            @Override
+            public Mono<PermissionDecision> checkPermissions(
+                    Map<String, Object> input, PermissionContextState context) {
+                return Mono.just(PermissionDecision.allow("fixture"));
+            }
+
+            @Override
+            public Mono<ToolResultBlock> callAsync(ToolCallParam param) {
+                executions.incrementAndGet();
+                return result.apply(param);
+            }
+        };
+    }
+
+    private static ToolUseBlock call(String id, String name) {
+        return ToolUseBlock.builder().id(id).name(name).input(Map.of()).content("{}").build();
+    }
+
+    private static MockModel batchModel(List<ToolUseBlock> calls) {
+        return new MockModel(
+                messages ->
+                        List.of(ChatResponse.builder().content(new ArrayList<>(calls)).build()));
+    }
+
+    private static MiddlewareBase stopAfterActing() {
+        return new MiddlewareBase() {
+            @Override
+            public Set<ExtensionPoint> activePoints() {
+                return Set.of(ExtensionPoint.ON_ACTING);
+            }
+
+            @Override
+            public Flux<AgentEvent> onActing(
+                    Agent agent,
+                    RuntimeContext ctx,
+                    ActingInput input,
+                    Function<ActingInput, Flux<AgentEvent>> next) {
+                return next.apply(input)
+                        .concatWith(
+                                Flux.just(
+                                        new RequestStopEvent(
+                                                "fixture stop",
+                                                GenerateReason.MIDDLEWARE_STOP_REQUESTED)));
+            }
+        };
+    }
+
+    private static Msg invokeRun(ReActAgent agent, RuntimeContext ctx, boolean streaming) {
+        Msg result;
+        RunOutcome outcome;
+        if (streaming) {
+            AgentRun<AgentEvent> run = agent.prepareRun(List.of(), ctx);
+            result =
+                    run.stream()
+                            .ofType(AgentResultEvent.class)
+                            .map(AgentResultEvent::getResult)
+                            .single()
+                            .block(Duration.ofSeconds(10));
+            outcome = run.outcome().block(Duration.ofSeconds(10));
+        } else {
+            AgentRun<Msg> run = agent.prepareCall(List.of(), ctx);
+            result = run.stream().single().block(Duration.ofSeconds(10));
+            outcome = run.outcome().block(Duration.ofSeconds(10));
+        }
+        assertNotNull(result);
+        assertEquals(RunOutcome.fromResult(result), outcome);
+        return result;
+    }
+
+    private static List<ToolResultBlock> allResults(List<Msg> messages) {
+        return messages.stream()
+                .flatMap(msg -> msg.getContentBlocks(ToolResultBlock.class).stream())
+                .toList();
     }
 
     private static Hook hook(Consumer<PostActingEvent> handler) {

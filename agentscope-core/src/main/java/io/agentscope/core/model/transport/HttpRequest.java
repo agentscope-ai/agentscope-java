@@ -31,12 +31,14 @@ public class HttpRequest {
     private final String method;
     private final Map<String, String> headers;
     private final String body;
+    private final boolean includeSseDoneMarker;
 
     private HttpRequest(Builder builder) {
         this.url = builder.url;
         this.method = builder.method;
         this.headers = Collections.unmodifiableMap(new HashMap<>(builder.headers));
         this.body = builder.body;
+        this.includeSseDoneMarker = builder.includeSseDoneMarker;
     }
 
     /**
@@ -75,6 +77,11 @@ public class HttpRequest {
         return body;
     }
 
+    /** Whether the SSE decoder should deliver its terminal marker to the protocol adapter. */
+    public boolean includesSseDoneMarker() {
+        return includeSseDoneMarker;
+    }
+
     /**
      * Create a new builder for HttpRequest.
      *
@@ -92,6 +99,7 @@ public class HttpRequest {
         private String method = "GET";
         private final Map<String, String> headers = new HashMap<>();
         private String body;
+        private boolean includeSseDoneMarker;
 
         /**
          * Set the request URL.
@@ -146,6 +154,12 @@ public class HttpRequest {
          */
         public Builder body(String body) {
             this.body = body;
+            return this;
+        }
+
+        /** Retains the final SSE marker for model protocols that validate completion. */
+        public Builder includeSseDoneMarker(boolean include) {
+            this.includeSseDoneMarker = include;
             return this;
         }
 

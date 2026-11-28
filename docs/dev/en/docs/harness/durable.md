@@ -97,6 +97,110 @@ runtime context and Durable workspace. The Runtime owns the durable lease and ta
 ThreadJournal owns native Agent history; Durable scheduling remains in the Durable Runtime.
 The namespace maps to `RuntimeContext.userId`; identity is invocation-scoped.
 
+### Run model reasoning in a Durable Worker
+
+Use `withModelExecutions` to hand off reasoning from a ReAct or Harness Agent to a
+`ModelWorker`. The Agent saves its recovery position before submitting a model
+request. The Worker claims a lease for the request's route, runs the provider and
+commits output in ordered batches. The first committed batch makes the original
+Turn runnable. Any compatible Runtime can replay committed batches and read
+subsequent ones using the same Session, Thread, Turn and model call IDs. Later
+Turns on the same Thread remain queued until the current Turn settles.
+
+For a local deployment, use SQLite for both records and output bytes:
+
+```java
+var records = JdbcRecordStore.sqlite(Path.of("./durable.db"));
+var objects = new RecordObjectStore(records);
+var wakeups = Wakeups.local();
+var backend = new TransactionalSessionBackend(records, objects).withWakeups(wakeups);
+var executions = new TransactionalModelExecutionStore(
+        records, new ObjectModelOutputStore(objects), wakeups);
+var adapter = AgentScopeAdapter.forReAct(
+        binding -> ReActAgent.builder().name("assistant").model(model), Map.of())
+        .withModelExecutions(executions, "reasoning");
+var runtime = DurableRuntime.builder().backend(backend)
+        .harness("assistant", "definition-v1", adapter).build();
+var worker = new ModelWorker(executions, "reasoning", ModelExecutor.using(name -> model));
+worker.start();
+runtime.start();
+```
+
+Keep the Worker and Runtime running for the lifetime of their hosts and close
+them at shutdown. The resolver passed to `ModelExecutor.using` resolves the
+requested model name using the Worker's provider configuration.
+
+In a distributed deployment, share a transactional record database, such as
+PostgreSQL through `JdbcRecordStore`, across the Session backend, Agent and Worker.
+The database stores the execution state, output sequence and storage references.
+Supply a shared `S3ObjectStore` or `OssObjectStore` to both
+`TransactionalSessionBackend` and `ObjectModelOutputStore` so handed-off model
+chunks and their journal content live in object storage. Direct calls use the
+Journal's size-based storage rule. Use `RocketMqWakeups` to notify
+Workers and Runtimes of changes. They also check durable state periodically to
+recover from delayed or lost notifications.
+
+A custom `ModelOutputStore` can use a replayable message broker as its output
+store. Its `write` returns a stable locator, such as a topic, partition and offset.
+Its `read` must be able to retrieve that exact batch from another instance until
+the Turn no longer needs to resume. The runtime commits the locator only after
+the write succeeds. If a Worker loses its lease after starting a provider call,
+the execution settles as `UNKNOWN` and the Runtime can handle that outcome
+without automatically issuing a second provider call.
+
+### Dispatch reasoning to a model queue
+
+Register `adapter.withQueuedModel(publisher)` as the harness for this definition. Both
+ReAct and Harness factories support this option. The publisher receives a
+`QueuedModelRequest` with the target Thread and Turn, call ID, model, prepared
+messages, tool schemas and generation options. Acknowledge only after the broker accepts the
+request. Recovery can repeat a send whose acknowledgement was lost, using the same call ID,
+and may trigger another provider request. Workers use their configured provider credentials.
+Harness memory and finalization model calls keep their own execution path.
+
+The adapter commits the prepared request and Agent recovery position before dispatch. Once
+dispatched, the Turn waits without holding its Runtime invocation. Replies resume the same
+Turn on any compatible Runtime that shares the backend. Later Turns on the same Thread
+can be submitted and remain queued behind it. To wake the waiting Turn, the reply consumer
+uses the original request's Thread and Turn:
+
+```java
+var turn = runtime.getSession(request.thread().session())
+        .getThread(request.thread().threadId()).getTurn(request.turnId());
+String deliveryId = java.util.UUID.randomUUID().toString();
+boolean accepted = QueuedModelRequest.begin(turn, request.callId(), deliveryId);
+```
+
+Call begin once before generation. If accepted is false, acknowledge the MQ delivery and return. Every frame from an accepted generation uses the same delivery ID.
+
+```java
+var signal = QueuedModelRequest.reply(
+        request.callId(), deliveryId, sequence, chatResponse, last);
+boolean stored = QueuedModelRequest.accept(turn, signal);
+```
+
+A false stored result is an authoritative ignored reply and can also be acknowledged.
+
+Start at sequence zero. A complete response uses a single terminal frame. For streaming,
+use consecutive sequence numbers and mark the last frame terminal. A terminal frame may
+omit the response if all chunks were sent earlier. Use `QueuedModelRequest.failure` for
+a terminal error. Acknowledge each broker delivery after the signal is persisted. Retrying
+the same frame uses the same signal ID and payload. The first frame wakes a compatible
+host, which displays ordered deltas and advances the ReAct loop after the terminal frame.
+
+By default, the adapter uses a five-minute idle timeout, initially measured from broker acceptance.
+Each newly consumed ordered frame renews the persisted deadline. Replaying frames after a Runtime replacement does not renew it.
+Set a different budget with `withQueuedModel(publisher, Duration.ofMinutes(15))`. The deadline
+is persisted across Runtime replacements. At the deadline, a missing frame fails the Turn with
+the call ID and expected sequence. A replacement can still process replies already available.
+If a collector dies after publishing a partial reply, its replacement replays the persisted
+chunks with the same message ID and attempt and a higher presentation revision. Clients replace
+the previous partial text when that revision starts.
+Malformed reply frames fail the Turn before later chunks can trigger tools.
+With a configured fallback model, a provider failure before the first response can dispatch the
+fallback as a separate call. A replacement host resumes that call. Suspending the host, an invalid
+frame, or a failure after the first response does not trigger another model dispatch.
+
 ## Reconnect and control tasks
 
 ### Reopen an existing task
@@ -132,7 +236,6 @@ new constraints to the running investigation with `steer`:
 var investigation = conversation.submit("investigate-1", "Investigate the export timeout");
 var summary = conversation.submit("summary-1", "Summarize the investigation");
 investigation.steer("constraint-1", "Focus on database access; do not change the API");
-summary.cancel("cancel-summary-1");
 ```
 
 The summary waits behind the investigation in the primary Thread. A WAITING or PAUSED
@@ -141,10 +244,32 @@ a safe boundary; they do not interrupt a model mid-token or undo a dispatched to
 `withdraw` can remove input only before it is applied. If completion wins a race with
 a control, re-read the Turn rather than assuming the control took effect.
 
+Read the queued Turn's input revision before editing or redirecting its input.
+Both operations require the revision observed by the caller.
+
+```java
+var thread = conversation.mainThread();
+var edit = thread.editQueuedInput(
+        "edit-summary-1", summary.turnId(), summary.status().inputRevision(),
+        Input.text("Include only findings from the database investigation"));
+thread.convertQueuedToSteer(
+        "redirect-summary-1", summary.turnId(), investigation.turnId(), edit.inputRevision());
+```
+
+The edit preserves the message ID and history position. Conversion changes the source Turn
+to `CONVERTED` and uses the same message ID in the target Turn's model context. A stale input
+revision, a started source, or a finished target returns a conflict. Retry an uncertain
+response with the same operation ID and payload.
+
 A control receipt confirms admission. Observe `signal.applied` or the resulting Turn
-state to confirm processing. A queued Turn can be cancelled immediately. Cancellation
-of active work requires settlement of external operations; accepted cancellation does
-not prove a remote process has stopped.
+state to confirm processing. A queued Turn can be cancelled immediately. When active
+work is cancelled, the Brain can interrupt an in-flight direct Executor call and then
+settles that execution using the provider's observed outcome. Unconfirmed effects
+remain `UNKNOWN`.
+
+The AgentScope adapter closes planned calls that never started and preserves results
+received before cancellation. Result hooks run before those results are carried into
+the next Turn. The first committed decision determines the terminal Turn outcome.
 
 ### Pause and resume deliberately
 
@@ -195,7 +320,22 @@ instance. The backend holds authoritative state; queries never start an Agent.
 | Thread | `submit(requestId, Input)`, `getTurn(turnId)`, `listTurns(cursor, limit)`, `history(cursor, limit)`, `view()`, `close()` |
 | Turn | `status()`, `result()`, `await(timeout)`, `steer`, `inject`, `withdraw`, `cancel`, `pendingInteractions`, `respond`, `pause`, `resume` |
 | Session / Thread / Turn | `listEvents(cursor, limit)`, `streamEvents(options)`, `subscribeEvents(options, listener)`; filtering retains the Session sequence |
-| Thread | `checkpoints(after, limit)`, `restore(position, expectedPosition, requestId)`, `fork(position, targetThreadKey, requestId)` |
+| Thread | `checkpoints(after, limit)`, `restore(position, expectedPosition, requestId)`, `fork(position, targetThreadKey, requestId)`, `forkSession(position, targetSessionKey, requestId)` |
+
+To branch from a retained, settled checkpoint into an independent Session, use the
+source Thread and a new Session key in the same namespace.
+
+```java
+var branch = conversation.mainThread().forkSession(
+        checkpointPosition, new SessionKey("demo", "alternate"), "fork-alternate");
+branch.submit("alternate-1", "Explore another approach.");
+```
+
+The new Session, its main Thread and the restored baseline become visible together.
+The main Thread inherits the source binding and checkpointed private resources.
+Retry with the same source checkpoint, target key and request ID after a lost reply.
+A destination created by another request causes a conflict. Use `fork` for a Thread
+in an existing Session. External files and Sandbox lifetimes follow their configured stores.
 
 DurableTurn represents a persistent logical task. Native AgentRun is one in-process
 invocation sharing runId with Durable's RunView; StepView records its steps. Recovery
@@ -400,15 +540,56 @@ do not consume Core/Harness `AgentEvent`, `JournalEvent` or the internal live tr
 
 `agentscope-durable-adapter-claude` maps completed messages and opted-in live message deltas to the
 Claude Managed Agents event shape. Enable `EventDeltaType.MESSAGE`, then pass a
-`ClaudeEventStreamSink` to `SessionEventStream.forEach`. `agentscope-durable-adapter-agui` maps the
-same typed stream to the existing AG-UI 1.0 `AguiEvent` types through
-`DurableAguiEventStreamSink`. These artifacts are event adapters, not complete hosted HTTP APIs;
-authentication, resource routes and transport framing remain application concerns.
+`ClaudeEventStreamSink` to `SessionEventStream.forEach`. To submit a Claude `user.message` with text
+or URL/base64 images, call `new ClaudeSessionEvents(session).sendMessage(requestId, event)` with an
+authorized Session handle. The same request ID retries the original admission. The returned
+event has the persisted message ID and a null `processed_at` at admission. The event stream emits
+the message with its processing time after the AgentScope native checkpoint applies the input.
+For `user.tool_confirmation`, pass a projected `agent.tool_use` ID as `tool_use_id` to
+`sendToolConfirmation(requestId, event)`. It sends `allow` or `deny` to the original
+Thread and Turn through native approval. The stream reports the response with its original ID once
+the response is applied. Pass `user.custom_tool_result` to `sendToolResult` to supply text
+or images and an optional `is_error` for a manual tool request.
+Pass `user.interrupt` to `sendInterrupt`. Supply `session_thread_id` to target one Thread,
+or omit it to target the started Turn of every open Thread. Retries keep the originally selected
+Turns. Use `session.cancelActiveTurns(requestId, threadId)` for the same operation from Java.
+The stream reports the interrupt's processing time when all selected Turns have settled.
+Use `listEvents(page, limit, types)` to read Claude-shaped history in commit order. The returned
+`next_page` token retains the first page's history boundary and event-type selection.
+`agentscope-durable-adapter-agui` maps the same typed stream to the existing AG-UI 1.0
+`AguiEvent` types through `DurableAguiEventStreamSink`.
+
+### Claude event endpoints
+
+Mount `new ClaudeSessionEventHandler(runtime, recordStore, authorizer)` at `/v1/sessions/` on a
+JDK `HttpServer`. The authorizer resolves the requested Session into the caller's authorized
+namespace. The handler serves `POST /v1/sessions/{id}/events`, `GET /v1/sessions/{id}/events`
+and `GET /v1/sessions/{id}/events/stream` under the `managed-agents-2026-04-01` beta.
+Use a persistent shared `RecordStore` across API replicas to preserve batch identity. Supply
+`Idempotency-Key` to retry a send batch. The handler runs its events in order, and completed
+items keep their original receipts if a later item fails.
+
+History supports `order=asc` or `order=desc`, `types[]` and `created_at` bounds on processing time.
+Session status reports `requires_action` with the IDs of unanswered manual tool events when the
+open Threads are waiting for those responses. A fresh stream starts from the current high-water
+mark. Reconnect with the last committed SSE `id` in `Last-Event-ID`. Opt in to message previews
+with `event_deltas[]=agent.message`. Preview frames have no resume ID.
+[Claude event streams](https://platform.claude.com/docs/en/managed-agents/events-and-streaming)
+
+### Preview transport for separate hosts
 
 The default `LiveEvents.local()` bus connects producers and observers only inside one Runtime
 assembly. A split Brain/API deployment must provide the same shared `LiveEvents` transport to both
 sides when live previews are required. Durable execution, history and final results remain correct
 when that transport is absent or loses an event.
+
+With Redis Pub/Sub, use `RedisLiveEvents` from `agentscope-extensions-redis`. Configure both
+Runtimes through `DurableRuntime.builder().liveEvents(...)` with the same application-specific
+channel. Pass `new RedisLiveEvents(channel, redisConnection.sync(), null)` on Brain and
+`new RedisLiveEvents(channel, null, redisPubSubConnection)` on each API host. Use a dedicated
+Pub/Sub connection and restrict channel access to trusted application roles. The transport
+drops previews when its buffers fill or a payload exceeds 64 KiB. Close the Runtime and
+transport before closing the application-owned connections.
 
 
 ## Hands Workers and RocketMQ execution
@@ -446,6 +627,26 @@ Use `executionStore(customStore)` only for a custom Hands ledger. Brain continue
 | HTTP sidecar / service | HttpExecutor → ExecutorHandler → `worker.localExecutor()` → WorkerRuntime |
 | MQ Worker service | RocketMqRemoteExecutor → command queue → RocketMqWorker → execution updates |
 
+Brain sends one RocketMQ dispatch message for all approved tools from the same
+model action going to the same Hands route. Hands records each tool under its
+original `executionId` before acknowledging the message. Redelivery fills any
+missing records and reuses admitted work. Cancellation, queries, output and
+results use individual execution IDs. Brain delivers the completed results to the
+model in its original call order.
+
+Use the MQ Worker's `authorize` callback to validate command identity and scope.
+Use `authorizeStart` on RocketMqWorker or WorkerRuntime for current per-tool
+business permissions. Return `Optional.empty()` to allow a new start, or a
+display-safe reason to produce a durable `DENIED` result. Siblings use their own
+permission decisions. Authorization errors use the Worker retry policy. Recovery
+and cancellation of an already attempted execution keep the original identity.
+
+Use `worker.statistics(limit)` to distinguish calls ready to start, leased
+calls, calls awaiting provider evidence, and work deferred by retry. Compare
+`oldestReadyAgeMillis` with the publication backlog age to locate delays before
+start or after result commits. When `truncated` is true, the counts and ages
+describe the inspected subset.
+
 All Worker deployments reuse the same execution engine. Thread isolation does not
 provide process or Sandbox isolation. Brain and Hands may use separate databases;
 replicas of one pool share its ledger. Per-container SQLite files are not shared
@@ -477,24 +678,51 @@ worker.start();
 The Brain transport ledger and ObjectStore automatically reuse the SessionBackend's local storage;
 Runtime binds, starts, and closes the remote Executor. Users do not repeat the store, backend, or
 route name. The Worker host supplies its execution ledger, tool Executor, and authorization policy.
-Polling defaults to 100ms; Brain retries unconfirmed commands or queries admitted
-work every 5s. Configure pollInterval/retryInterval as needed. Adapters internally
-manage pending publications, inbox deduplication, repair and consumer callbacks.
+Committed commands, Worker admissions, and outbox events trigger delivery by execution.
+Indexed repair defaults to two seconds. Brain retries unconfirmed commands after
+`retryInterval` (five seconds by default). It requests replay immediately for a known
+sequence gap or after `responseTimeout` without new progress (30 seconds by default).
+On `RocketMqWorker`, configure ledger discovery with `discoveryInterval`, event outbox
+repair with `publicationRepairInterval`, and provider retry delay with `providerPollInterval`.
 Runtime and Worker close MQ clients created from ClientConfiguration. Stores, SessionBackend, and
 tool providers remain host-owned.
 
-The default `durable` namespace and `hands` route derive commands, controls, and updates topics plus
-their consumer groups. Both sides require no physical topic configuration. Keeping controls separate
-prevents execute backlog from delaying cancellation and query. Updates carry execution state and
-results. Each capability pool has its own command routing and consumer group;
-pool replicas share the group and ledger. Brain result consumers use another group,
-whose replicas share Brain delivery records and SessionBackend. Separate deployments
-with independent databases use separate namespaces.
-The host provisions the derived topics/groups, ACLs, TLS, credentials and retention. Worker
-authorization runs before ledger access.
+Provision LITE parents and individual Shared consumer groups on a LiteTopic-capable Broker
+and Cluster Proxy. The default MQ namespace is `durable`.
 
-Using [RocketMQ SimpleConsumer](https://rocketmq.apache.org/docs/featureBehavior/06consumertype/),
-Hands ACKs after durable admission; Brain ACKs after inbox persistence and SessionBackend
+| Parent Topic | Consumer group | LiteTopic scope |
+| --- | --- | --- |
+| `durable-turn-dispatch` | `durable-turn-runner` | Session + Thread |
+| `durable-turn-signal` | `durable-turn-signal` | Session + Thread |
+| `durable-turn-owner` | `durable-turn-owner` | Brain instance, explicit subscription |
+| `durable-hands-commands` | `durable-hands-worker` | Session |
+| `durable-hands-controls` | `durable-hands-worker-controls` | Session |
+| `durable-hands-updates` | `durable-hands-brain` | Session + execution |
+
+Replace `durable` with your deployment namespace and `hands` with the execution route.
+For each parent and group, set these attributes with the deployment's NameServer and cluster.
+Use `SUBSCRIPTION_MODE=EXPLICIT` for the owner group and `WILDCARD` for the others.
+In RocketMQ 5.5.1, omit `lite.sub.wildcard` entirely for explicit subscriptions.
+
+```sh
+mqadmin updateTopic -n "$NAMESRV" -c "$CLUSTER" -t "$PARENT" -a '+message.type=LITE'
+attributes="+lite.bind.topic=$PARENT,+lite.sub.model=Shared"
+if [ "$SUBSCRIPTION_MODE" = WILDCARD ]; then
+  attributes="$attributes,+lite.sub.wildcard=true"
+fi
+mqadmin updateSubGroup -n "$NAMESRV" -c "$CLUSTER" -g "$GROUP" -o true -m true \
+  --attributes "$attributes"
+```
+
+Configure ACLs, authentication, TLS, and retention for those resources. Replicas of a
+tool pool share its execution ledger. Brain replicas share its delivery and Session
+records. Deployments with independent databases use separate MQ namespaces.
+Worker authorization runs before ledger access.
+Keep `enableProxyAutoRenew` enabled on the Cluster Proxy. The Lite push consumer uses
+the Proxy's invisibility settings when receiving messages.
+
+With [RocketMQ LiteTopic](https://rocketmq.apache.org/docs/domainModel/03litetopic/),
+Hands acknowledges after durable admission. Brain acknowledges after inbox persistence and SessionBackend
 acceptance. Broker ACK is not tool completion. Cancellation before execution leaves
 a tombstone. Queries replay original state without creating tool effects.
 Republishing saved results never reruns tools. Scans repair failed publication and
@@ -504,18 +732,82 @@ ExecutionMessages and the Runtime-packaged schema define versions, request diges
 command/event IDs and source sequences. The inbox accepts a continuous prefix;
 duplicates are idempotent and missing events are replayed before newer events apply.
 Output pages carry byte offsets and explicit gaps, and are sealed before terminal
-publication. The MQ Executor supports output reads; provider capabilities determine
-whether bytes are available. Public SSE remains a SessionBackend projection.
+publication. Read accepted Hands bytes with `turn.toolOutput(executionId, offset)`,
+beginning at zero and following each page's next offset. Provider capabilities determine
+which bytes are available. The committed event stream records sealed ranges and gaps.
+Select `EventDeltaType.TOOL_OUTPUT` for best-effort previews of local tool text and
+Hands output. Each preview carries a Base64 byte range and has no event cursor. In
+the AG-UI adapter, run-scoped output previews use the `agentscope.tool_output_delta` custom event.
+Native SSE enables selected previews with a comma-separated `deltas` query parameter,
+such as `deltas=MESSAGE,TOOL_OUTPUT`.
 Arbitrary external effects are not exactly-once; unqueryable outcomes remain UNKNOWN.
 
 Wire envelopes are limited to 1 MiB. Configure the same accessible ObjectStore via
 `objects(...)` on both MQ adapters to externalize larger envelopes. Object references
 are scoped and digest-checked; inaccessible or invalid payloads are not acknowledged.
 
-RocketMqWakeups remains a separate session/subscription hint transport. SSE reads
-public SessionBackend events. MQ execution does not require RocketMqWakeups:
-single-host Brain can use local hints, and persistent scanning also repairs
-cross-process notification gaps.
+To enable the Turn channels, create a `RocketMqTurnScheduler` and pass it to
+`PostgresBackend.builder().notifications(scheduler)`, or use `backend.withWakeups(scheduler)`
+with a local backend. The execution Runtime starts the consumers. The host closes the
+scheduler after its runtimes. The backend reports this setup through
+`messageDrivenScheduling`. The database retains FIFO order and dispatch generations.
+The submitting host publishes the due dispatch after commit, including on an API-only host.
+The envelope records the Turn revision and the reason at dispatch creation. Consumers check
+the parent, LiteTopic, and message key. The backend validates the exact Turn and generation
+when claiming. The dispatch receiver renews the delivery's invisibility while the Runtime
+executes the phase. It acknowledges after the phase commits or the backend establishes that
+the delivery is obsolete. Temporary failures and capacity limits leave the delivery available
+for retry. Renewing a Turn lease reschedules recovery without changing its dispatch identity.
+Thread signals notify readers of a committed change. A Brain explicitly subscribes to its
+own owner LiteTopic. It verifies the current Turn and lease epoch before acting on a
+control hint. An active cancellation can interrupt the invocation immediately. Steer
+remains effective at the next native reasoning boundary.
+
+`DurableRuntime.Builder.repairInterval` controls fallback scanning on MQ execution hosts
+(30 seconds by default). `pollInterval` controls database discovery on other hosts.
+Session hints scope discovery to the changed Session. `releaseDelay` controls how long
+unsettled work waits after its lease is released. The scheduler arms a local timer for
+known deadlines and rereads the database when the timer fires. The durable index covers
+outstanding deadlines after outages and restarts.
+Use `RocketMqTopology.turns(namespace).subscriptions()` and
+`RocketMqTopology.route(namespace, executor).subscriptions()` to read the LITE parent topics,
+bound consumer groups and subscription modes used by the runtime. Provision those resources
+with your deployment tooling.
+
+Pass `RocketMqTurnScheduler.Options` to `create` to configure the Outbox repair interval,
+the wait before republishing an unclaimed dispatch, and separate dispatch and signal cache
+sizes. The defaults are 2 seconds, 5 seconds, and 32 messages per consumer. The fifth
+argument, `receiveWait`, sets the dispatch consumer's long-poll wait and defaults to
+1 second. Choose a value compatible with the Proxy's polling limits. Hands can set
+`RocketMqWorker.Builder.controlCacheSize` independently of its command consumer cache.
+
+During a rolling restart, take the host out of service, then call `runtime.drain(timeout)`
+for Brain and `worker.drain(timeout)` for Hands before closing their adapters and stores.
+Drain stops admission. The AgentScope adapter hands off an in-flight call at its next durable
+boundary without pausing the Turn. The replacement Brain can continue from the saved position
+subject to its persisted retry schedule.
+The Brain stops pulling new dispatches and keeps active receipts renewable while draining.
+The signal consumer and Outbox remain available until shutdown.
+Hands also waits for pending result publications. Allow time for both drain and SDK close in
+the deployment termination window. A replacement can recover work left by an expired lease.
+
+Use `runtime.schedulingStatistics()` to export Turn scheduling metrics. Scan counts are
+grouped by discovery source. Take the change in `total` over an interval to calculate scan
+QPS. `emptyRatio()` divides empty scans by completed scans, excluding failures. Claim
+counts distinguish acquired or recovered leases, empty queues, held leases, work that is
+waiting or due later, and stale dispatches. Divide each outcome's change by the change
+across all outcomes over the same interval to compute its rate. Claim errors have a
+separate counter. The discovery latency histogram measures
+milliseconds from a dispatch becoming eligible to a new lease being acquired, using the
+storage clock. Its bucket counts are per bucket and the final bucket holds values above
+the largest bound. Dispatches created before eligibility timestamps were recorded may
+have no latency sample.
+
+`activeDispatchDuplicates` counts exact duplicates of active or already queued dispatches
+on that Runtime. `scheduler.statistics()` reports Turn outbox repair scans, confirmed repair
+publications, publications skipped by the reservation check, and publication failures.
+The counters are process-local and use a fixed set of labels without Session or Turn IDs.
+Treat a source or outcome that has never occurred as zero.
 
 
 ## Choose a deployment adapter
@@ -587,6 +879,22 @@ registered on the Runtime. Native permissions run before the adapter commits a t
 intent. Native checkpoint and intent are saved together. A completed external result
 wakes the original Turn; application is recorded with the native checkpoint containing it.
 
+When a model asks for several tools in one step, approved Hands calls keep separate
+execution IDs and may finish in any order. Once the batch is complete, the next model
+call receives the results in the original tool-call order, including denials and failures.
+
+Use `turn.getToolCall(callId)` for native calls and `turn.getToolExecution(executionId)`
+for routed executions. A routed call can be looked up by either ID. The view reports
+the last committed status, progress and result application. `DISPATCHED` records a handoff
+attempt. `RUNNING` reflects a running observation. The original Run/Step and application
+Run/Step can differ after a takeover.
+
+The view includes the registered executor's capabilities once dispatch begins. For queued
+executors, these describe the transport's controls. An outcome can stay `UNKNOWN` when the
+provider cannot confirm it. When the view reports retained output, use
+`turn.toolOutput(executionId, offset)` starting at zero. Continue from each page's
+`nextOffset`. A gap identifies output that is unavailable.
+
 `agentscope-extensions-durable-sandbox` supplies `DirectSandboxExecutor` for an existing,
 pinned `HarnessSandbox` connection. Its POSIX/Python operation journal keeps detached
 commands discoverable after the Agent process exits. `agentscope-durable-worker`
@@ -605,6 +913,35 @@ Custom adapters can commit `WaitCondition(key, absoluteDeadlineMillis)`; zero me
 After observing PAUSED, use `turn.resume(requestId, expectedRevision)` with that state's revision.
 It removes explicit pause only: outstanding approval, tool and signal conditions still apply,
 and terminal tasks cannot restart. Generic extension signals require an `x.*` key.
+
+### Tool policies and result hooks
+
+Use `AgentScopeAdapter.withToolHooks(new AgentScopeToolHooks(version, timeout, policies,
+normalizers))` to configure ordered policies and result normalizers for an adapter. Keep the hook
+version and configuration consistent across hosts that can run the same pinned Agent definition.
+Policies can replace input arguments, deny a call or require approval. The adapter freezes the
+decision and effective arguments in the native checkpoint before approval or execution. Native
+permissions still apply. A policy error or timeout denies the call.
+
+Normalizers process completed local, Hands and manually supplied tool results before they enter
+model context. The receipt stores the normalized content against the execution and raw result
+digest, so recovery can reuse it. Hands keeps the original result in its execution ledger.
+Normalizer failures use the Runtime's invocation recovery policy. Run policy and normalization
+callbacks without external side effects.
+
+For external delivery, create a `CommittedEventOutbox` with a Session handle, a stable
+subscription ID, an event filter and a persistent `RecordStore`. Call `capture(limit)` to save an
+event page and its cursor atomically. Call `deliver(receiver)` on an application worker. A failure
+schedules a retry with the original event ID. Use that ID for receiver deduplication and keep the
+delivery timeout within its configured lease. If the uncaptured history has expired, capture
+reports cursor expiry so the application can choose its resynchronization policy.
+To send HTTP webhooks, pass a `DurableWebhookPublisher` from the Durable HTTP extension to
+`deliver`. It sends the event ID, type, resource IDs, sequence, cursor and commit time
+with Standard Webhooks headers and an HMAC-SHA256 signature. Fetch the current
+resource through the authorized API, or read event history after the receiver's
+last applied cursor to catch up. Verify the signature and timestamp before
+deduplicating by `webhook-id`, which stays stable across retries.
+[Standard Webhooks verification](https://www.standardwebhooks.com/verify)
 
 ## Invocation failures and automatic recovery
 
@@ -709,8 +1046,11 @@ can be sparse; `EventProjection(session, filter)` accepts them while whole-Sessi
 continues to check sequence continuity.
 
 Callbacks run serially per subscription on dedicated observer workers, separate from
-Agent execution. Hints coalesce, polling repairs missed hints, and callback/backend
-failures retry after the Runtime's `pollInterval`. Only successful callback return
+Agent execution. Session-change hints wake both `await()` and event subscriptions.
+`observationInterval` controls periodic reads for missed hints. The default is two seconds
+with notifications and 100 milliseconds for polling-only transports.
+`observationRetryInterval` controls retries after a failed event read or callback.
+Only successful callback return
 advances the cursor. The Runtime `onError` handler receives failures; the subscription
 exposes `cursor()`, `lastFailure()` and `isClosed()`. Failed error reporting does not
 stop retries. `observerParallelism` controls shared callback capacity (default 2);
@@ -749,9 +1089,21 @@ Claims, native checkpoints, result intake and global discovery are privileged op
 
 ## Diagnose a task that is not advancing
 
-Start with `turn.status()`, `turn.pendingInteractions()` and the Thread's ordered
-`listTurns` result. Inspect `turn.listRuns` and `turn.listSteps` for invocation details;
-a stopped Run is not necessarily a terminal Turn.
+Start with `turn.progress()`, or `getTurnProgress` over HTTP. The result contains
+the current Turn, the Session cursor, whether a lease is held, and typed blockers
+from one transaction. `QUEUE_HEAD` names the earlier Turn. `APPROVAL` and
+`MANUAL_TOOL_RESULT` identify interactions for `turn.respond`. Use the observed
+revision to resume a `PAUSED` Turn. Execution wait blockers identify the routed
+execution, and `NATIVE_TOOL_RECONCILIATION` identifies the native call awaiting
+host evidence. Timed blockers report their deadline or retry time.
+
+The same read returns the most recently committed verification for each criterion
+and subject version. A configured Harness verifier publishes
+`task.verification.completed` with its outcome and pinned evidence version. The
+verification view survives event retention. The Turn's execution status remains
+independent of the verification outcome.
+
+Inspect `turn.listRuns` and `turn.listSteps` for invocation details.
 
 | Observation | What to check or do |
 | --- | --- |
@@ -821,9 +1173,27 @@ Brain still receives and applies the result through the original path. Hosts mus
 the operator and independently verify the fact. No HTTP/MQ command or model tool is exposed
 automatically; requesting cancellation does not prove the operation stopped.
 
+For native Harness tools, a dispatched call with an unknown outcome parks its Turn.
+The same Thread's next Turn stays queued, even if cancellation is requested. After verifying
+every unresolved call in that Turn, use the AgentScope adapter's `NativeToolReconciliation`
+to submit the original call IDs and terminal results from an authorized host.
+
+```java
+var result = ToolResultBlock.text("verified output")
+        .withIdAndName(callId, toolName)
+        .withState(ToolResultState.SUCCESS);
+new NativeToolReconciliation(requestId, evidenceRef, List.of(result))
+        .submit(backend, threadKey, turnId);
+```
+
+Reuse the request ID and evidence when retrying submission. An acquired worker checks that
+the evidence covers the unresolved calls, applies the verified results at the native checkpoint,
+and continues the Turn or settles its pending cancellation. Resumption reuses the verified results
+and runs only subsequent work.
+
 The neutral protocol rejects duplicate JSON keys, multiple root values and numbers that
 lose decimal precision when canonicalized. Encode exact large numbers as strings.
-The Java Session storage layout is format 8; prior development formats are not auto-migrated.
+The Java Session storage layout is format 21. Prior development formats are not auto-migrated.
 
 ## Frozen tools on Brain and Hands
 
@@ -961,6 +1331,36 @@ and `make -C agentscope-durable independent` for isolated dependency checking, w
 requires Python 3. Real queued execution needs RocketMQ 5 services and configured topics/groups;
 `--compile-only` packages the applications without connecting to a broker or running tools.
 
+## Run the Durable acceptance tests
+
+Run the functional baseline from the repository root after changing Durable.
+
+```sh
+make -C agentscope-durable acceptance
+```
+
+The baseline exercises the Java and HTTP user APIs, session and thread isolation, turn queues,
+steering and cancellation, approvals, checkpoint forks, SSE reconnect and replay, and Brain and
+Hands recovery. The API restart test runs Durable's Worker and a local transport while a tool
+call is active. The baseline uses temporary SQLite databases and scripted models and tools. It
+runs without model keys or RocketMQ.
+
+Run the RocketMQ extension suite when changing its topology, scheduling, or transport. It uses
+a client test fixture to exercise failures such as lost replies, failed acknowledgements, and
+duplicate deliveries.
+
+```sh
+make -C agentscope-durable acceptance-rocketmq
+```
+
+Set `DURABLE_TEST_JDBC_URL` with either command to run supported JDBC cases against a PostgreSQL
+test database. The test account needs permission to create and drop schemas.
+
+```sh
+DURABLE_TEST_JDBC_URL='jdbc:postgresql://localhost:5432/durable_test?user=durable_test' \
+  make -C agentscope-durable acceptance
+```
+
 ## Durable child delegation
 
 Use delegation for child work that must survive restarts, be observed independently
@@ -992,3 +1392,44 @@ tasks in a reused Thread. Cancellation before admission stores a tombstone; a la
 The transaction rejects cross-Session targets, the parent Thread itself and Thread dependency cycles formed
 by unfinished delegations. `turn.delegated`, `tool.delegated` and `tool.delegation.cancel_requested` are common
 public events; they do not replace the actual child result or its application by the parent.
+
+### Detached jobs
+
+Use `DelegatedJobExecutor` when the parent model should continue after admission. Register it on
+the Brain with the Session backend, register the child Harness, and route the three tool schemas to
+this executor. The start target uses `DelegationExecutor.childThread(request)` as its Thread key.
+
+| Tool | Input and result |
+| --- | --- |
+| `start_job` | Application-defined child input. Returns a committed receipt with `jobId`, `child` and `status: ACCEPTED`. |
+| `get_job` | `jobId`. Returns the current child status and its available output or error. |
+| `await_job` | `jobId` and a positive `timeoutMillis`. Waits for the child's terminal outcome or reports that the wait expired. |
+
+The job ID remains valid for later Turns on the originating Thread. A replacement Brain uses the
+original wait deadline. Child completion commits the fact that makes the awaiting Turn ready.
+The waiting tool's progress includes the Job ID and deadline in epoch milliseconds.
+After admission, cancelling the caller or its wait leaves the Job running. To stop the Job,
+cancel its child Turn using the reference returned in the receipt.
+
+Publisher RuntimeExceptions represent unknown broker acceptance and use the bounded host recovery policy with the same call ID. Throw a DurableException with an explicit code for definite rejection. Reply consumers can use QueuedModelRequest.accept to persist replies and safely acknowledge late deliveries to completed or cancelling Turns. Duplicate provider billing after uncertain provider acceptance remains possible.
+
+Workers start each generation with `QueuedModelRequest.begin(turn, callId, deliveryId)`.
+Use a unique delivery ID for each replacement generation, and reuse it when retrying that
+generation's begin command. Check its boolean result before calling the provider. A false
+result means the call is sealed or the Turn has ended and the delivery can be acknowledged.
+Pass the delivery ID to the attempt-aware `reply` and `failure` overloads. The backend assigns
+begin commands a monotonic epoch inside its transaction. New attempts replace previously
+displayed partial text on the original Turn. Old-attempt replies return an ignored receipt
+and can be acknowledged, including conflicting late content. After receiving the ordered
+terminal frame, the collector atomically seals the winning attempt before allowing tool dispatch.
+A concurrent takeover forces collector recovery, and a sealed call rejects further takeovers.
+
+The Throwable failure overload classifies provider HTTP 429 and 5xx, I/O failures and timeouts
+as transient. Other HTTP statuses and unclassified errors are permanent. Workers can specify
+retryability explicitly. Transient errors consume the persisted host retry budget and dispatch
+a successor model call on the same Turn. Permanent errors retain the configured fallback
+behavior. The queue collector emits the standard model request started, usage and ended events
+through the core request observer. These events describe collector observation, and a collector
+replacement starts a new observation of persisted replies.
+
+Collectors subscribe to the configured backend wakeups before reading replies and unsubscribe on completion, failure or cancellation. Lost hints are repaired by bounded backoff polling up to one second. Beginning a worker generation keeps the Turn suspended until its first response arrives.

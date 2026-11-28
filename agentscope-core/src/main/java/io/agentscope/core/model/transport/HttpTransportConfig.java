@@ -50,6 +50,8 @@ public class HttpTransportConfig {
     private final Duration writeTimeout;
     private final int maxIdleConnections;
     private final Duration keepAliveDuration;
+    private final Duration http2PingInterval;
+    private final boolean retryOnConnectionFailure;
     private final boolean ignoreSsl;
     private final ProxyConfig proxyConfig;
     private final HttpVersion httpVersion;
@@ -63,6 +65,8 @@ public class HttpTransportConfig {
         this.writeTimeout = builder.writeTimeout;
         this.maxIdleConnections = builder.maxIdleConnections;
         this.keepAliveDuration = builder.keepAliveDuration;
+        this.http2PingInterval = builder.http2PingInterval;
+        this.retryOnConnectionFailure = builder.retryOnConnectionFailure;
         this.ignoreSsl = builder.ignoreSsl;
         this.proxyConfig = builder.proxyConfig;
         this.httpVersion = builder.httpVersion;
@@ -145,6 +149,16 @@ public class HttpTransportConfig {
         return keepAliveDuration;
     }
 
+    /** HTTP/2 connectivity check interval for OkHttp. Zero disables the check. */
+    public Duration getHttp2PingInterval() {
+        return http2PingInterval;
+    }
+
+    /** Whether the OkHttp client can recover and replay a request after connection failure. */
+    public boolean isRetryOnConnectionFailure() {
+        return retryOnConnectionFailure;
+    }
+
     /**
      * Get whether SSL certificate verification should be ignored.
      *
@@ -215,6 +229,8 @@ public class HttpTransportConfig {
         private Duration writeTimeout = DEFAULT_WRITE_TIMEOUT;
         private int maxIdleConnections = 5;
         private Duration keepAliveDuration = Duration.ofMinutes(5);
+        private Duration http2PingInterval = Duration.ZERO;
+        private boolean retryOnConnectionFailure = true;
         private boolean ignoreSsl = false;
         private ProxyConfig proxyConfig = null;
         private HttpVersion httpVersion = null;
@@ -322,6 +338,24 @@ public class HttpTransportConfig {
          */
         public Builder keepAliveDuration(Duration keepAliveDuration) {
             this.keepAliveDuration = keepAliveDuration;
+            return this;
+        }
+
+        /** Set the HTTP/2 connectivity check interval. Only OkHttp honors this setting. */
+        public Builder http2PingInterval(Duration interval) {
+            if (interval == null
+                    || interval.isNegative()
+                    || (!interval.isZero() && interval.toMillis() == 0)) {
+                throw new IllegalArgumentException(
+                        "http2PingInterval must be zero or at least 1 ms");
+            }
+            this.http2PingInterval = interval;
+            return this;
+        }
+
+        /** Configure OkHttp connection recovery. When disabled, POST bodies are single-use. */
+        public Builder retryOnConnectionFailure(boolean enabled) {
+            this.retryOnConnectionFailure = enabled;
             return this;
         }
 

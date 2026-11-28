@@ -23,16 +23,41 @@ import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import io.agentscope.core.agent.RuntimeContext;
+import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolResultState;
+import io.agentscope.core.message.ToolUseBlock;
+import io.agentscope.core.model.ExecutionConfig;
+import io.agentscope.core.tool.ToolCallParam;
+import io.agentscope.core.tool.Toolkit;
+import io.agentscope.core.tool.ToolkitConfig;
 import io.agentscope.harness.agent.subagent.task.BackgroundTask;
 import io.agentscope.harness.agent.subagent.task.TaskRepository;
+import java.time.Duration;
+import java.util.Map;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Timeout;
 
 class TaskToolTest {
     private final RuntimeContext context = RuntimeContext.empty();
     private final TaskRepository repository = mock(TaskRepository.class);
     private final TaskTool tool = new TaskTool(repository);
+
+    @Test
+    void readsFullPartialResultAndMarksDelivered() {
+        String source =
+                "status: max_iterations\ngenerate_reason: MAX_ITERATIONS\nnote: partial\nreply:\n"
+                        + "测😀试".repeat(6000);
+        var task = new BackgroundTask("large", "agent", CompletableFuture.completedFuture(source));
+        when(repository.getTask(context, null, "large")).thenReturn(task);
+
+        String output =
+                assertText(tool.taskOutput(context, "large", false, null), ToolResultState.SUCCESS);
+
+        assertTrue(output.endsWith("\nResult:\n" + source));
+        verify(repository).markDelivered(context, null, "large");
+    }
 
     @Test
     void invalidTaskIdsAreErrorsBeforeRepositoryAccess() {
@@ -73,7 +98,9 @@ class TaskToolTest {
     @Test
     void failedTaskIsReportedAsError() {
         CompletableFuture<String> failed = new CompletableFuture<>();
-        failed.completeExceptionally(new IllegalStateException("child failed"));
+        failed.completeExceptionally(
+                new IllegalStateException(
+                        "child failed", new IllegalArgumentException("invalid field")));
         BackgroundTask task = new BackgroundTask("failed", "agent", failed);
         when(repository.getTask(context, context.getSessionId(), "failed")).thenReturn(task);
 
@@ -81,6 +108,7 @@ class TaskToolTest {
                 assertText(tool.taskOutput(context, "failed", false, null), ToolResultState.ERROR);
 
         assertTrue(output.contains("Failed: child failed"));
+        assertTrue(output.endsWith("\nError:\nchild failed\nCause: invalid field"));
     }
 
     @Test
@@ -108,5 +136,42 @@ class TaskToolTest {
         } finally {
             Thread.interrupted();
         }
+    }
+
+    @Test
+    @Timeout(5)
+    void taskOutputManagesItsOwnWaitBeyondOrdinaryToolTimeout() {
+        BackgroundTask task =
+                new BackgroundTask(
+                        "late",
+                        "agent",
+                        CompletableFuture.supplyAsync(
+                                () -> "late result",
+                                CompletableFuture.delayedExecutor(200, TimeUnit.MILLISECONDS)));
+        when(repository.getTask(context, context.getSessionId(), "late")).thenReturn(task);
+        Toolkit toolkit =
+                new Toolkit(
+                        ToolkitConfig.builder()
+                                .executionConfig(
+                                        ExecutionConfig.builder()
+                                                .timeout(Duration.ofMillis(50))
+                                                .build())
+                                .build());
+        toolkit.registerTool(tool);
+        Map<String, Object> input = Map.of("task_id", "late", "block", true, "timeout", 1000);
+        ToolUseBlock toolCall =
+                ToolUseBlock.builder().id("task-output").name("task_output").input(input).build();
+
+        ToolResultBlock result =
+                toolkit.callTool(
+                                ToolCallParam.builder()
+                                        .toolUseBlock(toolCall)
+                                        .input(input)
+                                        .runtimeContext(context)
+                                        .build())
+                        .block(Duration.ofSeconds(4));
+
+        String output = assertText(result, ToolResultState.SUCCESS);
+        assertTrue(output.contains("late result"));
     }
 }

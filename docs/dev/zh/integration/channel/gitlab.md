@@ -63,3 +63,5 @@ gw.start();
 **入站：** `GitLabWebhookController` → note.id 去重 → bot 自身 note 过滤 → `GitLabInboundMapper` → 防循环 → Gateway。
 
 **出站：** `GitLabOutboundClient` 通过 GitLab Notes API 发送回复。
+
+Webhook 中的项目路径（包括 `team/subgroup/project` 这样的多级群组路径）会经过一次 URL 编码，作为 API 的项目标识。手动构造出站地址时请传入原始项目路径，不要预先进行 URL 编码。

@@ -18,28 +18,37 @@ package io.agentscope.durable.agentscope;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.clearInvocations;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doReturn;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.spy;
+import static org.mockito.Mockito.verify;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.event.TextBlockDeltaEvent;
+import io.agentscope.core.journal.InvocationRecorder;
 import io.agentscope.core.journal.JournalEvent;
 import io.agentscope.core.journal.RecordedModels;
 import io.agentscope.core.message.AssistantMessage;
+import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.ImageBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ThinkingBlock;
+import io.agentscope.core.message.ToolExecutionDetails;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolResultState;
 import io.agentscope.core.message.ToolUseBlock;
@@ -57,10 +66,13 @@ import io.agentscope.core.permission.PermissionBehavior;
 import io.agentscope.core.permission.PermissionContextState;
 import io.agentscope.core.permission.PermissionMode;
 import io.agentscope.core.permission.PermissionRule;
+import io.agentscope.core.state.EvidenceBinding;
+import io.agentscope.core.state.TaskVerification;
 import io.agentscope.core.tool.ToolBase;
 import io.agentscope.core.tool.ToolCallParam;
 import io.agentscope.core.tool.Toolkit;
 import io.agentscope.core.util.JsonUtils;
+import io.agentscope.durable.DelegatedJobExecutor;
 import io.agentscope.durable.DelegationExecutor;
 import io.agentscope.durable.DurableException;
 import io.agentscope.durable.DurableJson;
@@ -68,6 +80,7 @@ import io.agentscope.durable.DurableMessages;
 import io.agentscope.durable.DurableProtocol;
 import io.agentscope.durable.DurableRuntime;
 import io.agentscope.durable.DurableTurn;
+import io.agentscope.durable.DurableTypes.BlockerKind;
 import io.agentscope.durable.DurableTypes.Commit;
 import io.agentscope.durable.DurableTypes.DelegationTarget;
 import io.agentscope.durable.DurableTypes.ExecutionRequest;
@@ -87,7 +100,10 @@ import io.agentscope.durable.DurableTypes.StepPhase;
 import io.agentscope.durable.DurableTypes.ThreadBinding;
 import io.agentscope.durable.DurableTypes.ThreadKey;
 import io.agentscope.durable.DurableTypes.ThreadSpec;
+import io.agentscope.durable.DurableTypes.ToolExecutionStatus;
+import io.agentscope.durable.DurableTypes.TurnBlocker;
 import io.agentscope.durable.DurableTypes.TurnStatus;
+import io.agentscope.durable.DurableTypes.VerificationView;
 import io.agentscope.durable.EventProjection;
 import io.agentscope.durable.EventStreamOptions;
 import io.agentscope.durable.EventStreamOptions.EventDeltaType;
@@ -98,6 +114,7 @@ import io.agentscope.durable.SessionBackend;
 import io.agentscope.durable.SessionEventClient;
 import io.agentscope.durable.SessionStreamEvent;
 import io.agentscope.durable.TransactionalSessionBackend;
+import io.agentscope.durable.TurnScheduler;
 import io.agentscope.durable.Wakeups;
 import io.agentscope.durable.codec.agentscope.AgentScopeCheckpointCodec;
 import io.agentscope.durable.codec.agentscope.AgentScopeCheckpoints;
@@ -109,6 +126,7 @@ import io.agentscope.harness.agent.filesystem.remote.RemoteFilesystem;
 import java.math.BigInteger;
 import java.nio.file.Path;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
@@ -121,6 +139,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 import java.util.function.Function;
+import java.util.stream.Collectors;
 import java.util.stream.StreamSupport;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -133,6 +152,15 @@ import reactor.core.publisher.Sinks;
 class AgentScopeAdapterTest {
     @TempDir Path directory;
     private final SessionKey key = new SessionKey("user", "session");
+
+    /**
+     * Turn-completion budget for resume/recovery awaits. 5s was breached on loaded -T1C runners
+     * while the turn kept progressing: #4204 (confirmed by a green same-commit re-run), #4191 and
+     * #4246 all failed `turn.await(5s)` after 6.7–8.5s with the turn one step from terminal.
+     * 30s is the repo's established deflake tier (#3726/#3774); happy path returns as soon as the
+     * turn completes.
+     */
+    private static final Duration TURN_DEADLINE = Duration.ofSeconds(30);
 
     static final class ScriptedModel implements Model {
         final List<List<Msg>> inputs = new CopyOnWriteArrayList<>();
@@ -458,6 +486,79 @@ class AgentScopeAdapterTest {
     }
 
     @Test
+    void receivedInputIsRetriedIfTheFirstHostStopsBeforeApplyingIt() {
+        var model = new ScriptedModel(false);
+        var adapter = adapter(model, PermissionMode.BYPASS, Map.of());
+        var thread = new ThreadKey(key, "main");
+        var received = new AtomicBoolean();
+        var stopped = new AtomicBoolean();
+        try (var storage = LocalBackend.open(directory.resolve("input-receipt"))) {
+            var failing = spy(storage);
+            doAnswer(
+                            invocation -> {
+                                Commit command = invocation.getArgument(1);
+                                if (command.journal() != null && received.get()) {
+                                    stopped.set(true);
+                                    throw new DurableException(
+                                            DurableException.Code.UNAVAILABLE,
+                                            "Stop after the first input receipt");
+                                }
+                                Object result = invocation.callRealMethod();
+                                if (command.journal() != null
+                                        && command.journal().entries().stream()
+                                                .anyMatch(
+                                                        event ->
+                                                                "input/received"
+                                                                        .equals(
+                                                                                event.path("type")
+                                                                                        .asText())))
+                                    received.set(true);
+                                return result;
+                            })
+                    .when(failing)
+                    .commit(any(), any());
+            String turnId;
+            String messageId;
+            try (var first = runtime(failing, adapter, null)) {
+                var turn =
+                        first.createSession(key, "agent").submit("initial", "persist this input");
+                turnId = turn.turnId();
+                messageId = turn.status().inputMessageId();
+                first.tick(thread);
+                assertTrue(stopped.get());
+                assertTrue(
+                        storage.events(key, null, 100).events().stream()
+                                .noneMatch(event -> event.type().equals("input.applied")));
+            }
+            try (var replacement = runtime(storage, adapter, null)) {
+                replacement.start();
+                var result =
+                        replacement
+                                .getSession(key)
+                                .getTurn(turnId)
+                                .await(TURN_DEADLINE)
+                                .toCompletableFuture()
+                                .join();
+                assertEquals(TurnStatus.SUCCEEDED, result.status(), result.error());
+            }
+            assertEquals(1, model.inputs.size());
+            assertEquals(
+                    1,
+                    model.inputs.get(0).stream()
+                            .filter(message -> messageId.equals(message.getId()))
+                            .count());
+            var applied =
+                    storage.events(key, null, 100).events().stream()
+                            .filter(event -> event.type().equals("input.applied"))
+                            .toList();
+            assertEquals(1, applied.size());
+            assertEquals(messageId, applied.get(0).data().required("messageId").asText());
+            assertEquals(
+                    "persist this input", applied.get(0).data().at("/content/0/text").asText());
+        }
+    }
+
+    @Test
     void completedModelSurvivesCrashBeforeStateApplication() throws Exception {
         var model = new ScriptedModel(false);
         var crash = new AtomicBoolean();
@@ -634,6 +735,9 @@ class AgentScopeAdapterTest {
                                     .name("memory")
                                     .model(model)
                                     .workspace("/work")
+                                    // Long-term memory is opt-in, and only an enabled pipeline
+                                    // performs the inline flush this test records.
+                                    .enableLongTermMemory()
                                     .abstractFilesystem(
                                             new RemoteFilesystem(
                                                     binding.workspace(), List.of("workspace")));
@@ -909,8 +1013,9 @@ class AgentScopeAdapterTest {
         }
     }
 
-    @Test
-    void settledCheckpointForkPreservesHistoryAndRewritesNativeIdentity() {
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void settledCheckpointForkPreservesHistoryAndRewritesNativeIdentity(boolean newSession) {
         var model = new ScriptedModel(false);
         try (var backend = LocalBackend.open(directory.resolve("fork"));
                 var runtime =
@@ -925,22 +1030,25 @@ class AgentScopeAdapterTest {
             var checkpoints = backend.checkpoints(new ThreadKey(key, "main"), 0, 1000);
             long position = Long.parseLong(checkpoints.get(checkpoints.size() - 1).position());
             var child = new SessionKey(key.namespace(), "fork");
-            runtime.createSession(child, "agent");
+            if (!newSession) runtime.createSession(child, "agent");
             var definition =
                     new ThreadSpec(
                             new ThreadKey(child, "main"),
                             new ThreadBinding(
                                     "agent", "v1", AgentScopeCheckpointCodec.STATE_VERSION));
+            var source = runtime.getSession(key).mainThread();
             var forked =
-                    runtime.getSession(key)
-                            .mainThread()
-                            .fork(position, new ThreadKey(child, "main"), "fork-command");
+                    newSession
+                            ? source.forkSession(position, child, "fork-command").mainThread()
+                            : source.fork(position, new ThreadKey(child, "main"), "fork-command");
             assertEquals(definition, forked.view().definition());
             assertEquals(
                     forked.key(),
-                    runtime.getSession(key)
-                            .mainThread()
-                            .fork(position, new ThreadKey(child, "main"), "fork-command")
+                    (newSession
+                                    ? source.forkSession(position, child, "fork-command")
+                                            .mainThread()
+                                    : source.fork(
+                                            position, new ThreadKey(child, "main"), "fork-command"))
                             .key());
             var second =
                     runtime.getSession(child).submit("second", "what did I ask you to remember?");
@@ -953,6 +1061,27 @@ class AgentScopeAdapterTest {
                     model.inputs.get(1).stream()
                             .anyMatch(
                                     message -> message.getTextContent().contains("blue notebook")));
+            if (newSession) {
+                var beforeRetry = backend.snapshot(child);
+                assertEquals(child, source.forkSession(position, child, "fork-command").key());
+                assertEquals(beforeRetry, backend.snapshot(child));
+                assertEquals(
+                        DurableException.Code.CONFLICT,
+                        assertThrows(
+                                        DurableException.class,
+                                        () -> source.forkSession(position, child, "other-fork"))
+                                .code());
+                var alreadyCreated = new SessionKey(key.namespace(), "existing");
+                runtime.createSession(alreadyCreated, "agent");
+                assertEquals(
+                        DurableException.Code.CONFLICT,
+                        assertThrows(
+                                        DurableException.class,
+                                        () ->
+                                                source.forkSession(
+                                                        position, alreadyCreated, "fork-command"))
+                                .code());
+            }
             assertEquals(
                     Long.toString(position),
                     backend.checkpoints(new ThreadKey(key, "main"), 0, 1000)
@@ -1130,9 +1259,10 @@ class AgentScopeAdapterTest {
                 var turn = first.createSession(key, "agent").submit("task", "job");
                 turnId = turn.turnId();
                 first.start();
-                assertTrue(started.await(5, TimeUnit.SECONDS));
+                assertTrue(started.await(30, TimeUnit.SECONDS));
                 turn.pause("pause");
-                long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+                long deadline =
+                        System.nanoTime() + TimeUnit.SECONDS.toNanos(TURN_DEADLINE.toSeconds());
                 while (turn.status().status() != TurnStatus.PAUSED && System.nanoTime() < deadline)
                     Thread.sleep(5);
                 assertEquals(TurnStatus.PAUSED, turn.status().status());
@@ -1156,9 +1286,9 @@ class AgentScopeAdapterTest {
                 turn.resume("resume", turn.status().revision());
                 assertEquals(
                         TurnStatus.SUCCEEDED,
-                        turn.await(Duration.ofSeconds(5))
+                        turn.await(TURN_DEADLINE)
                                 .toCompletableFuture()
-                                .get(10, TimeUnit.SECONDS)
+                                .get(TURN_DEADLINE.plusSeconds(5).toMillis(), TimeUnit.MILLISECONDS)
                                 .status());
                 assertEquals(1, starts.get());
                 assertEquals(2, model.inputs.size());
@@ -1264,9 +1394,9 @@ class AgentScopeAdapterTest {
                 replacement
                         .getSession(key)
                         .getTurn(turnId)
-                        .await(Duration.ofSeconds(5))
+                        .await(TURN_DEADLINE)
                         .toCompletableFuture()
-                        .get(5, TimeUnit.SECONDS);
+                        .get(TURN_DEADLINE.plusSeconds(5).toMillis(), TimeUnit.MILLISECONDS);
                 assertNull(replacement.lastFailure(new ThreadKey(key, "main")));
                 assertEquals(
                         TurnStatus.SUCCEEDED,
@@ -1398,7 +1528,7 @@ class AgentScopeAdapterTest {
                 replacement
                         .getSession(key)
                         .getTurn(turnId)
-                        .await(Duration.ofSeconds(5))
+                        .await(TURN_DEADLINE)
                         .toCompletableFuture()
                         .join();
                 assertNull(replacement.lastFailure(new ThreadKey(key, "main")));
@@ -1424,6 +1554,34 @@ class AgentScopeAdapterTest {
             assertEquals(2, runs.size());
             assertNotEquals(runs.get(0).runId(), runs.get(1).runId());
             assertTrue(runs.stream().allMatch(run -> run.status() == RunStatus.COMPLETED));
+        }
+    }
+
+    @Test
+    void convertedQueuedInputKeepsItsProjectedIdentityInTheModelContext() {
+        var model = new ScriptedModel(false);
+        try (var backend = LocalBackend.open(directory.resolve("converted-steer"));
+                var runtime =
+                        runtime(backend, adapter(model, PermissionMode.BYPASS, Map.of()), null)) {
+            var thread = runtime.createSession(key, "agent").mainThread();
+            var active = thread.submit("initial", "first message");
+            var lease = backend.claim(thread.key(), "owner", Duration.ofSeconds(5)).orElseThrow();
+            var queued = thread.submit("queued", "source message");
+            String messageId = queued.status().inputMessageId();
+            thread.convertQueuedToSteer("steer", queued.turnId(), active.turnId(), 0);
+            backend.release(lease, Duration.ZERO);
+
+            runtime.tick(thread.key());
+
+            assertNull(runtime.lastFailure(thread.key()));
+            assertEquals(TurnStatus.SUCCEEDED, active.status().status());
+            assertEquals(
+                    List.of(messageId),
+                    model.inputs.get(0).stream()
+                            .filter(message -> "source message".equals(message.getTextContent()))
+                            .map(Msg::getId)
+                            .toList());
+            assertTrue(queued.listRuns(null, 10).items().isEmpty());
         }
     }
 
@@ -1806,12 +1964,7 @@ class AgentScopeAdapterTest {
                         tool.path("data").path("argumentsText").asText());
                 assertEquals(
                         "result", tool.path("data").path("content").get(0).path("text").asText());
-                assertEquals(4, tool.path("data").path("progress").size());
-                assertEquals(
-                        "text", tool.path("data").path("progress").get(0).path("type").asText());
-                assertEquals(
-                        "progress-3",
-                        tool.path("data").path("progress").get(3).path("text").asText());
+                assertFalse(tool.path("data").has("progress"));
                 assertEquals(
                         answers.get(i).path("messageId").asText(),
                         tool.path("data").path("messageId").asText());
@@ -1819,6 +1972,21 @@ class AgentScopeAdapterTest {
                 assertEquals(turn.turnId(), tool.path("turnId").asText());
             }
             var events = backend.events(key, null, 1000).events();
+            assertTrue(events.stream().noneMatch(e -> "tool.call.progress".equals(e.type())));
+            for (int i = 0; i < 2; i++) {
+                String callId = "job-" + i;
+                var chunks =
+                        live.stream()
+                                .filter(e -> "tool.output.delta".equals(e.type()))
+                                .filter(e -> callId.equals(e.data().path("callId").asText()))
+                                .toList();
+                assertEquals(4, chunks.size());
+                for (int j = 0; j < chunks.size(); j++) {
+                    var chunk = chunks.get(j).data();
+                    assertEquals(j * 10L, chunk.path("offset").asLong());
+                    assertEquals((j + 1) * 10L, chunk.path("nextOffset").asLong());
+                }
+            }
             var arguments =
                     events.stream().filter(e -> "tool.call.arguments".equals(e.type())).toList();
             assertTrue(arguments.isEmpty());
@@ -2061,16 +2229,17 @@ class AgentScopeAdapterTest {
                                     snapshot -> {
                                         entered.countDown();
                                         try {
-                                            assertTrue(release.await(5, TimeUnit.SECONDS));
+                                            assertTrue(release.await(30, TimeUnit.SECONDS));
                                         } catch (InterruptedException error) {
                                             throw new IllegalStateException(error);
                                         }
                                     },
                                     event -> {})) {
-                assertTrue(entered.await(5, TimeUnit.SECONDS));
+                assertTrue(entered.await(30, TimeUnit.SECONDS));
                 var receipt = runtime.getSession(key).submit("request", "hello");
                 runtime.start();
-                long until = System.nanoTime() + TimeUnit.SECONDS.toNanos(4);
+                long until =
+                        System.nanoTime() + TimeUnit.SECONDS.toNanos(TURN_DEADLINE.toSeconds());
                 while (!runtime.getSession(key)
                                 .getTurn(receipt.turnId())
                                 .status()
@@ -2205,6 +2374,444 @@ class AgentScopeAdapterTest {
                 assertEquals(3, reasoning.get());
                 assertEquals(1, summaries.get());
             }
+        }
+    }
+
+    @ParameterizedTest
+    @org.junit.jupiter.params.provider.CsvSource({
+        "false,false",
+        "true,false",
+        "false,true",
+        "true,true"
+    })
+    void queuedModelResumesOriginalTurnAcrossRuntimeReplacement(boolean streaming, boolean harness)
+            throws Exception {
+        var file = directory.resolve("model.db");
+        var thread = new ThreadKey(key, "main");
+        var sent = new CopyOnWriteArrayList<QueuedModelRequest>();
+        var local = new ScriptedModel(false);
+        var backend = new TransactionalSessionBackend(JdbcRecordStore.sqlite(file));
+        String redis = System.getenv("AGENTSCOPE_TEST_REDIS_CONTAINER");
+        String queue = "model-test:" + java.util.UUID.randomUUID();
+        java.util.function.Supplier<AgentScopeAdapter> factory =
+                () ->
+                        harness
+                                ? AgentScopeAdapter.forHarness(
+                                        binding ->
+                                                HarnessAgent.builder()
+                                                        .name("harness")
+                                                        .model(local)
+                                                        .disableMemoryHooks()
+                                                        .workspace(directory.resolve("workspace")),
+                                        Map.of())
+                                : adapter(local, PermissionMode.BYPASS, Map.of());
+        var adapter =
+                factory.get()
+                        .withQueuedModel(
+                                request -> {
+                                    if (redis != null)
+                                        redisCommand(
+                                                redis,
+                                                "RPUSH",
+                                                queue,
+                                                DurableJson.value(request).toString());
+                                    sent.add(request);
+                                });
+        String turnId;
+        try (var first = runtime(backend, adapter, null)) {
+            turnId = first.createSession(key, "agent").submit("one", "hello").turnId();
+            first.tick(thread);
+            assertNull(first.lastFailure(thread));
+            assertEquals(TurnStatus.WAITING, backend.turn(thread, turnId).status());
+        }
+        assertEquals(1, sent.size());
+        var request = sent.get(0);
+        assertEquals(turnId, request.turnId());
+        assertEquals(thread, request.thread());
+        if (redis != null) {
+            var job = DurableJson.parse(redisCommand(redis, "LPOP", queue));
+            assertEquals(request.callId(), job.path("callId").asText());
+            assertEquals(turnId, job.path("turnId").asText());
+            assertTrue(job.path("messages").toString().contains("hello"));
+        }
+        var reopened = new TransactionalSessionBackend(JdbcRecordStore.sqlite(file));
+        var fresh =
+                factory.get()
+                        .withQueuedModel(
+                                r -> {
+                                    throw new AssertionError("redispatched");
+                                });
+        var live = LiveEvents.local();
+        var firstChunk = new CountDownLatch(1);
+        try (var subscription =
+                        live.subscribe(
+                                event -> {
+                                    if ("message.delta".equals(event.type())
+                                            && event.data().toString().contains("hello"))
+                                        firstChunk.countDown();
+                                });
+                var second = runtime(reopened, fresh, null, live)) {
+            var chunk =
+                    QueuedModelRequest.reply(
+                            request.callId(),
+                            0,
+                            queuedText(streaming ? "hello" : "hello world"),
+                            !streaming);
+            var handle = second.getSession(key).getTurn(turnId);
+            if (streaming && harness) {
+                var end =
+                        deliverReply(
+                                redis,
+                                queue,
+                                QueuedModelRequest.reply(request.callId(), 2, null, true));
+                handle.signal(end.id(), end.key(), end.value());
+            }
+            var delivered = deliverReply(redis, queue, chunk);
+            handle.signal(delivered.id(), delivered.key(), delivered.value());
+            handle.signal(delivered.id(), delivered.key(), delivered.value());
+            var tick = java.util.concurrent.CompletableFuture.runAsync(() -> second.tick(thread));
+            if (streaming) {
+                try {
+                    assertTrue(
+                            firstChunk.await(10, TimeUnit.SECONDS), "live chunk before terminal");
+                } finally {
+                    var terminal =
+                            deliverReply(
+                                    redis,
+                                    queue,
+                                    QueuedModelRequest.reply(
+                                            request.callId(), 1, queuedText(" world"), !harness));
+                    handle.signal(terminal.id(), terminal.key(), terminal.value());
+                }
+            }
+            tick.get(15, TimeUnit.SECONDS);
+            if (second.lastFailure(thread) != null)
+                throw new AssertionError("Model resume failed", second.lastFailure(thread));
+            var turn = reopened.turn(thread, turnId);
+            assertEquals(TurnStatus.SUCCEEDED, turn.status(), () -> turn.toString());
+            assertEquals("hello world", turn.output().path("content").get(0).path("text").asText());
+            assertTrue(local.inputs.isEmpty());
+        }
+    }
+
+    private static ChatResponse queuedText(String text) {
+        return ChatResponse.builder()
+                .id("remote")
+                .content(List.of(TextBlock.builder().text(text).build()))
+                .build();
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void completedQueuedFallbackRecoversAcrossModelApplication(boolean afterApplication)
+            throws Exception {
+        var requests = new ArrayList<QueuedModelRequest>();
+        var primary = new ScriptedModel(false);
+        var fallback = mock(Model.class);
+        doReturn("secondary").when(fallback).getModelName();
+        var adapter =
+                AgentScopeAdapter.forReAct(
+                                binding ->
+                                        ReActAgent.builder()
+                                                .name("agent")
+                                                .model(primary)
+                                                .fallbackModel(fallback),
+                                Map.of())
+                        .withQueuedModel(requests::add);
+        var thread = new ThreadKey(key, "main");
+        try (var storage = LocalBackend.open(directory.resolve("queued-fallback"))) {
+            var backend = spy(storage);
+            var armed = new AtomicBoolean();
+            var crashed = new AtomicBoolean();
+            doAnswer(
+                            invocation -> {
+                                Commit command = invocation.getArgument(1);
+                                if (command.journal() == null) return invocation.callRealMethod();
+                                if (armed.get()) {
+                                    crashed.set(true);
+                                    throw new DurableException(
+                                            DurableException.Code.UNAVAILABLE, "Simulated restart");
+                                }
+                                boolean cut =
+                                        command.journal().entries().stream()
+                                                .map(
+                                                        value ->
+                                                                DurableJson.convert(
+                                                                        value, JournalEvent.class))
+                                                .anyMatch(
+                                                        event ->
+                                                                afterApplication
+                                                                        ? "state/checkpoint"
+                                                                                        .equals(
+                                                                                                event
+                                                                                                        .type())
+                                                                                && "model_result_applied"
+                                                                                        .equals(
+                                                                                                event.data()
+                                                                                                        .get(
+                                                                                                                "reason"))
+                                                                        : "model/end"
+                                                                                        .equals(
+                                                                                                event
+                                                                                                        .type())
+                                                                                && "completed"
+                                                                                        .equals(
+                                                                                                event.data()
+                                                                                                        .get(
+                                                                                                                "status")));
+                                Object result = invocation.callRealMethod();
+                                if (cut) armed.set(true);
+                                return result;
+                            })
+                    .when(backend)
+                    .commit(any(), any());
+            String turnId;
+            try (var first = runtime(backend, adapter, null)) {
+                var turn = first.createSession(key, "agent").submit("queued-fallback", "hello");
+                turnId = turn.turnId();
+                first.tick(thread);
+                var failed =
+                        QueuedModelRequest.failure(requests.get(0).callId(), 0, "provider failure");
+                turn.signal(failed.id(), failed.key(), failed.value());
+                first.tick(thread);
+                assertEquals("secondary", requests.get(1).model());
+                var result =
+                        QueuedModelRequest.reply(
+                                requests.get(1).callId(), 0, queuedText("fallback answer"), true);
+                turn.signal(result.id(), result.key(), result.value());
+                first.tick(thread);
+                assertTrue(crashed.get());
+                assertFalse(turn.status().status().terminal());
+            }
+            Thread.sleep(5);
+            try (var replacement = runtime(storage, adapter, null)) {
+                replacement.tick(thread);
+                assertNull(replacement.lastFailure(thread));
+                var resumed = storage.turn(thread, turnId);
+                assertEquals(TurnStatus.SUCCEEDED, resumed.status(), resumed::toString);
+                assertEquals(
+                        "fallback answer",
+                        resumed.output().path("content").get(0).path("text").asText());
+                assertEquals(2, requests.size());
+                assertTrue(primary.inputs.isEmpty());
+            }
+        }
+    }
+
+    @Test
+    void queuedModelEarlyReplyExecutesToolOnceAndQueuesNextIteration() {
+        var path = directory.resolve("queued-tool.db");
+        var thread = new ThreadKey(key, "main");
+        var calls = new AtomicInteger();
+        var requests = new CopyOnWriteArrayList<QueuedModelRequest>();
+        var local = new ScriptedModel(false);
+        var adapters =
+                (Function<SessionBackend, AgentScopeAdapter>)
+                        backend ->
+                                AgentScopeAdapter.forReAct(
+                                                binding -> {
+                                                    var toolkit = new Toolkit();
+                                                    toolkit.registerAgentTool(
+                                                            new ToolBase(
+                                                                    ToolBase.builder()
+                                                                            .name("job")
+                                                                            .description(
+                                                                                    "count calls")
+                                                                            .inputSchema(
+                                                                                    Map.of(
+                                                                                            "type",
+                                                                                            "object"))) {
+                                                                public Mono<ToolResultBlock>
+                                                                        callAsync(
+                                                                                ToolCallParam
+                                                                                        param) {
+                                                                    calls.incrementAndGet();
+                                                                    return Mono.just(
+                                                                            ToolResultBlock.text(
+                                                                                    "job finished"));
+                                                                }
+                                                            });
+                                                    return ReActAgent.builder()
+                                                            .name("agent")
+                                                            .model(local)
+                                                            .toolkit(toolkit)
+                                                            .permissionContext(
+                                                                    PermissionContextState.builder()
+                                                                            .mode(
+                                                                                    PermissionMode
+                                                                                            .BYPASS)
+                                                                            .build());
+                                                },
+                                                Map.of())
+                                        .withQueuedModel(
+                                                request -> {
+                                                    requests.add(request);
+                                                    var early =
+                                                            requests.size() == 1
+                                                                    ? ChatResponse.builder()
+                                                                            .content(
+                                                                                    List.of(
+                                                                                            ToolUseBlock
+                                                                                                    .builder()
+                                                                                                    .id(
+                                                                                                            "job-1")
+                                                                                                    .name(
+                                                                                                            "job")
+                                                                                                    .input(
+                                                                                                            Map
+                                                                                                                    .of())
+                                                                                                    .build()))
+                                                                            .build()
+                                                                    : queuedText("done");
+                                                    var reply =
+                                                            QueuedModelRequest.reply(
+                                                                    request.callId(),
+                                                                    0,
+                                                                    early,
+                                                                    true);
+                                                    backend.signal(thread, request.turnId(), reply);
+                                                    backend.signal(thread, request.turnId(), reply);
+                                                });
+        String turnId = null;
+        for (int i = 0; i < 3; i++) {
+            var backend = new TransactionalSessionBackend(JdbcRecordStore.sqlite(path));
+            try (var runtime = runtime(backend, adapters.apply(backend), null)) {
+                if (i == 0)
+                    turnId = runtime.createSession(key, "agent").submit("one", "run").turnId();
+                runtime.tick(thread);
+                assertNull(runtime.lastFailure(thread));
+                assertEquals(
+                        i == 2 ? TurnStatus.SUCCEEDED : TurnStatus.WAITING,
+                        backend.turn(thread, turnId).status());
+                assertEquals(i == 0 ? 0 : 1, calls.get());
+            }
+        }
+        assertEquals(2, requests.size());
+        assertNotEquals(requests.get(0).callId(), requests.get(1).callId());
+        assertTrue(requests.get(1).messages().toString().contains("job finished"));
+        assertTrue(local.inputs.isEmpty());
+    }
+
+    @Test
+    void queuedModelLostPublishAckReusesRequestAndRemoteFailureEndsTurn() throws Exception {
+        var file = directory.resolve("model-ack.db");
+        var thread = new ThreadKey(key, "main");
+        var requests = new CopyOnWriteArrayList<QueuedModelRequest>();
+        var local = new ScriptedModel(false);
+        var adapter =
+                adapter(local, PermissionMode.BYPASS, Map.of())
+                        .withQueuedModel(
+                                request -> {
+                                    requests.add(request);
+                                    if (requests.size() == 1)
+                                        throw new DurableException(
+                                                DurableException.Code.UNAVAILABLE,
+                                                "Broker acknowledgement lost");
+                                });
+        String id;
+        var first = new TransactionalSessionBackend(JdbcRecordStore.sqlite(file));
+        try (var runtime = runtime(first, adapter, null)) {
+            id = runtime.createSession(key, "agent").submit("lost-ack", "hello").turnId();
+            runtime.tick(thread);
+            assertEquals(TurnStatus.WAITING, first.turn(thread, id).status());
+        }
+        var second = new TransactionalSessionBackend(JdbcRecordStore.sqlite(file));
+        try (var runtime = runtime(second, adapter, null)) {
+            Thread.sleep(10);
+            runtime.tick(thread);
+            assertEquals(2, requests.size());
+            assertEquals(requests.get(0), requests.get(1));
+            assertEquals(TurnStatus.WAITING, second.turn(thread, id).status());
+            var error =
+                    QueuedModelRequest.failure(
+                            requests.get(0).callId(), 0, "worker rejected request");
+            var turn = runtime.getSession(key).getTurn(id);
+            turn.signal(error.id(), error.key(), error.value());
+            runtime.tick(thread);
+            assertEquals(TurnStatus.FAILED, turn.status().status());
+            assertEquals(2, requests.size());
+            assertTrue(local.inputs.isEmpty());
+        }
+    }
+
+    private static Signal deliverReply(String redis, String queue, Signal signal) {
+        if (redis == null) return signal;
+        redisCommand(redis, "RPUSH", queue + ":replies", DurableJson.value(signal).toString());
+        return DurableJson.convert(
+                DurableJson.parse(redisCommand(redis, "LPOP", queue + ":replies")), Signal.class);
+    }
+
+    private static String redisCommand(String container, String... arguments) {
+        var command = new ArrayList<>(List.of("docker", "exec", container, "redis-cli", "--raw"));
+        command.addAll(List.of(arguments));
+        try {
+            var process = new ProcessBuilder(command).redirectErrorStream(true).start();
+            if (!process.waitFor(10, TimeUnit.SECONDS)) {
+                process.destroyForcibly();
+                throw new AssertionError("Redis command timed out");
+            }
+            var result =
+                    new String(
+                                    process.getInputStream().readAllBytes(),
+                                    java.nio.charset.StandardCharsets.UTF_8)
+                            .strip();
+            assertEquals(0, process.exitValue(), result);
+            return result;
+        } catch (java.io.IOException error) {
+            throw new java.io.UncheckedIOException(error);
+        } catch (InterruptedException error) {
+            Thread.currentThread().interrupt();
+            throw new AssertionError(error);
+        }
+    }
+
+    @Test
+    void structuredManualResultsKeepErrorStatusAndMediaAcrossHostReplacement() {
+        var model = new ScriptedModel(true);
+        var adapter = adapter(model, PermissionMode.BYPASS, Map.of());
+        var thread = new ThreadKey(key, "main");
+        try (var backend = LocalBackend.open(directory.resolve("manual-tool-result"))) {
+            String id;
+            try (var first = runtime(backend, adapter, null)) {
+                var turn = first.createSession(key, "agent").submit("manual", "call job");
+                id = turn.turnId();
+                first.tick(thread);
+                var pending = turn.pendingInteractions().get(0);
+                assertEquals("external_execution", pending.kind());
+                assertFalse(pending.automatic());
+                turn.respondTool(
+                        "reply",
+                        pending.id(),
+                        new DurableMessages.ToolResponse(
+                                true,
+                                List.of(
+                                        new DurableMessages.Text("could not complete"),
+                                        new DurableMessages.Image(
+                                                new DurableMessages.Base64("image/png", "YWJj")))));
+            }
+            try (var replacement = runtime(backend, adapter, null)) {
+                replacement.start();
+                var turn =
+                        replacement
+                                .getSession(key)
+                                .getTurn(id)
+                                .await(TURN_DEADLINE)
+                                .toCompletableFuture()
+                                .join();
+                assertEquals(TurnStatus.SUCCEEDED, turn.status(), turn.error());
+            }
+            var result =
+                    model.inputs.get(1).stream()
+                            .flatMap(
+                                    message ->
+                                            message
+                                                    .getContentBlocks(ToolResultBlock.class)
+                                                    .stream())
+                            .findFirst()
+                            .orElseThrow();
+            assertEquals(ToolResultState.ERROR, result.getState());
+            assertEquals("could not complete", ((TextBlock) result.getOutput().get(0)).getText());
+            assertInstanceOf(ImageBlock.class, result.getOutput().get(1));
         }
     }
 
@@ -2359,6 +2966,704 @@ class AgentScopeAdapterTest {
                     reopened.events(key, null, 100).events().stream()
                             .filter(e -> e.type().equals("tool.result.applied"))
                             .count());
+        }
+    }
+
+    @Test
+    void detachedJobReturnsAReceiptBeforeWorkAndWakesTheAwaitingReplacement() {
+        var calls = new AtomicInteger();
+        var jobId = new AtomicReference<String>();
+        var model =
+                new Model() {
+                    @Override
+                    public String getModelName() {
+                        return "async-job-parent";
+                    }
+
+                    @Override
+                    public Flux<ChatResponse> stream(
+                            List<Msg> messages, List<ToolSchema> tools, GenerateOptions options) {
+                        return switch (calls.getAndIncrement()) {
+                            case 0 ->
+                                    jobCall(
+                                            "start",
+                                            DelegatedJobExecutor.START,
+                                            Map.of("prompt", "child work"));
+                            case 1 -> {
+                                var receipt = jobResult(messages, "start");
+                                assertEquals("ACCEPTED", receipt.path("status").asText());
+                                jobId.set(receipt.required("jobId").asText());
+                                yield jobCall(
+                                        "read",
+                                        DelegatedJobExecutor.GET,
+                                        Map.of("jobId", jobId.get()));
+                            }
+                            case 2 -> {
+                                assertEquals(
+                                        "QUEUED",
+                                        jobResult(messages, "read").path("status").asText());
+                                yield jobCall(
+                                        "await",
+                                        DelegatedJobExecutor.AWAIT,
+                                        Map.of("jobId", jobId.get(), "timeoutMillis", 60000));
+                            }
+                            case 3 -> {
+                                var completed = jobResult(messages, "await");
+                                assertEquals(jobId.get(), completed.path("jobId").asText());
+                                assertEquals("SUCCEEDED", completed.path("status").asText());
+                                assertEquals(
+                                        "done",
+                                        completed
+                                                .path("output")
+                                                .path("content")
+                                                .get(0)
+                                                .path("text")
+                                                .asText());
+                                yield Flux.just(
+                                        ChatResponse.builder()
+                                                .content(
+                                                        List.of(
+                                                                TextBlock.builder()
+                                                                        .text("joined")
+                                                                        .build()))
+                                                .build());
+                            }
+                            default ->
+                                    Flux.error(
+                                            new AssertionError(
+                                                    "Unexpected model call after job recovery"));
+                        };
+                    }
+                };
+        var parent =
+                AgentScopeAdapter.forReAct(
+                        binding -> {
+                            var toolkit = new Toolkit();
+                            for (var name :
+                                    List.of(
+                                            DelegatedJobExecutor.START,
+                                            DelegatedJobExecutor.GET,
+                                            DelegatedJobExecutor.AWAIT))
+                                toolkit.registerSchema(
+                                        ToolSchema.builder()
+                                                .name(name)
+                                                .description(name)
+                                                .parameters(Map.of("type", "object"))
+                                                .build());
+                            return ReActAgent.builder()
+                                    .name("job-parent")
+                                    .model(model)
+                                    .toolkit(toolkit)
+                                    .permissionContext(
+                                            PermissionContextState.builder()
+                                                    .mode(PermissionMode.BYPASS)
+                                                    .build());
+                        },
+                        Map.of(
+                                DelegatedJobExecutor.START,
+                                "jobs",
+                                DelegatedJobExecutor.GET,
+                                "jobs",
+                                DelegatedJobExecutor.AWAIT,
+                                "jobs"));
+        var childModel = new ScriptedModel(false);
+        var child = adapter(childModel, PermissionMode.BYPASS, Map.of());
+        var thread = new ThreadKey(key, "main");
+        var scheduler = mock(TurnScheduler.class);
+        try (var backend =
+                LocalBackend.open(directory.resolve("job-recovery")).withWakeups(scheduler)) {
+            var admissions = new AtomicInteger();
+            var jobs =
+                    new DelegatedJobExecutor(
+                            backend,
+                            request -> {
+                                admissions.incrementAndGet();
+                                return new DelegationTarget(
+                                        new ThreadSpec(
+                                                DelegationExecutor.childThread(request),
+                                                new ThreadBinding(
+                                                        "child",
+                                                        "v1",
+                                                        AgentScopeCheckpointCodec.STATE_VERSION)),
+                                        request.call().arguments().path("prompt"));
+                            });
+            var runtime =
+                    DurableRuntime.builder()
+                            .backend(backend)
+                            .harness("parent", "v1", parent)
+                            .harness("child", "v1", child)
+                            .executor("jobs", jobs)
+                            .releaseDelay(Duration.ZERO);
+            String turnId;
+            try (var first = runtime.build()) {
+                var turn = first.createSession(key, "parent").submit("job", "start work");
+                turnId = turn.turnId();
+                for (int i = 0; i < 4; i++) {
+                    first.tick(thread);
+                    assertNull(first.lastFailure(thread));
+                }
+                assertEquals(TurnStatus.WAITING, turn.status().status());
+                var pending = turn.getToolCall("await");
+                assertEquals(ToolExecutionStatus.RUNNING, pending.status());
+                assertEquals(jobId.get(), pending.progress().path("jobId").asText());
+                assertTrue(pending.progress().path("deadline").asLong() > pending.updatedAt());
+                assertEquals(3, calls.get());
+                assertTrue(childModel.inputs.isEmpty());
+                assertTrue(backend.pendingDispatch(thread).isEmpty());
+                assertTrue(backend.dispatchSchedule(thread).orElseThrow().delayMillis() > 30000);
+            }
+            var view = backend.job(thread, jobId.get());
+            try (var replacement = runtime.build()) {
+                clearInvocations(scheduler);
+                replacement.tick(view.child().thread());
+                assertNull(replacement.lastFailure(view.child().thread()));
+                assertTrue(backend.pendingDispatch(thread).isPresent());
+                verify(scheduler).changed(any(SessionBackend.class), eq(thread));
+                replacement.tick(thread);
+                assertNull(replacement.lastFailure(thread));
+                var turn = replacement.getSession(key).getTurn(turnId);
+                assertEquals(TurnStatus.SUCCEEDED, turn.status().status());
+                assertTrue(turn.getToolCall("await").applied());
+            }
+            assertEquals(1, admissions.get());
+            assertEquals(1, childModel.inputs.size());
+            assertEquals(4, calls.get());
+        }
+    }
+
+    private static Flux<ChatResponse> jobCall(
+            String id, String name, Map<String, Object> arguments) {
+        return Flux.just(
+                ChatResponse.builder()
+                        .content(
+                                List.of(
+                                        ToolUseBlock.builder()
+                                                .id(id)
+                                                .name(name)
+                                                .input(arguments)
+                                                .build()))
+                        .build());
+    }
+
+    private static JsonNode jobResult(List<Msg> messages, String id) {
+        var block =
+                messages.stream()
+                        .flatMap(
+                                message -> message.getContentBlocks(ToolResultBlock.class).stream())
+                        .filter(result -> id.equals(result.getId()))
+                        .findFirst()
+                        .orElseThrow();
+        assertEquals(ToolResultState.SUCCESS, block.getState());
+        return DurableJson.parse(
+                assertInstanceOf(TextBlock.class, block.getOutput().get(0)).getText());
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void drainingBrainHandsOffAtTheNextDurableBoundaryWithoutPausingTheTurn(boolean cancel)
+            throws Exception {
+        var reasoningStarted = new CountDownLatch(1);
+        var firstResponse = Sinks.<ChatResponse>one();
+        var model =
+                new Model() {
+                    @Override
+                    public String getModelName() {
+                        return "drain-fixture";
+                    }
+
+                    @Override
+                    public Flux<ChatResponse> stream(
+                            List<Msg> messages, List<ToolSchema> tools, GenerateOptions options) {
+                        reasoningStarted.countDown();
+                        return firstResponse.asMono().flux();
+                    }
+                };
+        var thread = new ThreadKey(key, "main");
+        try (var backend = LocalBackend.open(directory.resolve("drained-brain"))) {
+            String turnId;
+            try (var first =
+                    runtime(
+                            backend,
+                            adapter(model, PermissionMode.BYPASS, Map.of("job", "jobs")),
+                            null)) {
+                var turn = first.createSession(key, "agent").submit("start", "run a job");
+                turnId = turn.turnId();
+                first.start();
+                assertTrue(reasoningStarted.await(30, TimeUnit.SECONDS));
+                assertFalse(first.drain(Duration.ZERO));
+                assertEquals(
+                        Sinks.EmitResult.OK,
+                        firstResponse.tryEmitValue(
+                                ChatResponse.builder()
+                                        .content(
+                                                List.of(
+                                                        ToolUseBlock.builder()
+                                                                .id("call-1")
+                                                                .name("job")
+                                                                .input(Map.of("value", 7))
+                                                                .build()))
+                                        .build()));
+                assertTrue(first.drain(TURN_DEADLINE));
+                assertNull(first.lastFailure(thread));
+                assertEquals(TurnStatus.RUNNING, turn.status().status());
+                assertTrue(turn.pendingInteractions().isEmpty());
+                assertEquals(RunStatus.STOPPED, turn.listRuns(null, 10).items().get(0).status());
+            }
+            var next = new ScriptedModel(false);
+            try (var replacement =
+                    runtime(
+                            backend,
+                            adapter(next, PermissionMode.BYPASS, Map.of("job", "jobs")),
+                            null)) {
+                var turn = replacement.getSession(key).getTurn(turnId);
+                if (cancel) turn.cancel("cancel-before-dispatch");
+                replacement.tick(thread);
+                assertNull(replacement.lastFailure(thread));
+                assertTrue(next.inputs.isEmpty());
+                if (cancel) {
+                    assertEquals(TurnStatus.CANCELLED, turn.status().status());
+                    assertTrue(turn.pendingInteractions().isEmpty());
+                    var following = replacement.getSession(key).submit("following", "continue");
+                    replacement.tick(thread);
+                    assertNull(replacement.lastFailure(thread));
+                    assertEquals(TurnStatus.SUCCEEDED, following.status().status());
+                    assertEquals(
+                            ToolExecutionStatus.CANCELLED, turn.getToolCall("call-1").status());
+                    assertNull(turn.getToolCall("call-1").executionId());
+                    assertEquals(1, next.inputs.size());
+                } else {
+                    assertEquals(TurnStatus.WAITING, turn.status().status());
+                    assertEquals(1, turn.pendingInteractions().size());
+                }
+            }
+        }
+    }
+
+    @Test
+    void mixedApprovalAndHandsCompletionJoinInTheOriginalModelOrderAfterTakeover() {
+        var inputs = new ArrayList<List<Msg>>();
+        var submitted = new ArrayList<ExecutionRequest>();
+        Executor executor =
+                new Executor() {
+                    @Override
+                    public Capabilities capabilities() {
+                        return new Capabilities(true, true, false);
+                    }
+
+                    @Override
+                    public ExecutionResult startExecution(ExecutionRequest request) {
+                        submitted.add(request);
+                        return query(request, request.executionId());
+                    }
+
+                    @Override
+                    public ExecutionResult query(ExecutionRequest request, String handle) {
+                        return new ExecutionResult(ExecutionState.RUNNING, handle, null, null);
+                    }
+
+                    @Override
+                    public ExecutionResult cancel(ExecutionRequest request, String handle) {
+                        throw new AssertionError("This batch was not cancelled");
+                    }
+                };
+        var model =
+                new Model() {
+                    @Override
+                    public String getModelName() {
+                        return "batch-fixture";
+                    }
+
+                    @Override
+                    public Flux<ChatResponse> stream(
+                            List<Msg> messages, List<ToolSchema> tools, GenerateOptions options) {
+                        inputs.add(List.copyOf(messages));
+                        if (inputs.size() > 1) {
+                            return Flux.just(
+                                    ChatResponse.builder()
+                                            .content(
+                                                    List.of(
+                                                            TextBlock.builder()
+                                                                    .text("done")
+                                                                    .build()))
+                                            .build());
+                        }
+                        return Flux.just(
+                                ChatResponse.builder()
+                                        .content(
+                                                List.of("a", "b", "c").stream()
+                                                        .<ContentBlock>map(
+                                                                id ->
+                                                                        ToolUseBlock.builder()
+                                                                                .id(id)
+                                                                                .name("job")
+                                                                                .input(
+                                                                                        Map.of(
+                                                                                                "value",
+                                                                                                id
+                                                                                                                .charAt(
+                                                                                                                        0)
+                                                                                                        - 'a'))
+                                                                                .build())
+                                                        .toList())
+                                        .build());
+                    }
+                };
+        var adapter = adapter(model, PermissionMode.DEFAULT, Map.of("job", "jobs"));
+        var thread = new ThreadKey(key, "main");
+        try (var backend = LocalBackend.open(directory.resolve("mixed-batch"))) {
+            String turnId;
+            try (var first = runtime(backend, adapter, executor)) {
+                var turn = first.createSession(key, "agent").submit("start", "run three jobs");
+                turnId = turn.turnId();
+                first.tick(thread);
+                assertNull(first.lastFailure(thread));
+                var pending =
+                        turn.pendingInteractions().stream()
+                                .collect(
+                                        Collectors.toMap(
+                                                interaction ->
+                                                        interaction
+                                                                .call()
+                                                                .path("arguments")
+                                                                .path("value")
+                                                                .asInt(),
+                                                interaction -> interaction.id()));
+                assertEquals(Set.of(0, 1, 2), pending.keySet());
+                var awaiting = turn.getToolCall("b");
+                assertEquals(ToolExecutionStatus.WAITING, awaiting.status());
+                assertEquals("confirmation", awaiting.reason());
+                assertNull(awaiting.executionId());
+                assertFalse(awaiting.applied());
+                turn.respond("allow-c", pending.get(2), true);
+                turn.respond("deny-b", pending.get(1), false);
+                first.tick(thread);
+                assertNull(first.lastFailure(thread));
+                assertEquals(TurnStatus.WAITING, turn.status().status());
+                assertTrue(
+                        backend.events(key, null, 500).events().stream()
+                                .noneMatch(event -> event.data().has("executionId")));
+                assertTrue(submitted.isEmpty());
+                turn.respond("allow-a", pending.get(0), true);
+            }
+            try (var second = runtime(backend, adapter, executor)) {
+                second.tick(thread);
+                second.tick(thread);
+                assertNull(second.lastFailure(thread));
+                assertEquals(
+                        TurnStatus.WAITING,
+                        second.getSession(key).getTurn(turnId).status().status());
+            }
+            var tools =
+                    submitted.stream()
+                            .collect(
+                                    Collectors.toMap(
+                                            request -> request.call().callId(),
+                                            request -> request));
+            assertEquals(Set.of("a", "c"), tools.keySet());
+            assertEquals(0, tools.get("a").call().arguments().path("value").asInt());
+            assertEquals(2, tools.get("c").call().arguments().path("value").asInt());
+            String a = tools.get("a").executionId();
+            String c = tools.get("c").executionId();
+            backend.acceptResult(
+                    thread,
+                    c,
+                    new ExecutionResult(ExecutionState.FAILED, c, null, "tool c failed"));
+            try (var replacement = runtime(backend, adapter, executor)) {
+                var turn = replacement.getSession(key).getTurn(turnId);
+                replacement.tick(thread);
+                assertNull(replacement.lastFailure(thread));
+                assertEquals(TurnStatus.WAITING, turn.status().status());
+                assertFalse(backend.execution(thread, c).applied());
+                assertEquals(1, inputs.size());
+                backend.acceptResult(
+                        thread,
+                        a,
+                        new ExecutionResult(
+                                ExecutionState.SUCCEEDED, a, DurableJson.value("output a"), null));
+                replacement.tick(thread);
+                assertNull(replacement.lastFailure(thread));
+                assertEquals(TurnStatus.SUCCEEDED, turn.status().status());
+                var denied = turn.getToolCall("b");
+                assertEquals(ToolExecutionStatus.DENIED, denied.status());
+                assertTrue(denied.applied());
+                assertNull(denied.executionId());
+                assertNotNull(denied.appliedAt());
+                var completed = turn.getToolExecution(a);
+                assertEquals(completed, turn.getToolCall("a"));
+                assertEquals(ToolExecutionStatus.SUCCEEDED, completed.status());
+                assertTrue(completed.applied());
+                assertNotNull(completed.origin());
+                assertNotNull(completed.appliedAt());
+                replacement.tick(thread);
+            }
+            assertEquals(2, inputs.size());
+            assertEquals(2, submitted.size());
+            var messages =
+                    inputs.get(1).stream()
+                            .filter(message -> message.hasContentBlocks(ToolResultBlock.class))
+                            .toList();
+            var ordered =
+                    messages.stream()
+                            .flatMap(
+                                    message ->
+                                            message
+                                                    .getContentBlocks(ToolResultBlock.class)
+                                                    .stream())
+                            .toList();
+            assertEquals(
+                    List.of("a", "b", "c"), ordered.stream().map(ToolResultBlock::getId).toList());
+            assertEquals(1, messages.size());
+            assertEquals(
+                    List.of(ToolResultState.SUCCESS, ToolResultState.DENIED, ToolResultState.ERROR),
+                    ordered.stream().map(ToolResultBlock::getState).toList());
+            assertNotNull(backend.execution(thread, a).appliedAt());
+            assertNotNull(backend.execution(thread, c).appliedAt());
+            assertEquals(
+                    List.of(a, c).stream().sorted().toList(),
+                    backend.events(key, null, 500).events().stream()
+                            .filter(event -> event.type().equals("tool.result.applied"))
+                            .map(event -> event.data().path("executionId").asText())
+                            .sorted()
+                            .toList());
+        }
+    }
+
+    @Test
+    void hooksFreezeApprovedArgumentsAndReuseNormalizedHandsResultsAfterTakeover() {
+        var policyCalls = new AtomicInteger();
+        var normalizationCalls = new AtomicInteger();
+        var failure = new AtomicBoolean();
+        var model = new ScriptedModel(true);
+        var adapter =
+                adapter(model, PermissionMode.BYPASS, Map.of("job", "jobs"))
+                        .withToolHooks(
+                                new AgentScopeToolHooks(
+                                        "policy-v1",
+                                        Duration.ofSeconds(1),
+                                        List.of(
+                                                input -> {
+                                                    policyCalls.incrementAndGet();
+                                                    return new AgentScopeToolHooks.Decision(
+                                                            AgentScopeToolHooks.Effect.CONFIRM,
+                                                            DurableJson.value(Map.of("value", 9)));
+                                                }),
+                                        List.of(
+                                                input -> {
+                                                    normalizationCalls.incrementAndGet();
+                                                    return List.of(
+                                                            TextBlock.builder()
+                                                                    .text("normalized output")
+                                                                    .build());
+                                                })));
+        var thread = new ThreadKey(key, "main");
+        try (var backend = LocalBackend.open(directory.resolve("hook-recovery"))) {
+            String turnId;
+            try (var first = runtime(backend, adapter, null)) {
+                var turn = first.createSession(key, "agent").submit("initial", "run job");
+                turnId = turn.turnId();
+                first.tick(thread);
+                assertEquals(TurnStatus.WAITING, turn.status().status());
+                var pending = turn.pendingInteractions().get(0);
+                assertEquals(9, pending.call().path("arguments").path("value").asInt());
+            }
+            try (var second = runtime(backend, adapter, null)) {
+                var turn = second.getSession(key).getTurn(turnId);
+                turn.respond("allow", turn.pendingInteractions().get(0).id(), true);
+                second.tick(thread);
+                assertEquals(TurnStatus.WAITING, turn.status().status());
+            }
+            var lease =
+                    backend.claim(thread, "hands-fixture", Duration.ofSeconds(10)).orElseThrow();
+            var tool = backend.frame(lease).tools().get(0);
+            String execution = tool.request().executionId();
+            assertEquals(9, tool.request().call().arguments().path("value").asInt());
+            backend.beginDispatch(lease, execution);
+            backend.acceptResult(
+                    thread,
+                    execution,
+                    new ExecutionResult(
+                            ExecutionState.SUCCEEDED,
+                            "provider-handle",
+                            DurableJson.value("provider output"),
+                            null));
+            backend.release(lease, Duration.ZERO);
+
+            var interrupted = spy(backend);
+            doAnswer(
+                            invocation -> {
+                                failure.set(true);
+                                throw new DurableException(
+                                        DurableException.Code.UNAVAILABLE,
+                                        "Stop before applying result");
+                            })
+                    .when(interrupted)
+                    .prepareRun(any(), any());
+            try (var third = runtime(interrupted, adapter, null)) {
+                third.tick(thread);
+                assertTrue(failure.get());
+                assertEquals(1, normalizationCalls.get());
+                assertFalse(backend.execution(thread, execution).applied());
+            }
+
+            try (var replacement = runtime(backend, adapter, null)) {
+                replacement.start();
+                var finished =
+                        replacement
+                                .getSession(key)
+                                .getTurn(turnId)
+                                .await(TURN_DEADLINE)
+                                .toCompletableFuture()
+                                .join();
+                assertEquals(TurnStatus.SUCCEEDED, finished.status(), finished.error());
+            }
+            assertEquals(1, policyCalls.get());
+            assertEquals(1, normalizationCalls.get());
+            var state = backend.execution(thread, execution);
+            assertTrue(state.applied());
+            assertEquals("provider output", state.result().result().asText());
+            var outputInModel =
+                    model.inputs.get(model.inputs.size() - 1).stream()
+                            .flatMap(
+                                    message ->
+                                            message
+                                                    .getContentBlocks(ToolResultBlock.class)
+                                                    .stream())
+                            .flatMap(result -> result.getOutput().stream())
+                            .filter(TextBlock.class::isInstance)
+                            .map(TextBlock.class::cast)
+                            .map(TextBlock::getText)
+                            .toList();
+            assertEquals(List.of("normalized output"), outputInModel);
+        }
+    }
+
+    @Test
+    void localToolResultReusesItsNormalizationAfterTheCheckpointFails() {
+        var calls = new AtomicInteger();
+        var normalizations = new AtomicInteger();
+        var recorded = new AtomicBoolean();
+        var stopped = new AtomicBoolean();
+        var thread = new ThreadKey(key, "main");
+        var model = new ScriptedModel(true);
+        var adapter =
+                AgentScopeAdapter.forReAct(
+                                binding -> {
+                                    var toolkit = new Toolkit();
+                                    toolkit.registerAgentTool(
+                                            new ToolBase(
+                                                    ToolBase.builder()
+                                                            .name("job")
+                                                            .description("Local fixture")
+                                                            .inputSchema(
+                                                                    Map.of("type", "object"))) {
+                                                @Override
+                                                public Mono<ToolResultBlock> callAsync(
+                                                        ToolCallParam param) {
+                                                    calls.incrementAndGet();
+                                                    return Mono.just(ToolResultBlock.text("raw"));
+                                                }
+                                            });
+                                    return ReActAgent.builder()
+                                            .name("local-result-hook")
+                                            .model(model)
+                                            .toolkit(toolkit)
+                                            .permissionContext(
+                                                    PermissionContextState.builder()
+                                                            .mode(PermissionMode.BYPASS)
+                                                            .build());
+                                },
+                                Map.of())
+                        .withToolHooks(
+                                new AgentScopeToolHooks(
+                                        "result-v1",
+                                        Duration.ofSeconds(1),
+                                        List.of(),
+                                        List.of(
+                                                input -> {
+                                                    normalizations.incrementAndGet();
+                                                    return List.of(
+                                                            TextBlock.builder()
+                                                                    .text("normalized")
+                                                                    .build());
+                                                })));
+        try (var storage = LocalBackend.open(directory.resolve("local-hook-recovery"))) {
+            var interrupt = spy(storage);
+            doAnswer(
+                            invocation -> {
+                                Commit command = invocation.getArgument(1);
+                                if (command.journal() != null && recorded.get()) {
+                                    stopped.set(true);
+                                    throw new DurableException(
+                                            DurableException.Code.UNAVAILABLE,
+                                            "Stop after the result normalization receipt");
+                                }
+                                Object receipt = invocation.callRealMethod();
+                                if (command.journal() != null
+                                        && command.journal().entries().stream()
+                                                .anyMatch(
+                                                        event ->
+                                                                "durable/tool_normalized"
+                                                                        .equals(
+                                                                                event.path("type")
+                                                                                        .asText())))
+                                    recorded.set(true);
+                                return receipt;
+                            })
+                    .when(interrupt)
+                    .commit(any(), any());
+            String turnId;
+            try (var first = runtime(interrupt, adapter, null)) {
+                var turn = first.createSession(key, "agent").submit("initial", "run job");
+                turnId = turn.turnId();
+                first.tick(thread);
+                assertTrue(stopped.get());
+                assertFalse(turn.status().status().terminal());
+            }
+            try (var second = runtime(storage, adapter, null)) {
+                second.start();
+                var turn =
+                        second.getSession(key)
+                                .getTurn(turnId)
+                                .await(TURN_DEADLINE)
+                                .toCompletableFuture()
+                                .join();
+                assertEquals(TurnStatus.SUCCEEDED, turn.status(), turn.error());
+            }
+            assertEquals(1, calls.get());
+            assertEquals(1, normalizations.get());
+            var modelResults =
+                    model.inputs.get(model.inputs.size() - 1).stream()
+                            .flatMap(
+                                    message ->
+                                            message
+                                                    .getContentBlocks(ToolResultBlock.class)
+                                                    .stream())
+                            .flatMap(result -> result.getOutput().stream())
+                            .filter(TextBlock.class::isInstance)
+                            .map(TextBlock.class::cast)
+                            .map(TextBlock::getText)
+                            .toList();
+            assertEquals(List.of("normalized"), modelResults);
+        }
+    }
+
+    @Test
+    void allowingToolInHookStillRequiresTheNativeConfirmation() {
+        var model = new ScriptedModel(true);
+        var adapter =
+                adapter(model, PermissionMode.DEFAULT, Map.of())
+                        .withToolHooks(
+                                new AgentScopeToolHooks(
+                                        "policy-v1",
+                                        Duration.ofSeconds(1),
+                                        List.of(input -> AgentScopeToolHooks.Decision.allow()),
+                                        List.of()));
+        try (var backend = LocalBackend.open(directory.resolve("hook-native-permission"));
+                var runtime = runtime(backend, adapter, null)) {
+            var turn = runtime.createSession(key, "agent").submit("initial", "run job");
+            runtime.tick(new ThreadKey(key, "main"));
+            assertEquals(TurnStatus.WAITING, turn.status().status());
+            assertEquals("confirmation", turn.pendingInteractions().get(0).kind());
         }
     }
 
@@ -2543,6 +3848,222 @@ class AgentScopeAdapterTest {
     }
 
     @Test
+    void trustedVerificationAppearsAlongsideTheSuccessfulExecution() {
+        var report =
+                new TaskVerification(
+                        "check-1",
+                        "columns",
+                        "action-1",
+                        "csv",
+                        TaskVerification.Outcome.FAILED,
+                        "private evidence details",
+                        new EvidenceBinding("task", 1, "artifact@3"),
+                        123);
+        var adapter =
+                AgentScopeAdapter.forReAct(
+                        binding -> {
+                            var toolkit = new Toolkit();
+                            toolkit.registerAgentTool(
+                                    new ToolBase(
+                                            ToolBase.builder()
+                                                    .name("job")
+                                                    .description("fixture")
+                                                    .inputSchema(Map.of("type", "object"))) {
+                                        @Override
+                                        public Mono<ToolResultBlock> callAsync(
+                                                ToolCallParam param) {
+                                            InvocationRecorder.from(param.getRuntimeContext())
+                                                    .recordNow(
+                                                            "verification/result",
+                                                            Map.of("verification", report));
+                                            return Mono.just(
+                                                    ToolResultBlock.text("artifact generated"));
+                                        }
+                                    });
+                            return ReActAgent.builder()
+                                    .name("verified")
+                                    .toolkit(toolkit)
+                                    .model(new ScriptedModel(true))
+                                    .permissionContext(
+                                            PermissionContextState.builder()
+                                                    .mode(PermissionMode.BYPASS)
+                                                    .build());
+                        },
+                        Map.of());
+        try (var backend = LocalBackend.open(directory.resolve("verified-result"));
+                var host = runtime(backend, adapter, null)) {
+            var session = host.createSession(key, "agent");
+            var turn = session.submit("check", "produce artifact");
+            host.tick(turn.threadKey());
+            assertNull(host.lastFailure(turn.threadKey()));
+            assertEquals(TurnStatus.SUCCEEDED, turn.result().status());
+            var check =
+                    new VerificationView(
+                            "check-1",
+                            "columns",
+                            "action-1",
+                            "csv",
+                            "FAILED",
+                            "task",
+                            1,
+                            "artifact@3",
+                            123);
+            assertEquals(List.of(check), turn.progress().verifications());
+            var events =
+                    session.listEvents(null, 200).events().stream()
+                            .filter(event -> event.type().equals(VerificationView.EVENT_TYPE))
+                            .toList();
+            assertEquals(1, events.size());
+            assertEquals(check, DurableJson.convert(events.get(0).data(), VerificationView.class));
+            assertFalse(events.get(0).data().has("reason"));
+        }
+    }
+
+    @Test
+    void nativeUnknownOutcomeWaitsForEvidenceWithoutRerunningTheEffect() {
+        verifyNativeToolReconciliation(false);
+    }
+
+    @Test
+    void cancellingANativeUnknownOutcomeWaitsForEvidenceBeforeAdvancingTheQueue() {
+        verifyNativeToolReconciliation(true);
+    }
+
+    private void verifyNativeToolReconciliation(boolean cancel) {
+        var calls = new AtomicInteger();
+        var model = new ScriptedModel(true);
+        var adapter =
+                AgentScopeAdapter.forReAct(
+                        binding -> {
+                            var toolkit = new Toolkit();
+                            toolkit.registerAgentTool(
+                                    new ToolBase(
+                                            ToolBase.builder()
+                                                    .name("job")
+                                                    .description("fixture")
+                                                    .inputSchema(Map.of("type", "object"))) {
+                                        @Override
+                                        public Mono<ToolResultBlock> callAsync(
+                                                ToolCallParam param) {
+                                            calls.incrementAndGet();
+                                            return Mono.just(
+                                                    ToolResultBlock.error("provider exit unknown")
+                                                            .withExecutionDetails(
+                                                                    new ToolExecutionDetails(
+                                                                            "fixture",
+                                                                            ToolExecutionDetails
+                                                                                    .Outcome
+                                                                                    .UNKNOWN,
+                                                                            null,
+                                                                            false)));
+                                        }
+                                    });
+                            return ReActAgent.builder()
+                                    .name("unknown-tool")
+                                    .toolkit(toolkit)
+                                    .model(model)
+                                    .permissionContext(
+                                            PermissionContextState.builder()
+                                                    .mode(PermissionMode.BYPASS)
+                                                    .build());
+                        },
+                        Map.of());
+        var thread = new ThreadKey(key, "main");
+        try (var backend = LocalBackend.open(directory.resolve("native-unknown"))) {
+            String turnId;
+            var confirmed =
+                    new NativeToolReconciliation(
+                            "proof",
+                            "audit://verified",
+                            List.of(
+                                    ToolResultBlock.text("verified output")
+                                            .withIdAndName("call-1", "job")
+                                            .withState(ToolResultState.SUCCESS)));
+            try (var first = runtime(backend, adapter, null)) {
+                var session = first.createSession(key, "agent");
+                var turn = session.submit("initial", "perform effect");
+                turnId = turn.turnId();
+                assertEquals(
+                        DurableException.Code.CONFLICT,
+                        assertThrows(
+                                        DurableException.class,
+                                        () -> confirmed.submit(backend, thread, turn.turnId()))
+                                .code());
+                first.tick(thread);
+                assertNull(first.lastFailure(thread));
+                assertEquals(TurnStatus.WAITING, turn.status().status());
+                assertEquals(ToolExecutionStatus.UNKNOWN, turn.getToolCall("call-1").status());
+                assertEquals(
+                        List.of(
+                                new TurnBlocker(
+                                        BlockerKind.NATIVE_TOOL_RECONCILIATION, "call-1", null)),
+                        turn.progress().blockers());
+                assertFalse(turn.getToolCall("call-1").applied());
+                assertEquals(1, model.inputs.size());
+                if (cancel) turn.cancel("cancel");
+            }
+            assertTrue(backend.pendingDispatch(thread).isEmpty());
+            try (var replacement = runtime(backend, adapter, null)) {
+                var session = replacement.getSession(key);
+                var original = session.getTurn(turnId);
+                var following = session.submit("following", "continue");
+                var parked = cancel ? TurnStatus.CANCELLING : TurnStatus.WAITING;
+                replacement.tick(thread);
+                assertEquals(parked, original.status().status());
+                assertEquals(TurnStatus.QUEUED, following.status().status());
+                assertNull(original.status().recovery());
+                var wrong =
+                        new NativeToolReconciliation(
+                                "wrong",
+                                "audit://wrong",
+                                List.of(
+                                        ToolResultBlock.text("different invocation")
+                                                .withIdAndName("different", "job")
+                                                .withState(ToolResultState.SUCCESS)));
+                wrong.submit(backend, thread, turnId);
+                replacement.tick(thread);
+                assertEquals(parked, original.status().status());
+                assertTrue(backend.pendingDispatch(thread).isEmpty());
+                assertEquals(ToolExecutionStatus.UNKNOWN, original.getToolCall("call-1").status());
+                confirmed.submit(backend, thread, turnId);
+                confirmed.submit(backend, thread, turnId);
+                replacement.tick(thread);
+                assertNull(replacement.lastFailure(thread));
+                assertEquals(
+                        cancel ? TurnStatus.CANCELLED : TurnStatus.SUCCEEDED,
+                        original.status().status());
+                assertEquals(
+                        ToolExecutionStatus.SUCCEEDED, original.getToolCall("call-1").status());
+                assertTrue(original.getToolCall("call-1").applied());
+                assertEquals(cancel ? 1 : 2, model.inputs.size());
+                confirmed.submit(backend, thread, turnId);
+                assertEquals(
+                        1,
+                        backend.events(key, null, 100).events().stream()
+                                .filter(event -> event.type().equals("signal.applied"))
+                                .count());
+                replacement.tick(thread);
+                assertEquals(TurnStatus.SUCCEEDED, following.status().status());
+                var supplied =
+                        model.inputs.get(model.inputs.size() - 1).stream()
+                                .flatMap(
+                                        message ->
+                                                message
+                                                        .getContentBlocks(ToolResultBlock.class)
+                                                        .stream())
+                                .filter(block -> block.getId().equals("call-1"))
+                                .toList();
+                assertEquals(1, supplied.size());
+                assertEquals(
+                        "verified output",
+                        assertInstanceOf(TextBlock.class, supplied.get(0).getOutput().get(0))
+                                .getText());
+                assertEquals(1, calls.get());
+            }
+        }
+    }
+
+    @Test
     void cancelPendingInteractionClearsNativeStateForNextTurn() throws Exception {
         var backend =
                 new TransactionalSessionBackend(
@@ -2569,6 +4090,102 @@ class AgentScopeAdapterTest {
             assertEquals(
                     TurnStatus.SUCCEEDED,
                     backend.turn(new ThreadKey(key, "main"), turn.turnId()).status());
+        }
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void cancellingAfterAResultWasReceivedPreservesItsNormalization(boolean automatic) {
+        var thread = new ThreadKey(key, "main");
+        var model = new ScriptedModel(true);
+        var normalizations = new AtomicInteger();
+        var hooks =
+                new AgentScopeToolHooks(
+                        "redact-v1",
+                        Duration.ofSeconds(1),
+                        List.of(),
+                        List.of(
+                                input -> {
+                                    normalizations.incrementAndGet();
+                                    return List.of(
+                                            TextBlock.builder().text("normalized result").build());
+                                }));
+        var routes = automatic ? Map.of("job", "jobs") : Map.<String, String>of();
+        var adapter = adapter(model, PermissionMode.BYPASS, routes).withToolHooks(hooks);
+        try (var backend = LocalBackend.open(directory.resolve("cancel-received-result"))) {
+            String turnId;
+            try (var first = runtime(backend, adapter, null)) {
+                var turn = first.createSession(key, "agent").submit("first", "run job");
+                turnId = turn.turnId();
+                first.tick(thread);
+                assertEquals(TurnStatus.WAITING, turn.status().status());
+                if (automatic) {
+                    var lease =
+                            backend.claim(thread, "fixture", Duration.ofSeconds(5)).orElseThrow();
+                    var execution = backend.frame(lease).tools().get(0).request().executionId();
+                    backend.beginDispatch(lease, execution);
+                    backend.acceptResult(
+                            thread,
+                            execution,
+                            new ExecutionResult(
+                                    ExecutionState.SUCCEEDED,
+                                    "provider",
+                                    DurableJson.value("raw result"),
+                                    null));
+                    backend.release(lease, Duration.ZERO);
+                } else {
+                    turn.respond(
+                            "manual-result",
+                            turn.pendingInteractions().get(0).id(),
+                            DurableJson.value("raw result"));
+                }
+                turn.cancel("cancel-before-application");
+            }
+            var followingModel = new ScriptedModel(false);
+            try (var replacement =
+                    runtime(
+                            backend,
+                            adapter(followingModel, PermissionMode.BYPASS, routes)
+                                    .withToolHooks(hooks),
+                            null)) {
+                var session = replacement.getSession(key);
+                var turn = session.getTurn(turnId);
+                replacement.tick(thread);
+                assertNull(replacement.lastFailure(thread));
+                assertEquals(TurnStatus.CANCELLED, turn.status().status());
+                assertEquals(ToolExecutionStatus.SUCCEEDED, turn.getToolCall("call-1").status());
+                assertTrue(turn.getToolCall("call-1").applied());
+                assertTrue(followingModel.inputs.isEmpty());
+                var following = session.submit("following", "continue");
+                replacement.tick(thread);
+                assertNull(replacement.lastFailure(thread));
+                assertEquals(TurnStatus.SUCCEEDED, following.status().status());
+                var results =
+                        followingModel.inputs.get(0).stream()
+                                .flatMap(
+                                        message ->
+                                                message
+                                                        .getContentBlocks(ToolResultBlock.class)
+                                                        .stream())
+                                .filter(result -> result.getId().equals("call-1"))
+                                .toList();
+                assertEquals(1, results.size());
+                assertEquals(
+                        "normalized result",
+                        assertInstanceOf(TextBlock.class, results.get(0).getOutput().get(0))
+                                .getText());
+                assertEquals(1, normalizations.get());
+                if (!automatic)
+                    assertTrue(
+                            backend.events(key, null, 500).events().stream()
+                                    .anyMatch(
+                                            event ->
+                                                    event.type().equals("signal.applied")
+                                                            && event.data()
+                                                                    .path("signalId")
+                                                                    .asText()
+                                                                    .equals("manual-result")));
+            }
         }
     }
 }

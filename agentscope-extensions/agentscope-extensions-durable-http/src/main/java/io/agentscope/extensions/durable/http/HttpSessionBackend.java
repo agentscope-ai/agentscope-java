@@ -17,8 +17,10 @@
 package io.agentscope.extensions.durable.http;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import io.agentscope.durable.DurableException;
 import io.agentscope.durable.DurableJson;
 import io.agentscope.durable.DurableProtocol.Endpoint;
+import io.agentscope.durable.DurableTypes.ActiveTurnCancellation;
 import io.agentscope.durable.DurableTypes.CheckpointMetadata;
 import io.agentscope.durable.DurableTypes.CheckpointView;
 import io.agentscope.durable.DurableTypes.CommandReceipt;
@@ -35,9 +37,11 @@ import io.agentscope.durable.DurableTypes.Frame;
 import io.agentscope.durable.DurableTypes.HarnessSelector;
 import io.agentscope.durable.DurableTypes.HistoryPage;
 import io.agentscope.durable.DurableTypes.Interaction;
+import io.agentscope.durable.DurableTypes.JobView;
 import io.agentscope.durable.DurableTypes.Lease;
 import io.agentscope.durable.DurableTypes.ModelCallPage;
 import io.agentscope.durable.DurableTypes.ModelCallView;
+import io.agentscope.durable.DurableTypes.OutputPage;
 import io.agentscope.durable.DurableTypes.RecoveryView;
 import io.agentscope.durable.DurableTypes.Restoration;
 import io.agentscope.durable.DurableTypes.RunPage;
@@ -55,10 +59,13 @@ import io.agentscope.durable.DurableTypes.ThreadPage;
 import io.agentscope.durable.DurableTypes.ThreadSpec;
 import io.agentscope.durable.DurableTypes.ThreadView;
 import io.agentscope.durable.DurableTypes.ToolExecution;
+import io.agentscope.durable.DurableTypes.ToolExecutionView;
 import io.agentscope.durable.DurableTypes.TurnPage;
+import io.agentscope.durable.DurableTypes.TurnProgress;
 import io.agentscope.durable.DurableTypes.TurnReceipt;
 import io.agentscope.durable.DurableTypes.TurnView;
 import io.agentscope.durable.ExecutionMessages;
+import io.agentscope.durable.Executor;
 import io.agentscope.durable.SessionBackend;
 import io.agentscope.durable.SessionResources;
 import io.agentscope.durable.store.ObjectStore.Reference;
@@ -163,6 +170,21 @@ public final class HttpSessionBackend implements SessionBackend {
     }
 
     @Override
+    public ActiveTurnCancellation cancelActiveTurns(
+            SessionKey session, String requestId, String threadId) {
+        return as(
+                call(
+                        "cancelActiveTurns",
+                        "session",
+                        session,
+                        "requestId",
+                        requestId,
+                        "threadId",
+                        threadId),
+                ActiveTurnCancellation.class);
+    }
+
+    @Override
     public Reference putObject(SessionKey session, byte[] bytes) {
         return transport.putObject(session, bytes);
     }
@@ -201,8 +223,21 @@ public final class HttpSessionBackend implements SessionBackend {
     }
 
     @Override
+    public List<ThreadSpec> ready(SessionKey session, List<HarnessSelector> harnesses, int limit) {
+        return List.of(
+                as(
+                        call("ready", "session", session, "harnesses", harnesses, "limit", limit),
+                        ThreadSpec[].class));
+    }
+
+    @Override
     public TurnView turn(ThreadKey session, String turnId) {
         return as(call("turn", "thread", session, "turnId", turnId), TurnView.class);
+    }
+
+    @Override
+    public TurnProgress turnProgress(ThreadKey session, String turnId) {
+        return as(call("turnProgress", "thread", session, "turnId", turnId), TurnProgress.class);
     }
 
     @Override
@@ -284,17 +319,14 @@ public final class HttpSessionBackend implements SessionBackend {
 
     @Override
     public Optional<Lease> claim(ThreadKey session, String owner, Duration duration) {
-        return Optional.ofNullable(
-                as(
-                        call(
-                                "claim",
-                                "thread",
-                                session,
-                                "owner",
-                                owner,
-                                "duration",
-                                duration.toMillis()),
-                        Lease.class));
+        return claimOutcome(session, owner, duration).ownership();
+    }
+
+    @Override
+    public ClaimOutcome claimOutcome(ThreadKey session, String owner, Duration duration) {
+        return as(
+                call("claim", "thread", session, "owner", owner, "duration", duration.toMillis()),
+                ClaimOutcome.class);
     }
 
     @Override
@@ -375,9 +407,38 @@ public final class HttpSessionBackend implements SessionBackend {
     }
 
     @Override
-    public ToolExecution beginDispatch(Lease lease, String executionId) {
+    public JobView job(ThreadKey owner, String jobId) {
+        return as(call("job", "thread", owner, "jobId", jobId), JobView.class);
+    }
+
+    @Override
+    public ExecutionResult awaitJob(ExecutionRequest waiter, String jobId, long timeoutMillis) {
         return as(
-                call("beginDispatch", "lease", lease, "executionId", executionId),
+                call(
+                        "awaitJob",
+                        "thread",
+                        waiter.thread(),
+                        "request",
+                        waiter,
+                        "jobId",
+                        jobId,
+                        "timeoutMillis",
+                        timeoutMillis),
+                ExecutionResult.class);
+    }
+
+    @Override
+    public ToolExecution beginDispatch(
+            Lease lease, String executionId, Executor.Capabilities capabilities) {
+        return as(
+                call(
+                        "beginDispatch",
+                        "lease",
+                        lease,
+                        "executionId",
+                        executionId,
+                        "capabilities",
+                        capabilities),
                 ToolExecution.class);
     }
 
@@ -397,6 +458,39 @@ public final class HttpSessionBackend implements SessionBackend {
     @Override
     public void acceptExecutionEvent(ExecutionMessages.Event event) {
         call("acceptExecutionEvent", "thread", event.request().thread(), "event", event);
+    }
+
+    @Override
+    public ToolExecutionView toolExecution(
+            ThreadKey thread, String turnId, String callId, String executionId) {
+        if ((callId == null) == (executionId == null))
+            throw new DurableException(DurableException.Code.INVALID, "Select exactly one tool ID");
+        return as(
+                call(
+                        "getToolExecution",
+                        "thread",
+                        thread,
+                        "turnId",
+                        turnId,
+                        callId == null ? "executionId" : "callId",
+                        callId == null ? executionId : callId),
+                ToolExecutionView.class);
+    }
+
+    @Override
+    public OutputPage toolOutput(ThreadKey thread, String turnId, String executionId, long offset) {
+        return as(
+                call(
+                        "toolOutput",
+                        "thread",
+                        thread,
+                        "turnId",
+                        turnId,
+                        "executionId",
+                        executionId,
+                        "offset",
+                        offset),
+                OutputPage.class);
     }
 
     @Override
@@ -424,6 +518,11 @@ public final class HttpSessionBackend implements SessionBackend {
     }
 
     @Override
+    public void rejectNativeToolReconciliation(Lease lease, String signalId) {
+        call("rejectNativeToolReconciliation", "lease", lease, "signalId", signalId);
+    }
+
+    @Override
     public void cancel(ThreadKey session, String turnId, String requestId) {
         call("cancel", "thread", session, "turnId", turnId, "requestId", requestId);
     }
@@ -437,6 +536,13 @@ public final class HttpSessionBackend implements SessionBackend {
     public EventPage events(SessionKey session, String cursor, int limit) {
         return as(
                 call("events", "session", session, "cursor", cursor, "limit", limit),
+                EventPage.class);
+    }
+
+    @Override
+    public EventPage eventsBefore(SessionKey session, String cursor, int limit) {
+        return as(
+                call("eventsBefore", "session", session, "cursor", cursor, "limit", limit),
                 EventPage.class);
     }
 

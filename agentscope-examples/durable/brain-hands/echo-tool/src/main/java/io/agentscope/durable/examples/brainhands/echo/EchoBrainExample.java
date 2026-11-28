@@ -40,6 +40,7 @@ import io.agentscope.durable.SessionStreamEvent;
 import io.agentscope.durable.agentscope.AgentScopeAdapter;
 import io.agentscope.extensions.durable.jdbc.LocalBackend;
 import io.agentscope.extensions.durable.rocketmq.RocketMqRemoteExecutor;
+import io.agentscope.extensions.durable.rocketmq.RocketMqTurnScheduler;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
@@ -74,7 +75,8 @@ public final class EchoBrainExample implements ApplicationRunner {
         var config =
                 ClientConfiguration.newBuilder().setEndpoints(properties.getEndpoint()).build();
         var executor = RocketMqRemoteExecutor.builder().clientConfiguration(config).build();
-        try (var backend = LocalBackend.open(dataDirectory());
+        try (var scheduling = RocketMqTurnScheduler.create(config, "durable");
+                var backend = LocalBackend.open(dataDirectory()).withWakeups(scheduling);
                 var runtime = runtime(backend, executor)) {
             var key = new SessionKey(properties.getNamespace(), properties.getSessionId());
             var session = runtime.createSession(key, HARNESS);

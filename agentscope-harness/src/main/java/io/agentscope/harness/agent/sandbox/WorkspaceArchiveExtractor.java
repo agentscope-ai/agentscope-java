@@ -81,6 +81,10 @@ public class WorkspaceArchiveExtractor {
                         Files.createDirectories(dest.getParent());
                     }
                     Files.copy(tar, dest, StandardCopyOption.REPLACE_EXISTING);
+                    // Restore the entry's permission bits the way tar -xf does: the payload
+                    // carries the executable bit of projected scripts and a bare Files.copy
+                    // would drop it.
+                    TarFileModes.applyTo(dest, entry.getMode());
                 }
             }
         }

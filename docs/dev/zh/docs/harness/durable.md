@@ -85,6 +85,89 @@ runtime.start();
 ThreadJournal 负责 Agent 原生历史，Durable 调度仍由 Durable Runtime 负责。
 namespace 映射为 `RuntimeContext.userId`，身份限定在每次调用内。
 
+### 通过 Durable Worker 执行模型推理
+
+使用 `withModelExecutions` 将 ReAct 或 Harness Agent 的推理交给 `ModelWorker`。
+Agent 先保存恢复位置，再提交模型请求。Worker 按路由认领请求、持有租约、调用模型并按序提交分片批次。
+首批分片提交后，原 Turn 即可恢复。共享同一后端的兼容 Runtime 可用原 Session、Thread、Turn 和模型调用 ID，
+回放已提交批次并读取后续分片。同一 Thread 的后续 Turn 等当前 Turn 结束后再执行。
+
+本地部署可以用 SQLite 保存状态、索引和分片正文。
+
+```java
+var records = JdbcRecordStore.sqlite(Path.of("./durable.db"));
+var objects = new RecordObjectStore(records);
+var wakeups = Wakeups.local();
+var backend = new TransactionalSessionBackend(records, objects).withWakeups(wakeups);
+var executions = new TransactionalModelExecutionStore(
+        records, new ObjectModelOutputStore(objects), wakeups);
+var adapter = AgentScopeAdapter.forReAct(
+        binding -> ReActAgent.builder().name("assistant").model(model), Map.of())
+        .withModelExecutions(executions, "reasoning");
+var runtime = DurableRuntime.builder().backend(backend)
+        .harness("assistant", "definition-v1", adapter).build();
+var worker = new ModelWorker(executions, "reasoning", ModelExecutor.using(name -> model));
+worker.start();
+runtime.start();
+```
+
+在宿主运行期间保持 Worker 和 Runtime 运行，并在退出时关闭。
+`ModelExecutor.using` 根据请求中的模型名，从 Worker 自己的模型配置解析模型。
+
+分布式部署时，Session 后端、Agent 和 Worker 共享事务数据库，例如通过 `JdbcRecordStore` 接入 PostgreSQL。
+数据库保存执行状态、分片序号和存储引用。为 `TransactionalSessionBackend` 和 `ObjectModelOutputStore`
+配置同一套 `S3ObjectStore` 或 `OssObjectStore`，将交接调用的分片正文及其 Journal 内容保存到对象存储。
+直调的 Journal 分片继续按原有的大小阈值存储。
+通过 `RocketMqWakeups` 通知 Worker 和 Runtime。通知延迟或丢失时，轮询仍可从持久状态发现变化。
+
+自定义 `ModelOutputStore` 可以将正文写入支持回放的消息队列。`write` 返回稳定的引用，例如 topic、
+partition 和 offset。`read` 必须允许任意实例按该引用读回同一批次，保留期应覆盖 Turn 的恢复窗口。
+写入成功后，Runtime 才提交引用。如果 Worker 在启动模型调用后丢失租约，执行状态会结束为 `UNKNOWN`，
+Runtime 可处理这一结果，避免自动发起第二次模型调用。
+
+### 通过消息队列执行模型推理
+
+将 `adapter.withQueuedModel(publisher)` 注册为当前定义的 Harness。ReAct 和 Harness 工厂均支持。
+发布方收到的 `QueuedModelRequest` 包含目标 Thread、Turn、调用 ID、模型名、已准备的消息、工具定义和生成参数。
+发布方应在队列确认接收后返回。如果发送成功但确认丢失，恢复时可能按原调用 ID 重投，并导致额外模型请求。
+Worker 使用自身配置的模型凭据。Harness 的记忆和收尾阶段沿用各自的模型调用路径。
+
+适配器在投递前保存已准备好的请求和 Agent 恢复位置。投递完成后，Turn 进入等待并释放本次 Runtime 执行。
+共享同一后端的兼容 Runtime 可以接续原 Turn。同一 Thread 的后续 Turn 可以提交，但仍会在等待中的 Turn 之后排队。
+回包消费者通过原请求定位等待中的 Turn：
+
+```java
+var turn = runtime.getSession(request.thread().session())
+        .getThread(request.thread().threadId()).getTurn(request.turnId());
+String deliveryId = java.util.UUID.randomUUID().toString();
+boolean accepted = QueuedModelRequest.begin(turn, request.callId(), deliveryId);
+```
+
+每次生成前只调用一次 begin。accepted 为 false 时确认 MQ 投递并返回。同一 generation 的所有分片沿用同一 deliveryId。
+
+```java
+var signal = QueuedModelRequest.reply(
+        request.callId(), deliveryId, sequence, chatResponse, last);
+boolean stored = QueuedModelRequest.accept(turn, signal);
+```
+
+stored 为 false 表示后端已确认忽略该回包，也可以确认投递。
+
+序号从零开始。整体返回只发一个终态帧；流式返回按连续序号发分片，并在最后一帧设置终态。
+已发完内容时可用空响应结束流。远端失败使用 `QueuedModelRequest.failure`。
+消费者在信号写入成功后确认 MQ 消息，重投时使用相同的信号 ID 和内容。
+第零帧唤醒可用 Runtime；接手的实例按序展示分片，在成功终态后推进原 ReAct 循环。
+
+适配器默认使用五分钟空闲期限，从队列确认接收开始计时，可通过
+`withQueuedModel(publisher, Duration.ofMinutes(15))` 调整。新消费的有序分片续期，
+期限会持久化，更换 Runtime 后重放已消费分片不会续期。到期时若仍缺帧，Turn 进入失败状态，
+错误包含调用 ID 和所缺序号。
+接手时已到齐的回包仍可处理。若接流实例在展示部分回复后退出，新实例以同一消息 ID 和
+attempt、更高的 revision 回放已保存分片。客户端收到新 revision 时替换之前的部分文本。
+回包格式无效时，Turn 会失败，后续分片中的工具调用不会执行。
+配置备用模型时，主模型在首个响应前明确回传失败，可以触发独立的备用模型调用。
+接手的 Runtime 会继续这次备用调用。正常挂起、回包格式错误、模型已输出分片后的失败均不会触发模型切换。
+
 ## 重连与控制任务
 
 ### 重新打开原任务
@@ -115,13 +198,27 @@ requestId 在 Session 内去重；同一个 ID 改变目标 Thread、操作或�
 var investigation = conversation.submit("investigate-1", "调查导出超时的原因");
 var summary = conversation.submit("summary-1", "总结调查结果");
 investigation.steer("constraint-1", "重点检查数据库访问，不要修改 API");
-summary.cancel("cancel-summary-1");
 ```
 
 总结在主 Thread 中排在调查之后。队首 Turn 处于 WAITING 或 PAUSED 时也会阻挡后续任务。
 `steer` 和 `inject` 在安全边界向原 Turn 加入输入，不会在模型输出一半时强行打断，
 也不会撤销已发出的工具调用。`withdraw` 只能撤回尚未应用的输入。
 控制与任务完成发生竞争时，应重新读取 Turn，不能假定控制已生效。
+
+编辑或转换尚未开始的排队输入时，传入客户端读取到的输入版本。
+
+```java
+var thread = conversation.mainThread();
+var edit = thread.editQueuedInput(
+        "edit-summary-1", summary.turnId(), summary.status().inputRevision(),
+        Input.text("只总结数据库调查中的发现"));
+thread.convertQueuedToSteer(
+        "redirect-summary-1", summary.turnId(), investigation.turnId(), edit.inputRevision());
+```
+
+编辑保留消息 ID 和历史位置。转换后，来源 Turn 进入 `CONVERTED`，目标 Turn 在模型上下文中
+沿用原消息 ID。输入版本过期、来源已开始或目标已完成时返回冲突。响应不确定时，使用同一
+操作 ID 和请求内容重试。
 
 控制回执表示已受理；通过 `signal.applied` 或最终 Turn 状态确认后续处理。
 排队中的任务可以立即取消；活动任务需要结清外部操作，受理取消不代表远端进程已经停止。
@@ -171,7 +268,21 @@ conversation.getThread("research").submit("research-2", "比较这些案例的�
 | Thread | `submit(requestId, Input)`、`getTurn(turnId)`、`listTurns(cursor, limit)`、`history(cursor, limit)`、`view()`、`close()` |
 | Turn | `status()`、`result()`、`await(timeout)`、`steer`、`inject`、`withdraw`、`cancel`、`pendingInteractions`、`respond`、`pause`、`resume` |
 | Session / Thread / Turn | `listEvents(cursor, limit)`、`streamEvents(options)`、`subscribeEvents(options, listener)`；过滤不创建新事件序号 |
-| Thread | `checkpoints(after, limit)`、`restore(position, expectedPosition, requestId)`、`fork(position, targetThreadKey, requestId)` |
+| Thread | `checkpoints(after, limit)`、`restore(position, expectedPosition, requestId)`、`fork(position, targetThreadKey, requestId)`、`forkSession(position, targetSessionKey, requestId)` |
+
+从保留的已结束 checkpoint 分支到独立 Session 时，在源 Thread 上指定同一
+namespace 内的新 Session key。
+
+```java
+var branch = conversation.mainThread().forkSession(
+        checkpointPosition, new SessionKey("demo", "alternate"), "fork-alternate");
+branch.submit("alternate-1", "探索另一种方案。");
+```
+
+新 Session、主 Thread 和恢复基线一起可见。主 Thread 继承源绑定和 checkpoint 中的
+私有资源。响应丢失后，可用同一源 checkpoint、目标 key 和请求 ID 重试。
+已由其他请求创建的目标会返回冲突。对已有 Session 中的 Thread 使用 `fork`。
+外部文件和 Sandbox 生命周期遵循其配置的存储契约。
 
 一个 DurableTurn 对应一次持久逻辑任务。原生 AgentRun 是一次进程内调用，与 Durable 的
 RunView 使用同一个 runId；StepView 记录该 Run 内的步骤。恢复保留 turnId，创建新 Run/Step。
@@ -202,7 +313,11 @@ Session 创建时原子创建主 Thread；每个 Thread 固定自己的 Agent �
 `turn.pause(requestId)` 先受理暂停意图，活动调用在安全边界从 PAUSING 进入 PAUSED。
 暂停也会阻塞同 Thread 的后续任务；外部结果和交互答案可继续落库，但不自动推进。
 原生日志通过 run/output、run/end 报告调用结果，任务终态只由 Durable 提交。
-排队任务可立即取消，活动任务的取消需等待实际执行结果核实。
+排队任务可立即取消。取消活动任务时，Brain 可以中断在途的直连 Executor 调用，
+并依据执行器报告的实际结果结清。无法核实的工具效果保留为 `UNKNOWN`。
+
+AgentScope adapter 会结清尚未开始的工具计划，并保留取消前已收到的结果。结果按配置
+完成规范化后进入下一 Turn 的上下文。取消与完成由先提交的决定确定 Turn 终态。
 
 ```java
 var handle = runtime.getSession(new SessionKey("application", "conversation-1"));
@@ -355,13 +470,50 @@ Core/Harness 的 `AgentEvent`、`JournalEvent` 或内部实时传输类型。
 
 `agentscope-durable-adapter-claude` 将完成消息和显式订阅的实时消息增量映射为 Claude
 Managed Agents 事件格式。为当前连接启用 `EventDeltaType.MESSAGE` 后，可将
-`ClaudeEventStreamSink` 传给 `SessionEventStream.forEach`。`agentscope-durable-adapter-agui` 通过
+`ClaudeEventStreamSink` 传给 `SessionEventStream.forEach`。使用已授权的 Session 句柄调用
+`new ClaudeSessionEvents(session).sendMessage(requestId, event)`，可提交包含文本或 URL/base64
+图片的 Claude `user.message`。用相同请求 ID 重试会沿用原受理结果。回执包含持久消息 ID，
+受理时的 `processed_at` 为空。输入进入 AgentScope 原生检查点后，事件流交付含处理时间的同一消息。
+审批时将投影的 `agent.tool_use` ID 作为 `tool_use_id`，
+通过 `sendToolConfirmation(requestId, event)` 将 `allow` 或 `deny` 写回原 Thread 和 Turn。
+应答应用后，事件流沿用回执 ID 并交付处理时间。使用 `sendToolResult` 发送
+`user.custom_tool_result`，为手动工具提交文本、图片和可选的 `is_error`。
+使用 `sendInterrupt` 提交 `user.interrupt`，有 `session_thread_id` 时只针对指定 Thread，
+省略时选中所有打开 Thread 中已开始的 Turn。相同请求 ID 重试时沿用原目标。
+Java 原生入口为 `session.cancelActiveTurns(requestId, threadId)`，全部目标结清后事件流交付处理时间。
+使用 `listEvents(page, limit, types)` 按提交顺序读取 Claude 格式的历史。
+返回的 `next_page` 延续首屏的历史水位和事件类型筛选条件。
+`agentscope-durable-adapter-agui` 通过
 `DurableAguiEventStreamSink` 将同一规范化事件流映射到现有 AG-UI 1.0 `AguiEvent` 类型。
-这两个制品是事件 adapter，不是完整托管 HTTP API；认证、资源路由与传输封装仍由应用负责。
+
+### Claude 事件端点
+
+在 JDK `HttpServer` 的 `/v1/sessions/` 挂载
+`new ClaudeSessionEventHandler(runtime, recordStore, authorizer)`。授权回调将请求中的 Session
+解析为调用者有权访问的命名空间。Handler 在 `managed-agents-2026-04-01` beta 下提供
+`POST /v1/sessions/{id}/events`、`GET /v1/sessions/{id}/events` 和
+`GET /v1/sessions/{id}/events/stream`。API 副本共享持久 `RecordStore`。
+携带 `Idempotency-Key` 可重试发送批次。批次按传入顺序处理，若后续项失败，已受理项的回执
+仍可用原键重试取得。
+
+历史支持 `order=asc` 或 `order=desc`、`types[]` 及基于处理时间的 `created_at` 区间筛选。
+当各打开的 Thread 停在手动工具应答上时，Session 以 `requires_action` 返回尚待应答的事件 ID。
+新流从当前水位开始。断线后可将最后一条已提交 SSE 帧的 `id` 放在 `Last-Event-ID` 中续接。
+使用 `event_deltas[]=agent.message` 启用消息预览。预览帧不分配续接 ID。
+[Claude 事件流](https://platform.claude.com/docs/en/managed-agents/events-and-streaming)
+
+### 分离部署的实时预览传输
 
 默认 `LiveEvents.local()` 只连接同一个 Runtime 装配内的生产者与观察者。Brain/API 分离部署
 而且需要实时预览时，两侧必须配置同一个共享 `LiveEvents` 传输。即使该传输缺失或丢事件，
 Durable 执行、历史和最终结果仍保持正确。
+
+可通过 `agentscope-extensions-redis` 的 `RedisLiveEvents` 使用 Redis Pub/Sub。Brain 和各 API
+宿主通过 `DurableRuntime.builder().liveEvents(...)` 配置同一个应用专用频道。Brain 使用
+`new RedisLiveEvents(channel, redisConnection.sync(), null)`，API 宿主使用
+`new RedisLiveEvents(channel, null, redisPubSubConnection)`。为订阅分配专用连接，将频道访问
+限制在受信任的应用角色。缓冲区满或单条消息超过 64 KiB 时丢弃预览。关闭时先停止 Runtime
+和传输，再关闭应用持有的连接。
 
 ## Hands Worker 与 RocketMQ 执行
 
@@ -396,6 +548,21 @@ var worker = WorkerRuntime.builder()
 | HTTP Sidecar / 独立服务 | HttpExecutor → ExecutorHandler → `worker.localExecutor()` → WorkerRuntime |
 | 独立 MQ Worker | RocketMqRemoteExecutor → 命令队列 → RocketMqWorker → 执行更新队列 |
 
+Brain 将同一轮模型行动中获准派发、发往同一 Hands 路由的工具放在一条
+RocketMQ 消息里。Hands 按各自的 `executionId` 登记全部子调用后才确认消息。
+重投会补登记缺失项，复用已有的执行记录。取消、查询、输出和结果继续按调用交付。
+Brain 汇齐终态结果后，按模型原有的调用顺序交回结果。
+
+MQ Worker 的 `authorize` 用于校验命令身份和作用域。宿主通过 RocketMqWorker 或
+WorkerRuntime 的 `authorizeStart` 检查单项工具的当前业务权限。返回
+`Optional.empty()` 允许开始；返回可对调用方展示的理由会持久记录该调用的 `DENIED`
+结果，同批其他工具按各自的权限继续。授权服务异常沿用 Worker 重试策略。已开始的
+操作继续按原执行身份查询和取消。
+
+`worker.statistics(limit)` 区分可领取的新调用、持租调用、等待 Provider 的调用和退避项。
+对比 `oldestReadyAgeMillis` 与结果发布积压年龄，可定位延迟发生在开始前还是结果提交后。
+`truncated` 为 true 时，计数和年龄反映本次检查的子集。
+
 所有 Worker 形态复用相同执行内核。进程内线程隔离不能代替进程或 Sandbox 隔离。
 Brain 会话状态与 Hands 执行账本可以使用不同数据库；同一池的副本必须共享其账本，
 不能使用每个容器独立的 SQLite 文件冒充跨主机共享存储。
@@ -425,22 +592,50 @@ worker.start();
 
 Brain 的传输账本与 ObjectStore 自动复用 SessionBackend 的本地存储，Runtime 负责绑定、
 启动和关闭远程 Executor；用户不再重复传入 store、backend 或 route name。Worker 的执行
-账本、工具 Executor 和授权策略由宿主提供。默认轮询 100ms，
-Brain 每 5s 重试未确认命令或查询已受理任务，可用 pollInterval/retryInterval 调整。
+账本、工具 Executor 和授权策略由宿主提供。命令入库、Worker 受理和 Outbox 事件提交后按
+execution 触发处理。索引补漏默认每 2 秒运行。Brain 按 `retryInterval` 重试未确认命令，
+默认 5 秒。发现序列缺口时立即请求重放，连续 `responseTimeout` 未收到新进度时请求补查，
+默认 30 秒。可分别配置 `RocketMqWorker` 的 `discoveryInterval`、`publicationRepairInterval`
+和 `providerPollInterval`，控制账本发现、Outbox 补漏及 provider 重试间隔。
 用户只需要装配两侧适配；命令待发送记录、结果去重、补发与消费回调由内部管理。
 Runtime 和 Worker 会关闭根据 ClientConfiguration 创建的 MQ 客户端；存储、SessionBackend
 和底层工具 Executor 仍由宿主持有。
 
-默认 namespace `durable` 与 route `hands` 自动派生 commands、controls、updates 三个普通
-Topic 和对应消费组；两端无需分别配置物理名称。控制 Topic 独立，取消和查询不会被新执行
-积压阻塞。
+在支持 LiteTopic 的 Broker 和独立 Cluster Proxy 上创建 LITE 父 Topic，并分别配置
+Shared 消费组。默认 MQ namespace 是 `durable`。
+
+| 父 Topic | 消费组 | LiteTopic 作用域 |
+| --- | --- | --- |
+| `durable-turn-dispatch` | `durable-turn-runner` | Session + Thread |
+| `durable-turn-signal` | `durable-turn-signal` | Session + Thread |
+| `durable-turn-owner` | `durable-turn-owner` | Brain 实例，显式订阅 |
+| `durable-hands-commands` | `durable-hands-worker` | Session |
+| `durable-hands-controls` | `durable-hands-worker-controls` | Session |
+| `durable-hands-updates` | `durable-hands-brain` | Session + execution |
+
+将 `durable` 替换为部署 namespace，将 `hands` 替换为执行 route。
+对每一组父 Topic 和消费组执行以下配置。owner 组使用 `SUBSCRIPTION_MODE=EXPLICIT`，
+其他组使用 `WILDCARD`。RocketMQ 5.5.1 的显式订阅组省略 `lite.sub.wildcard` 属性。
+
+```sh
+mqadmin updateTopic -n "$NAMESRV" -c "$CLUSTER" -t "$PARENT" -a '+message.type=LITE'
+attributes="+lite.bind.topic=$PARENT,+lite.sub.model=Shared"
+if [ "$SUBSCRIPTION_MODE" = WILDCARD ]; then
+  attributes="$attributes,+lite.sub.wildcard=true"
+fi
+mqadmin updateSubGroup -n "$NAMESRV" -c "$CLUSTER" -g "$GROUP" -o true -m true \
+  --attributes "$attributes"
+```
+
 每个 Worker 池使用独立命令路由及消费组；同池副本共用该组与执行账本。
 Brain 结果消费者使用另一个组，同组副本必须共享 Brain 交付记录和 SessionBackend。
 不同部署若使用不同数据库，应使用独立 namespace，避免互相消费无法识别的任务。
 派生后的 Topic、消费组、ACL、TLS、凭证和消息保留期由应用部署管理；Worker 的 authorize
 在账本访问前执行。
+Cluster Proxy 保持 `enableProxyAutoRenew` 开启。Lite PushConsumer 接收消息时使用
+Proxy 配置的消息不可见时长。
 
-接入使用 [RocketMQ SimpleConsumer](https://rocketmq.apache.org/docs/featureBehavior/06consumertype/)：
+接入使用 [RocketMQ LiteTopic](https://rocketmq.apache.org/docs/domainModel/03litetopic/)。
 Worker 持久受理后才确认命令；Brain 持久去重并向 SessionBackend 提交后才确认事件。
 Broker ACK 不代表工具完成。控制命令乱序、重复消息和发布响应丢失不改变执行身份。
 取消先于执行到达会留下墓碑；查询只重发原状态，不创建工具副作用。
@@ -448,17 +643,65 @@ Broker ACK 不代表工具完成。控制命令乱序、重复消息和发布响
 
 执行消息使用 ExecutionMessages 和随 Runtime 打包的 JSON Schema，包含版本、请求摘要、
 命令/事件 ID 和源序号。收件箱只应用连续前缀，重复消息幂等，缺失事件补发后再推进。
-输出页携带字节偏移和明确缺口，终态发布前先封闭输出。MQ Executor 支持输出查询，
-实际字节是否可用取决于 Provider 能力；公共 SSE 仍由 SessionBackend 投影。
+输出页携带字节偏移和明确缺口，终态发布前先封闭输出。通过
+`turn.toolOutput(executionId, offset)` 查询已受理的 Hands 输出，从零开始并使用每页返回
+的下一偏移。实际可用字节取决于 Provider 能力。持久事件记录封闭范围与缺口。
+订阅 `EventDeltaType.TOOL_OUTPUT` 可预览本地工具文本和 Hands 输出。预览携带 Base64
+字节范围，无事件游标。AG-UI 适配器将关联到 Run 的输出预览映射为
+`agentscope.tool_output_delta` 自定义事件。原生 SSE 通过逗号分隔的 `deltas` 查询参数
+启用所需预览，例如 `deltas=MESSAGE,TOOL_OUTPUT`。
 不承诺任意外部副作用 exactly-once，不可查询的未知结果保持 UNKNOWN。
 
 信封上限为 1 MiB。Brain 自动使用 SessionBackend 的 ObjectStore，Worker 可通过
 `objects(...)` 配置同一可访问的 ObjectStore，将大型信封转为对象引用；引用校验作用域和
 摘要，不可访问或无效载荷不会被确认。
 
-RocketMqWakeups 仍单独用于 Session/订阅唤醒，不承载执行命令或结果；
-SSE 继续读取 SessionBackend 的公共事件。MQ 执行不要求同时配置 RocketMqWakeups：
-单 Brain 进程可使用本地通知，多进程也保留持久扫描恢复。
+要启用 Turn 通道，创建 `RocketMqTurnScheduler` 并通过
+`PostgresBackend.builder().notifications(scheduler)` 传入，也可以对本地后端调用
+`backend.withWakeups(scheduler)`。执行 Runtime 启动消费，宿主在 Runtime 停止后关闭
+scheduler。后端通过 `messageDrivenScheduling` 报告此装配。数据库保留 FIFO 顺序和调度代次。
+提交方在事务成功后发布已到期的 dispatch，仅提供 API 的宿主也可以发布。消息携带生成时的
+Turn 修订号和调度原因。消费者校验父 Topic、LiteTopic 和消息键，后端在领取事务中校验
+具体 Turn 和代次。Runtime 执行期间，dispatch 消费者续期消息的不可见时间。在执行阶段
+持久提交或后端判定投递已过期后确认消费。容量不足或暂时失败时保留后续投递。
+Turn 租约续期会推迟恢复时间，保留对应的派发身份。Thread 信号提示读取已提交状态。
+Brain 显式订阅自己的 owner LiteTopic，处理控制提示前核对当前 Turn 和租约代次。
+活动调用收到取消后可立即中断。Steer 在下一原生推理边界应用。
+
+`DurableRuntime.Builder.repairInterval` 控制 MQ 执行宿主的补漏扫描，默认 30 秒。
+其他宿主通过 `pollInterval` 配置数据库发现。收到 Session 提示时，只查询该 Session
+的待运行工作。`releaseDelay` 控制未完成工作释放租约后的重新调度间隔。调度器为已知
+期限设置本地定时器，到期时重读数据库。持久索引负责故障和重启后的补漏。
+使用 `RocketMqTopology.turns(namespace).subscriptions()` 和
+`RocketMqTopology.route(namespace, executor).subscriptions()` 读取运行时使用的
+LITE 父 Topic、绑定的消费组和订阅模式，再由部署工具创建资源。
+
+创建调度器时传入 `RocketMqTurnScheduler.Options`，可以配置 Outbox 补漏间隔、
+未领取 dispatch 的重发间隔，以及 dispatch 和 signal 各自的消费缓存大小。
+默认值分别为 2 秒、5 秒和每个消费者 32 条。第五个参数 `receiveWait`
+设置 dispatch 消费者的长轮询等待时间，默认 1 秒。取值需符合 Proxy 的轮询限制。Hands 可用
+`RocketMqWorker.Builder.controlCacheSize` 独立设置控制通道缓存。
+
+滚动发布时先将宿主摘流，Brain 调用 `runtime.drain(timeout)`，Hands 调用
+`worker.drain(timeout)`，再关闭适配器和存储。排空会停止新受理。AgentScope adapter 在
+进行中调用的下一个可恢复边界交还租约，Turn 仍可由替换 Brain 从保存的位置继续。已持久化的
+重试时间继续生效。
+Brain 排空时停止拉取新 dispatch，继续续期正在处理的投递，保留信号消费和 Outbox 发布。
+Hands 还会等待待发送结果。
+发布终止窗口需覆盖排空和 SDK 关闭时间。替换实例可在租约到期后接管剩余工作。
+
+通过 `runtime.schedulingStatistics()` 导出 Turn 调度指标。扫描次数按发现来源分组，
+取一段时间内的 `total` 增量即可计算扫描 QPS。`emptyRatio()` 以完成的扫描为分母，
+排除失败的扫描。领取结果区分新领取、复用租约、队列为空、租约占用、等待外部事件、
+未到期和陈旧投递。用同一采样区间内各结果的增量除以全部结果的增量，可计算对应比例。
+领取异常单独计数。发现延迟使用存储时钟，统计调度意图到期可领取至取得新租约的毫秒数。
+直方图按区间独立计数，最后一档记录超过最大上界的样本。引入该指标前已生成的
+调度意图可能缺少时间戳，领取时没有延迟样本。
+
+`activeDispatchDuplicates` 统计同一 Runtime 对正在执行或已排队的相同调度意图的去重次数。
+`scheduler.statistics()` 提供 Turn Outbox 补漏扫描次数、已确认补发次数、被发送资格检查
+拦下的次数和发送失败次数。计数在进程内累计，标签固定，不包含 Session 或 Turn ID。
+尚未出现的来源或结果按零处理。
 
 
 ## SessionBackend 部署适配
@@ -523,6 +766,19 @@ Backend 关闭自己拥有的记录存储访问；PostgreSQL 不关闭传入的 
 原生权限检查通过后才提交工具意图。原生恢复点与意图一起保存；
 外部结果接收后唤醒原 Turn，应用确认与包含该结果的原生恢复点一起提交。
 
+模型在同一步请求多个工具时，获批的 Hands 调用各自保留独立的执行 ID，可以按任意顺序完成。
+整组结果结清后，下一次推理按模型发起调用的原始顺序接收结果，其中包括拒绝和失败。
+
+用 `turn.getToolCall(callId)` 查询原生工具，用 `turn.getToolExecution(executionId)`
+查询外部执行。已路由的工具支持两种 ID。查询返回已提交的状态、最近进度和结果应用状态。
+`DISPATCHED` 表示已记录派发尝试，`RUNNING` 表示已收到运行观察。接管后，原工具调用和
+结果应用可以属于不同的 Run/Step。
+
+派发开始后，查询还会返回已登记的 Executor 能力。对于消息驱动执行器，这些能力描述传输层
+提供的控制。执行者无法核实结果时，状态仍可为 `UNKNOWN`。如果查询返回输出摘要，
+从零偏移调用 `turn.toolOutput(executionId, offset)`，再用每页的 `nextOffset` 续读。
+输出缺口标明无法读取的范围。
+
 `agentscope-extensions-durable-sandbox` 提供 `DirectSandboxExecutor`，
 使用已存在且固定身份的 `HarnessSandbox` 连接。POSIX/Python 操作日志让 Agent
 进程退出后仍能查询独立运行的命令。`agentscope-durable-worker` 提供独立执行账本
@@ -539,6 +795,27 @@ Backend 关闭自己拥有的记录存储访问；PostgreSQL 不关闭传入的 
 观察到 PAUSED 后使用 `turn.resume(requestId, expectedRevision)`，修订号取自该暂停状态。
 它只解除显式暂停；未完成的审批、工具和信号条件仍需满足，也不会重启终态任务。
 通用扩展信号仅允许 `x.*` key，不能冒充框架内部控制。
+
+### 工具策略与结果 Hooks
+
+使用 `AgentScopeAdapter.withToolHooks(new AgentScopeToolHooks(version, timeout, policies,
+normalizers))` 配置有序的工具策略和结果规范化回调。可以运行同一固定 Agent 定义的宿主应
+使用相同的 Hook 版本和配置。策略可以改写参数、拒绝调用或要求审批。Adapter 在审批或工具
+执行前将决定和实际参数冻结在原生检查点中，原生权限依然生效。策略报错或超时会拒绝该调用。
+
+结果回调在本地工具、Hands 及手动外部工具的结果进入模型上下文前处理内容。回执按执行身份与
+原始结果摘要保存规范化内容，恢复时可沿用。Hands 执行账本继续保留原始结果。结果回调失败时
+沿用 Runtime 的调用恢复策略。策略和结果回调应避免执行外部副作用。
+
+需要向外部投递时，使用 Session 句柄、稳定的订阅 ID、事件过滤条件和持久 `RecordStore`
+构造 `CommittedEventOutbox`。调用 `capture(limit)` 原子保存一页事件和游标，再由应用 Worker
+调用 `deliver(receiver)`。投递失败后使用原事件 ID 重试，接收方可用该 ID 去重。投递超时应
+小于配置的租期。若尚未保存的历史已被裁剪，采集会报告游标过期，由应用决定如何重新同步。
+通过 HTTP 投递时，可将 Durable HTTP 扩展的 `DurableWebhookPublisher` 传给 `deliver`。
+它只发送事件 ID、类型、资源 ID、序号、游标和提交时间，并添加 Standard Webhooks
+请求头和 HMAC-SHA256 签名。接收方可通过授权 API 取资源当前状态，或从上次已应用
+游标继续补读历史。先验证签名和时间，再用重试时保持稳定的 `webhook-id` 去重。
+[Standard Webhooks 验签](https://www.standardwebhooks.com/verify)
 
 ## 调用失败与自动恢复
 
@@ -631,8 +908,9 @@ limit 限制扫描的 Session 事件数：空的过滤页仍可能推进游标�
 highWatermark 判断本次是否追平。过滤流的 sequence 可以不连续；
 `EventProjection(session, filter)` 接受这种稀疏流，完整 Session 投影仍检查序号连续性。
 
-每个订阅的回调串行运行，使用独立于 Agent 执行的观察线程。重复提示合并，
-轮询补偿丢失提示；回调或后端失败后按 Runtime 的 `pollInterval` 重试。
+每个订阅的回调串行运行，使用独立于 Agent 执行的观察线程。Session 变更提示会唤醒
+`await()` 和事件订阅。`observationInterval` 控制低频补读，有通知时默认为 2 秒，
+纯轮询传输默认为 100 毫秒。`observationRetryInterval` 控制事件读取或回调失败后的重试。
 只有回调成功返回才推进游标。错误交给 Runtime 的 `onError`，
 订阅提供 `cursor()`、`lastFailure()` 和 `isClosed()`；
 错误报告失败不会阻断重试。`observerParallelism` 配置共享回调容量，默认为 2。
@@ -667,8 +945,17 @@ SSE 查询支持 threadId/turnId/runId，Last-Event-ID 优先于 cursor 参数�
 
 ## 排查任务为什么没有继续
 
-先查看 `turn.status()`、`turn.pendingInteractions()` 和 Thread 的有序 `listTurns` 结果。
-通过 `turn.listRuns` 和 `turn.listSteps` 查看调用明细；Run 停止并不一定代表 Turn 已结束。
+先调用 `turn.progress()`，HTTP 使用 `getTurnProgress`。它从同一个事务返回 Turn、Session
+游标、租约状态和类型化阻塞原因。`QUEUE_HEAD` 指明队首 Turn，`APPROVAL` 和
+`MANUAL_TOOL_RESULT` 指明可用 `turn.respond` 回应的交互。`PAUSED` 使用观察到的版本恢复。
+等待外部工具时返回 execution ID，`NATIVE_TOOL_RECONCILIATION` 返回待核实的原生调用 ID。
+定时阻塞项附有截止或重试时间。
+
+同一查询返回每条验收标准在对应产物版本上最近提交的检查结论。配置了 Harness 检查器时，
+通过 `task.verification.completed` 发布检查结果与证据版本。验收投影在事件裁剪后仍可查询，
+Turn 的执行终态和验收结论各自独立。
+
+通过 `turn.listRuns` 和 `turn.listSteps` 查看调用明细。
 
 | 现象 | 检查或处理方式 |
 | --- | --- |
@@ -725,8 +1012,23 @@ Hands 使用命令、控制、执行事件三条独立通道。每个执行事�
 缺失输出以显式 gap 封口，Brain 仍通过原结果链路继续。核实失败或取消请求不等于已经停止。
 宿主负责授权和外部证据核实；此入口没有自动开放为 HTTP/MQ 命令或模型工具。
 
+原生 Harness 工具已派发但结果未知时，当前 Turn 会等待证据。即使收到取消请求，
+同一 Thread 的后续 Turn 也会继续排队。授权宿主核实该 Turn 所有待确认调用后，
+可通过 AgentScope adapter 提交原调用 ID 和已核实的终态结果。
+
+```java
+var result = ToolResultBlock.text("verified output")
+        .withIdAndName(callId, toolName)
+        .withState(ToolResultState.SUCCESS);
+new NativeToolReconciliation(requestId, evidenceRef, List.of(result))
+        .submit(backend, threadKey, turnId);
+```
+
+重试提交时复用原请求 ID 和证据。执行实例领取后校验证据是否覆盖所有待确认调用，
+在原生检查点应用核实结果，随后继续执行 Turn 或结清已受理的取消。原工具调用不会重跑。
+
 通用协议拒绝重复 JSON 字段、多根值正文和规范化后会丢精度的数字，精确大数用字符串。
-当前 Java Session 存储格式为 8；开发版不提供旧格式自动迁移。
+当前 Java Session 存储格式为 21。开发版不提供旧格式自动迁移。
 
 ## Brain 与 Hands 共用冻结工具
 
@@ -840,6 +1142,32 @@ Java 入口不接受 role 参数，也不使用角色枚举。启动器接受 `<
 `make -C agentscope-durable independent`，另需 Python 3。真实队列执行需要 RocketMQ 5 服务及
 Topic/消费组配置；`--compile-only` 只打包应用，不连接 Broker 或执行工具。
 
+## 运行 Durable 基础验收测试
+
+修改 Durable 后，在仓库根目录运行功能验收。
+
+```sh
+make -C agentscope-durable acceptance
+```
+
+验收覆盖 Java 和 HTTP 用户 API、Session 和 Thread 隔离、Turn 排队、steer 和取消、审批、checkpoint fork、
+SSE 断线重放，以及 Brain 和 Hands 的故障恢复。API 重启用例通过 Durable Worker 和本地传输，
+验证工具执行期间重启 API 后的续接。基础验收使用临时 SQLite 数据库和预设行为的模型与工具，无需模型密钥或 RocketMQ。
+
+修改 RocketMQ 拓扑、调度或传输后，运行扩展验收。它用客户端测试替身验证响应丢失、确认失败和消息重复投递等场景。
+
+```sh
+make -C agentscope-durable acceptance-rocketmq
+```
+
+任一命令设置 `DURABLE_TEST_JDBC_URL` 后，支持 PostgreSQL 的 JDBC 用例会在指定测试库上运行。
+测试账号需要有创建和删除 schema 的权限。
+
+```sh
+DURABLE_TEST_JDBC_URL='jdbc:postgresql://localhost:5432/durable_test?user=durable_test' \
+  make -C agentscope-durable acceptance
+```
+
 ## Durable 子委派
 
 子任务需要跨重启恢复、独立观察或接受持续上下文中的后续请求时，使用持久委派。
@@ -867,3 +1195,34 @@ var children = new DelegationExecutor(backend, request ->
 取消先于受理时只保存取消记录，后续迟到的 start 不会创建子任务。事务内拒绝跨 Session、父 Thread
 自身及未完成委派形成的 Thread 依赖环。`turn.delegated`、`tool.delegated` 和
 `tool.delegation.cancel_requested` 是统一公开事件；它们不替代真实子任务结果及父任务的结果应用。
+
+### 独立运行的 Job
+
+模型需要在子任务受理后继续推理时，使用 `DelegatedJobExecutor`。在 Brain 上注册该执行器和
+Session 后端，注册子 Harness，再将以下三个工具的 Schema 路由到该执行器。启动目标使用
+`DelegationExecutor.childThread(request)` 作为固定 Thread。
+
+| 工具 | 输入和结果 |
+| --- | --- |
+| `start_job` | 应用定义的子任务输入。返回已提交的受理回执，包含 `jobId`、`child` 和 `status: ACCEPTED`。 |
+| `get_job` | `jobId`。返回子任务状态以及已有的输出或错误。 |
+| `await_job` | `jobId` 和正整数 `timeoutMillis`。等待子任务结清，或返回等待超时。 |
+
+发起 Thread 的后续 Turn 可以继续使用同一个 Job ID。Brain 接管后沿用原等待期限，子 Turn
+结清时提交唤醒等待 Turn 所需的事实。等待工具的进度包含 Job ID 和毫秒时间戳格式的期限。
+受理后的 Job 独立运行，取消调用方 Turn 或等待只结束
+调用方的工作。停止 Job 时，以回执中的子 Turn 为取消目标。
+
+队列模型的空闲期限随新消费的有序分片续期，重放已消费分片不会续期。发布器抛出普通 RuntimeException 表示 MQ 接收结果未知，按宿主有界恢复策略以相同 callId 重投。明确拒绝应抛出带分类码的 DurableException。回包消费者可调用 QueuedModelRequest.accept 持久化回包，并安全确认终态或已取消 Turn 的晚包。Provider 已接收请求但确认丢失时仍可能重复计费。
+
+Worker 每轮生成前调用 `QueuedModelRequest.begin(turn, callId, deliveryId)`，接手时使用新的唯一 deliveryId，
+重试同一次 begin 命令时沿用原 ID。返回 false 时确认 MQ 消息即可。后续使用带 deliveryId 的 reply 和 failure 重载。
+后端在事务内为 begin 分配单调递增的 epoch。新 attempt 替换原 Turn 已展示的部分文本，旧 attempt 晚包返回 ignored，
+可直接 ACK。收齐有序终帧后，collector 在派发工具前原子封存胜出的 attempt。并发接手触发恢复，封存后拒绝继续接手。
+
+Throwable failure 重载将 provider HTTP 429、5xx、I/O 和超时归为瞬时失败，其余 HTTP 状态及未分类异常归为永久失败。
+Worker 也可显式指定 retryable。瞬时失败消耗持久化的宿主重试预算，并在原 Turn 投递后续模型调用。
+永久失败沿用已配置的 fallback 语义。队列 collector 通过 core request observer 输出标准 started、usage、ended 事件。
+这些事件记录 collector 对回包的观测，collector 更换后会为持久化回包建立新的观测。
+
+Collector 在读取回包前订阅已配置的 backend wakeups，完成、失败或取消时释放订阅。丢失的提示由最长一秒的退避轮询补偿。Worker 开始 generation 后，Turn 继续挂起，直到首个响应到达。

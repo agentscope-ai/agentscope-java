@@ -43,8 +43,12 @@ final class AgentScopeMessages {
             return UserMessage.builder().id(id).textContent(value.asText()).build();
         DurableProtocol.validate("input", value);
         var input = DurableJson.convert(value, DurableMessages.Input.class);
+        return UserMessage.builder().id(id).content(nativeContent(input.content())).build();
+    }
+
+    static List<ContentBlock> nativeContent(List<DurableMessages.Content> blocks) {
         var content = new ArrayList<ContentBlock>();
-        for (var block : input.content()) {
+        for (var block : blocks) {
             if (block instanceof DurableMessages.Text text)
                 content.add(TextBlock.builder().text(text.text()).build());
             else if (block instanceof DurableMessages.Image image)
@@ -54,7 +58,7 @@ final class AgentScopeMessages {
             else if (block instanceof DurableMessages.Video video)
                 content.add(new VideoBlock(source(video.source())));
         }
-        return UserMessage.builder().id(id).content(content).build();
+        return List.copyOf(content);
     }
 
     static DurableMessages.Message output(Msg message, String id) {

@@ -68,7 +68,8 @@ Brain loop. Closing a Runtime, subscription, or Future does not cancel durable w
 
 Public handlers must not expose Backend claim/commit operations, private Frames,
 native checkpoints, or result-write APIs. Hosts authorize namespace and Session
-access; fork requires authorization for both source and target. A cursor or
+access; fork operations authorize both source and target. For `forkSession` the
+target requires Session creation authorization. A cursor or
 execution identity is not an access credential.
 
 ## Resource and execution model
@@ -90,7 +91,7 @@ head Turn blocks later work in the same Thread.
 
 Sessions and Threads are `OPEN` or `CLOSED`. Nonterminal work prevents closure.
 Closing does not erase history, and retrying creation does not reopen a closed
-resource. Turn terminal states are `SUCCEEDED`, `FAILED`, and `CANCELLED`.
+resource. Turn terminal states are `SUCCEEDED`, `FAILED`, `CANCELLED`, and `CONVERTED`.
 Recovery preserves `turnId` while creating new Run/Step identities.
 
 ## Envelopes and validation
@@ -222,6 +223,7 @@ common envelope; consult `userRequest` and the operation-specific definitions in
 | `checkpoints` | `session, threadId, after, limit`; lists checkpoint metadata |
 | `restore` | `session, threadId, position, expectedPosition, requestId`; returns CommitReceipt |
 | `fork` | `session, threadId, position, target, requestId`; returns the target ThreadView |
+| `forkSession` | `session, threadId, position, target (SessionKey), requestId`; atomically creates the destination and returns its SessionView |
 
 Public list limits are 1–1000. Cursors bind their query scope; pagination is not a
 cross-page snapshot. Public requests always identify the target Thread explicitly.
@@ -237,7 +239,9 @@ for state preconditions and race semantics.
 
 Restore and fork require valid, settled checkpoints and compatible bindings.
 Fork inherits the source binding and stays within the same namespace. A
-cross-Session fork requires the target Session to exist first.
+cross-Session `fork` requires an existing target Session. Use `forkSession` for
+a fresh destination in the same namespace. Retrying the original request preserves
+the installed baseline and admission history.
 
 ## Backend operations
 
@@ -304,8 +308,8 @@ AgentScope declares `TOOL_BOUNDARY` recovery and `DELTA` event delivery.
 Recovery operates on native journal boundaries, not on a serialized Java stack.
 Private Frames and native checkpoints never appear in public snapshots.
 
-The current Java transactional Session layout is format **14**. The Worker
-ledger and queued transport layouts are format **3**. These are internal storage
+The current Java transactional Session layout is format **21**. The Worker
+ledger uses format **3** and the Brain queued transport uses format **4**. These are internal storage
 formats, distinct from the `durable.v1` wire version; old unreleased layouts are
 rejected rather than silently upgraded.
 
@@ -391,10 +395,18 @@ resolved secrets.
 
 ### Queued execution
 
-`executionCommand` and `executionEvent` define broker-neutral Brain–Hands
-messages. `ExecutionMessages` validates their schema, canonical identity, and
-request digest. Commands carry `EXECUTE`, `CANCEL`, or `QUERY` and the original
-request. Command IDs derive from request digest, command kind, and replay position.
+`executionBatch`, `executionCommand`, and `executionEvent` define the Brain–Hands
+messages. For RocketMQ, the command Topic carries an `executionBatch` with all
+approved calls from the same action going to the same Hands route. Its `batchId`
+is the canonical hash of the request array. Each child keeps its original request
+and execution identity. Hands validates and authorizes the whole envelope, then
+admits each child to its ledger before acknowledging the message. Redelivery
+reuses admitted children. When preparing the envelope for publication, Brain
+omits children with a staged cancellation and sends their individual `CANCEL` commands.
+
+The control Topic carries individual `CANCEL` and `QUERY` commands.
+`ExecutionMessages` validates schema, canonical identity, and request digest.
+Individual command IDs derive from request digest, command kind, and replay position.
 
 Events carry a positive safe-integer source sequence and either output or an
 execution result. Event IDs derive from request digest and sequence. Events are

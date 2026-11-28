@@ -74,6 +74,36 @@ class OpenAIChatModelStreamingRetryTest {
     }
 
     @Test
+    void defaultsToOnePostAndDoesNotRetryAmbiguousResponsesWithAnExplicitBudget() {
+        var model =
+                OpenAIChatModel.builder().apiKey("test-key").modelName("gpt-4").stream(true)
+                        .baseUrl(mockServer.url("/").toString())
+                        .build();
+        mockServer.enqueue(rateLimitResponse());
+        mockServer.enqueue(
+                new MockResponse()
+                        .setResponseCode(503)
+                        .setHeader("Retry-After", "0")
+                        .setBody("{}"));
+        mockServer.enqueue(successStreamResponse("next"));
+
+        StepVerifier.create(model.stream(List.of(singleUserMessage()), null, null))
+                .expectError()
+                .verify(Duration.ofSeconds(5));
+        assertEquals(1, mockServer.getRequestCount());
+
+        StepVerifier.create(model.stream(List.of(singleUserMessage()), null, retryOptions()))
+                .expectError()
+                .verify(Duration.ofSeconds(5));
+        assertEquals(2, mockServer.getRequestCount());
+
+        StepVerifier.create(model.stream(List.of(singleUserMessage()), null, null))
+                .expectNextCount(1)
+                .verifyComplete();
+        assertEquals(3, mockServer.getRequestCount());
+    }
+
+    @Test
     @DisplayName("Streaming 429 exhausts retries and re-issues HTTP request each time")
     void streaming429ExhaustsRetriesAndReissuesEachRequest() {
         AtomicInteger requestCount = startAlways429Server();

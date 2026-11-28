@@ -60,14 +60,34 @@ public abstract class McpClientWrapper implements AutoCloseable {
      */
     protected volatile boolean propagateMeta = true;
 
+    /** Ordered result-metadata customizers fixed when this wrapper is constructed. */
+    protected final List<McpToolResultCustomizer> resultCustomizers;
+
     /**
      * Constructs a new MCP client wrapper.
      *
      * @param name unique identifier for this client
      */
     protected McpClientWrapper(String name) {
+        this(name, List.of());
+    }
+
+    /**
+     * Constructs a new MCP client wrapper with result metadata customizers.
+     *
+     * <p>Subclasses that decorate another wrapper should pass {@code
+     * delegate.getResultCustomizers()} so the outer wrapper preserves the delegate's result metadata
+     * behavior. They should also keep the connection-level {@link #isPropagateMeta()} setting in
+     * sync with the delegate.
+     *
+     * @param name unique identifier for this client
+     * @param resultCustomizers ordered customizers applied to every tool result
+     */
+    protected McpClientWrapper(String name, List<McpToolResultCustomizer> resultCustomizers) {
         this.name = name;
         this.cachedTools = new ConcurrentHashMap<>();
+        this.resultCustomizers =
+                resultCustomizers == null ? List.of() : List.copyOf(resultCustomizers);
     }
 
     /**
@@ -114,6 +134,19 @@ public abstract class McpClientWrapper implements AutoCloseable {
      */
     public void setPropagateMeta(boolean propagateMeta) {
         this.propagateMeta = propagateMeta;
+    }
+
+    /**
+     * Returns the ordered result-metadata customizers for this connection.
+     *
+     * <p>Decorating wrappers must either copy this list through the constructor or override this
+     * method to return the delegate's list. Otherwise tools registered with the outer wrapper see an
+     * empty customizer list.
+     *
+     * @return immutable customizer list, empty when this connection does not customise results
+     */
+    public List<McpToolResultCustomizer> getResultCustomizers() {
+        return resultCustomizers;
     }
 
     /**

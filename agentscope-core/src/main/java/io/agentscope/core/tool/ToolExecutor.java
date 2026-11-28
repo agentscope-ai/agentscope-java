@@ -20,6 +20,8 @@ import io.agentscope.core.agent.CapabilitySurface;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.journal.InvocationRecorder;
 import io.agentscope.core.journal.JournalException;
+import io.agentscope.core.message.ToolErrorKind;
+import io.agentscope.core.message.ToolErrorMetadata;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.ExecutionConfig;
@@ -232,9 +234,16 @@ class ToolExecutor {
                 gateRc != null ? gateRc.getUserId() : null,
                 gateRc != null ? gateRc.getSessionId() : null,
                 param.getAgent() != null ? param.getAgent().getAgentId() : "unknown");
-        // Byte-identical to the resolveTool not-found wording: do not reveal existence (the
-        // model-facing channel must not distinguish "exists but ungranted" from "missing").
-        return Mono.just(ToolResultBlock.error("Tool not found: " + toolName));
+        // Byte-identical to the resolveTool not-found result (text and metadata): do not reveal
+        // existence (the model-facing channel must not distinguish "exists but ungranted" from
+        // "missing").
+        return Mono.just(toolNotFound(toolName));
+    }
+
+    /** The single not-found result, shared by the missing-tool and ungranted-tool branches. */
+    private static ToolResultBlock toolNotFound(String toolName) {
+        return ToolResultBlock.error("Tool not found: " + toolName)
+                .withMetadata(ToolErrorMetadata.of(ToolErrorKind.NOT_FOUND, toolName));
     }
 
     /**
@@ -269,13 +278,17 @@ class ToolExecutor {
                             + " or corrupt). Reissue the call with corrected JSON object"
                             + " arguments.";
             logger.warn(errorMsg);
-            return Mono.just(ToolResultBlock.error(errorMsg));
+            return Mono.just(
+                    ToolResultBlock.error(errorMsg)
+                            .withMetadata(
+                                    ToolErrorMetadata.of(
+                                            ToolErrorKind.INVALID_ARGUMENT, toolCall.getName())));
         }
 
         AgentTool tool = resolveTool(toolCall.getName(), requestConfig);
 
         if (tool == null) {
-            return Mono.just(ToolResultBlock.error("Tool not found: " + toolCall.getName()));
+            return Mono.just(toolNotFound(toolCall.getName()));
         }
 
         boolean fromRequestConfig = requestConfig.overrides(toolCall.getName());
@@ -297,7 +310,11 @@ class ToolExecutor {
                     String.format(
                             "Unauthorized tool call: '%s' is not available", toolCall.getName());
             logger.warn(errorMsg);
-            return Mono.just(ToolResultBlock.error(errorMsg));
+            return Mono.just(
+                    ToolResultBlock.error(errorMsg)
+                            .withMetadata(
+                                    ToolErrorMetadata.of(
+                                            ToolErrorKind.PERMISSION_DENIED, toolCall.getName())));
         }
 
         // Validate input against schema. Resolve the effective arguments the same way the
@@ -313,7 +330,11 @@ class ToolExecutor {
                                     + "Please correct the parameters and try again.",
                             toolCall.getName(), validationError);
             logger.debug(errorMsg);
-            return Mono.just(ToolResultBlock.error(errorMsg));
+            return Mono.just(
+                    ToolResultBlock.error(errorMsg)
+                            .withMetadata(
+                                    ToolErrorMetadata.of(
+                                            ToolErrorKind.INVALID_ARGUMENT, toolCall.getName())));
         }
 
         // External tool short-circuit: once availability and schema are validated, surface the call

@@ -16,6 +16,7 @@
 package io.agentscope.durable;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import io.agentscope.durable.DurableTypes.ActiveTurnCancellation;
 import io.agentscope.durable.DurableTypes.CheckpointMetadata;
 import io.agentscope.durable.DurableTypes.CheckpointView;
 import io.agentscope.durable.DurableTypes.Commit;
@@ -28,9 +29,11 @@ import io.agentscope.durable.DurableTypes.ExecutionResult;
 import io.agentscope.durable.DurableTypes.Failure;
 import io.agentscope.durable.DurableTypes.Frame;
 import io.agentscope.durable.DurableTypes.HarnessSelector;
+import io.agentscope.durable.DurableTypes.JobView;
 import io.agentscope.durable.DurableTypes.Lease;
 import io.agentscope.durable.DurableTypes.ModelCallPage;
 import io.agentscope.durable.DurableTypes.ModelCallView;
+import io.agentscope.durable.DurableTypes.OutputPage;
 import io.agentscope.durable.DurableTypes.RecoveryView;
 import io.agentscope.durable.DurableTypes.Restoration;
 import io.agentscope.durable.DurableTypes.RunPage;
@@ -47,6 +50,8 @@ import io.agentscope.durable.DurableTypes.ThreadPage;
 import io.agentscope.durable.DurableTypes.ThreadSpec;
 import io.agentscope.durable.DurableTypes.ThreadView;
 import io.agentscope.durable.DurableTypes.ToolExecution;
+import io.agentscope.durable.DurableTypes.ToolExecutionView;
+import io.agentscope.durable.DurableTypes.TurnProgress;
 import io.agentscope.durable.DurableTypes.TurnReceipt;
 import io.agentscope.durable.DurableTypes.TurnView;
 import io.agentscope.durable.store.ObjectStore;
@@ -107,7 +112,8 @@ public interface SessionBackend extends AutoCloseable {
             boolean atomicCheckpointAndIntent,
             boolean fencedOwnership,
             boolean durableWaits,
-            boolean eventReplay) {}
+            boolean eventReplay,
+            boolean messageDrivenScheduling) {}
 
     Capabilities capabilities();
 
@@ -135,6 +141,8 @@ public interface SessionBackend extends AutoCloseable {
 
     DurableTypes.CommandReceipt control(ThreadKey session, DurableTypes.ControlCommand command);
 
+    ActiveTurnCancellation cancelActiveTurns(SessionKey session, String requestId, String threadId);
+
     /** Stages private bytes; the reference is scoped and verified on read. */
     Reference putObject(SessionKey session, byte[] bytes);
 
@@ -149,7 +157,14 @@ public interface SessionBackend extends AutoCloseable {
     /** Ready candidates are ordered by storage time, not Session enumeration order. */
     List<ThreadSpec> ready(List<HarnessSelector> harnesses, int limit);
 
+    /** Optional Session-scoped discovery for notifications. */
+    default List<ThreadSpec> ready(SessionKey session, List<HarnessSelector> harnesses, int limit) {
+        return List.of();
+    }
+
     TurnView turn(ThreadKey session, String turnId);
+
+    TurnProgress turnProgress(ThreadKey session, String turnId);
 
     /** Prepare exactly one invocation; retry the same request ID after an uncertain response. */
     RunView prepareRun(Lease lease, String requestId);
@@ -170,6 +185,68 @@ public interface SessionBackend extends AutoCloseable {
 
     Optional<Lease> claim(ThreadKey session, String owner, Duration duration);
 
+    enum ClaimStatus {
+        ACQUIRED,
+        REUSED,
+        NO_WORK,
+        LEASE_HELD,
+        NOT_DUE,
+        WAITING,
+        STALE_DISPATCH,
+        UNKNOWN
+    }
+
+    /** The outcome and eligibility delay observed in the same transaction as the claim. */
+    record ClaimOutcome(ClaimStatus status, Lease lease, Long discoveryDelayMillis) {
+        static ClaimOutcome from(Optional<Lease> lease) {
+            return lease.map(value -> new ClaimOutcome(ClaimStatus.ACQUIRED, value, null))
+                    .orElseGet(() -> new ClaimOutcome(ClaimStatus.UNKNOWN, null, null));
+        }
+
+        public Optional<Lease> ownership() {
+            return Optional.ofNullable(lease);
+        }
+    }
+
+    default ClaimOutcome claimOutcome(ThreadKey thread, String owner, Duration duration) {
+        return ClaimOutcome.from(claim(thread, owner, duration));
+    }
+
+    default ClaimOutcome claimOutcome(TurnDispatch dispatch, String owner, Duration duration) {
+        return ClaimOutcome.from(claim(dispatch, owner, duration));
+    }
+
+    /** Indexed publication backlog. A send receipt does not consume a dispatch. */
+    default List<TurnDispatch> pendingDispatches(int limit) {
+        throw new UnsupportedOperationException("Turn dispatch is not supported");
+    }
+
+    default Optional<TurnDispatch> pendingDispatch(ThreadKey key) {
+        throw new UnsupportedOperationException("Turn dispatch is not supported");
+    }
+
+    /** A publication delay measured using the same storage clock that governs claims. */
+    record DispatchSchedule(TurnDispatch dispatch, long delayMillis) {}
+
+    default Optional<DispatchSchedule> dispatchSchedule(ThreadKey thread) {
+        return Optional.empty();
+    }
+
+    /** The currently leased Turn identity, for optional directed control notifications. */
+    default Optional<TurnSignal> ownerSignal(ThreadKey thread, String turnId) {
+        return Optional.empty();
+    }
+
+    /** Atomically reserves a publication attempt and schedules retry even after a successful send. */
+    default boolean reserveDispatch(TurnDispatch dispatch, Duration retry) {
+        throw new UnsupportedOperationException("Turn dispatch is not supported");
+    }
+
+    /** Claims only the Turn and generation identified by this delivery. */
+    default Optional<Lease> claim(TurnDispatch dispatch, String owner, Duration duration) {
+        throw new UnsupportedOperationException("Turn dispatch is not supported");
+    }
+
     void renew(Lease lease, Duration duration);
 
     void release(Lease lease, Duration delay);
@@ -189,12 +266,27 @@ public interface SessionBackend extends AutoCloseable {
     /** Private persisted intent for host authorization; never creates or dispatches an operation. */
     ToolExecution execution(ThreadKey session, String executionId);
 
-    ToolExecution beginDispatch(Lease lease, String executionId);
+    default ToolExecution beginDispatch(Lease lease, String executionId) {
+        return beginDispatch(lease, executionId, null);
+    }
+
+    ToolExecution beginDispatch(
+            Lease lease, String executionId, Executor.Capabilities capabilities);
+
+    /** A public projection selected by exactly one of its IDs, scoped to the named Turn. */
+    ToolExecutionView toolExecution(
+            ThreadKey thread, String turnId, String callId, String executionId);
 
     /** Atomically freeze the parent/child mapping and admit one child Turn. */
     DelegationView delegate(ExecutionRequest parent, DelegationTarget target);
 
     Optional<DelegationView> delegation(ExecutionRequest parent);
+
+    /** Read an admitted detached job in its originating Thread. */
+    JobView job(ThreadKey owner, String jobId);
+
+    /** Observe or register a durable wait for a detached job. */
+    ExecutionResult awaitJob(ExecutionRequest waiter, String jobId, long timeoutMillis);
 
     /** A missing delegation becomes a cancellation tombstone, without creating a child. */
     DelegationView cancelDelegation(ExecutionRequest parent, String childTurnId);
@@ -207,16 +299,27 @@ public interface SessionBackend extends AutoCloseable {
 
     void acceptResult(ThreadKey session, String executionId, ExecutionResult result);
 
+    /** Read an accepted output page by its byte offset within the named Turn and execution. */
+    default OutputPage toolOutput(
+            ThreadKey thread, String turnId, String executionId, long offset) {
+        throw new DurableException(DurableException.Code.INCOMPATIBLE, "Tool output unavailable");
+    }
+
     void signal(ThreadKey session, String turnId, Signal signal);
 
     /** Withdrawal wins only before the input is atomically applied to native state. */
     void withdraw(ThreadKey session, String turnId, String signalId, String requestId);
+
+    /** The current lease holder may reject host evidence that cannot resolve the parked Turn. */
+    void rejectNativeToolReconciliation(Lease lease, String signalId);
 
     void cancel(ThreadKey session, String turnId, String requestId);
 
     Snapshot snapshot(SessionKey session);
 
     EventPage events(SessionKey session, String cursor, int limit);
+
+    EventPage eventsBefore(SessionKey session, String cursor, int limit);
 
     List<CheckpointMetadata> checkpoints(ThreadKey session, long after, int limit);
 

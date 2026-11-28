@@ -17,6 +17,7 @@
 package io.agentscope.durable;
 
 import io.agentscope.durable.DurableTypes.SessionKey;
+import io.agentscope.durable.DurableTypes.ThreadKey;
 import java.util.function.Consumer;
 
 /**
@@ -35,6 +36,11 @@ public interface Wakeups {
             public AutoCloseable subscribe(Consumer<SessionKey> listener) {
                 return () -> {};
             }
+
+            @Override
+            public boolean hasNotifications() {
+                return false;
+            }
         };
     }
 
@@ -45,5 +51,13 @@ public interface Wakeups {
 
     void publish(SessionKey session);
 
+    default void publish(ThreadKey thread) {
+        publish(thread.session());
+    }
+
     AutoCloseable subscribe(Consumer<SessionKey> listener);
+
+    default boolean hasNotifications() {
+        return true;
+    }
 }

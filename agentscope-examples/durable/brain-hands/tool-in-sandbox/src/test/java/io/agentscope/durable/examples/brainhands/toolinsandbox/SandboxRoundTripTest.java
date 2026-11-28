@@ -23,9 +23,11 @@ import io.agentscope.durable.DurableTypes.ExecutionState;
 import io.agentscope.durable.DurableTypes.SessionKey;
 import io.agentscope.durable.DurableTypes.ThreadKey;
 import io.agentscope.durable.DurableTypes.TurnStatus;
+import io.agentscope.durable.ExecutionMessages;
 import io.agentscope.durable.ExecutionMessages.Command;
 import io.agentscope.durable.ExecutionMessages.Event;
 import io.agentscope.durable.ExecutionMessages.Kind;
+import io.agentscope.durable.LiveEvents;
 import io.agentscope.durable.SessionBackend;
 import io.agentscope.durable.worker.QueuedExecutor;
 import io.agentscope.durable.worker.TransactionalExecutionStore;
@@ -276,8 +278,18 @@ class SandboxRoundTripTest {
                             "hands",
                             backend.localStorage().orElseThrow().records(),
                             backend,
+                            batch ->
+                                    batch.requests()
+                                            .forEach(
+                                                    request ->
+                                                            pending.add(
+                                                                    ExecutionMessages.command(
+                                                                            Kind.EXECUTE,
+                                                                            request))),
                             pending::add,
-                            Duration.ofMillis(10));
+                            Duration.ofMillis(10),
+                            Duration.ofSeconds(30),
+                            LiveEvents.none());
             runtime = SandboxBrainExample.runtime(backend, queue);
         }
 

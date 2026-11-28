@@ -317,7 +317,8 @@ class E2bSandboxRecoveryTest {
                         .toList();
         assertTrue(
                 commands.stream().anyMatch(c -> c.contains("mkdir -p")), "commands: " + commands);
-        assertTrue(commands.stream().anyMatch(c -> c.contains("tar -xf")), "commands: " + commands);
+        assertTrue(
+                commands.stream().anyMatch(c -> c.contains("tar -xpf")), "commands: " + commands);
         // Not the pre-fix symptom: no "workspace preserved" probe, i.e. Branch A was not taken.
         assertFalse(
                 commands.stream().anyMatch(c -> c.contains("test -d")), "commands: " + commands);

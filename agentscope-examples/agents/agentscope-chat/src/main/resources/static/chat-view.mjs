@@ -1,5 +1,5 @@
 // Presentation consumes only Durable public snapshots. Cursors remain opaque.
-export const terminal = turn => ['SUCCEEDED', 'FAILED', 'CANCELLED'].includes(turn.status);
+export const terminal = turn => ['SUCCEEDED', 'FAILED', 'CANCELLED', 'CONVERTED'].includes(turn.status);
 export const activeTurn = snapshot => (snapshot?.turns || []).find(turn => !terminal(turn));
 export const pendingInteractions = snapshot => {
     const signals = Object.values(snapshot?.projection?.signals || {});

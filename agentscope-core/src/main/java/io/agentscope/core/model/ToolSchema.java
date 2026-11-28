@@ -16,6 +16,8 @@
 
 package io.agentscope.core.model;
 
+import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
+import com.fasterxml.jackson.databind.annotation.JsonPOJOBuilder;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
@@ -25,6 +27,7 @@ import java.util.Objects;
  * Immutable tool schema definition.
  * Describes a tool's interface using JSON Schema for parameters.
  */
+@JsonDeserialize(builder = ToolSchema.Builder.class)
 public class ToolSchema {
     private final String name;
     private final String description;
@@ -130,6 +133,7 @@ public class ToolSchema {
     /**
      * Builder for creating ToolSchema instances.
      */
+    @JsonPOJOBuilder(withPrefix = "")
     public static class Builder {
         private String name;
         private String description;

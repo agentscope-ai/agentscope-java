@@ -42,6 +42,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
+import reactor.util.context.Context;
 
 /**
  * Middleware that drains the message bus inbox before each reasoning step and injects the messages
@@ -64,11 +65,13 @@ public class InboxMiddleware implements HarnessRuntimeMiddleware {
     private static final String METADATA_REMINDER_KIND = "reminderKind";
     private static final String METADATA_SOURCE = "source";
     private static final String METADATA_HINT_ID = "hintId";
+    private static final Object PENDING_TASK_HINTS = new Object();
 
     private final MessageBus messageBus;
     private final int maxDrainCount;
     private final AsyncToolRegistry asyncToolRegistry;
     private final Duration staleTtl;
+    private boolean deferSubagentTaskHints;
 
     public InboxMiddleware(MessageBus messageBus) {
         this(messageBus, 100, null, DEFAULT_STALE_TTL);
@@ -89,6 +92,16 @@ public class InboxMiddleware implements HarnessRuntimeMiddleware {
         this.staleTtl = staleTtl != null ? staleTtl : DEFAULT_STALE_TTL;
     }
 
+    /** Lets the workspace task delivery middleware select the result before it enters history. */
+    public void deferSubagentTaskHints() {
+        deferSubagentTaskHints = true;
+    }
+
+    /** Keeps drained task hints available to reasoning retries within the same invocation. */
+    public static Context retainSubagentTaskHints(Context context) {
+        return context.put(PENDING_TASK_HINTS, new ArrayList<Msg>());
+    }
+
     /** Narrow declaration: subclasses overriding more hooks must extend this set. */
     @Override
     public Set<ExtensionPoint> activePoints() {
@@ -107,20 +120,7 @@ public class InboxMiddleware implements HarnessRuntimeMiddleware {
             return next.apply(input);
         }
 
-        Mono<List<HintBlock>> inboxHints =
-                messageBus
-                        .inboxDrain(sessionId, maxDrainCount)
-                        .map(
-                                entries -> {
-                                    List<HintBlock> hints = new ArrayList<>();
-                                    for (BusEntry entry : entries) {
-                                        HintBlock h = deserializeHintBlock(entry.payload());
-                                        if (h != null) {
-                                            hints.add(h);
-                                        }
-                                    }
-                                    return hints;
-                                });
+        Mono<List<BusEntry>> inbox = messageBus.inboxDrain(sessionId, maxDrainCount);
 
         Mono<List<HintBlock>> staleHints =
                 asyncToolRegistry != null
@@ -152,14 +152,34 @@ public class InboxMiddleware implements HarnessRuntimeMiddleware {
                                         })
                         : Mono.just(List.of());
 
-        return Mono.zip(inboxHints, staleHints)
+        Mono<List<Msg>> carriedTaskHints =
+                Mono.deferContextual(
+                        context ->
+                                Mono.just(
+                                        deferSubagentTaskHints && context.hasKey(PENDING_TASK_HINTS)
+                                                ? context.get(PENDING_TASK_HINTS)
+                                                : new ArrayList<>()));
+        return Mono.zip(inbox, staleHints, carriedTaskHints)
                 .flatMapMany(
                         tuple -> {
-                            List<HintBlock> allHints = new ArrayList<>(tuple.getT1());
+                            List<Msg> taskHints = tuple.getT3();
+                            List<HintBlock> allHints = new ArrayList<>();
+                            for (BusEntry entry : tuple.getT1()) {
+                                HintBlock hint = deserializeHintBlock(entry.payload());
+                                if (hint == null) continue;
+                                Msg taskHint =
+                                        deferSubagentTaskHints
+                                                ? SubagentsMiddleware.projectTaskHint(
+                                                        entry.payload(), hint)
+                                                : null;
+                                if (taskHint != null) taskHints.add(taskHint);
+                                else allHints.add(hint);
+                            }
                             allHints.addAll(tuple.getT2());
 
+                            ReasoningInput withTaskHints = appendNotifications(input, taskHints);
                             if (allHints.isEmpty()) {
-                                return next.apply(input);
+                                return next.apply(withTaskHints).doOnComplete(taskHints::clear);
                             }
 
                             log.debug(
@@ -168,7 +188,7 @@ public class InboxMiddleware implements HarnessRuntimeMiddleware {
                                             + " tools)",
                                     allHints.size(),
                                     sessionId,
-                                    tuple.getT1().size(),
+                                    allHints.size() - tuple.getT2().size(),
                                     tuple.getT2().size());
 
                             AgentState state = RuntimeContext.resolveAgentState(ctx, agent);
@@ -192,8 +212,12 @@ public class InboxMiddleware implements HarnessRuntimeMiddleware {
                                                                     h.getSource(),
                                                                     h.getHint()));
 
-                            return hintEvents.concatWith(
-                                    next.apply(appendNotifications(input, notifications)));
+                            return hintEvents
+                                    .concatWith(
+                                            next.apply(
+                                                    appendNotifications(
+                                                            withTaskHints, notifications)))
+                                    .doOnComplete(taskHints::clear);
                         });
     }
 

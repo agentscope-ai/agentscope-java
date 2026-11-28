@@ -15,14 +15,27 @@
  */
 package io.agentscope.extensions.durable.jdbc;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import io.agentscope.durable.CommittedEventOutbox;
+import io.agentscope.durable.DurableTypes.CommandReceipt;
+import io.agentscope.durable.DurableTypes.EventFilter;
+import io.agentscope.durable.DurableTypes.Snapshot;
+import io.agentscope.durable.DurableTypes.TurnStatus;
 import io.agentscope.durable.SessionBackend;
 import io.agentscope.durable.TransactionalSessionBackend;
 import io.agentscope.durable.contract.UserApiContract;
 import java.nio.file.Path;
 import java.sql.DriverManager;
+import java.time.Duration;
+import java.util.ArrayList;
 import java.util.Properties;
 import java.util.UUID;
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 public class DurableUserApiTest extends UserApiContract {
@@ -30,6 +43,83 @@ public class DurableUserApiTest extends UserApiContract {
 
     private String schema;
     private final String postgresUrl = System.getProperty("durable.test.jdbcUrl");
+
+    @Test
+    void committedEventOutboxReusesEventIdentityAfterFailedDeliveryAndReopen() throws Exception {
+        var directoryPath = directory.resolve("hooks");
+        String cursor;
+        var seen = new ArrayList<String>();
+        int captured;
+        try (var backend = LocalBackend.open(directoryPath);
+                var api = connect(backend)) {
+            var session = api.createSession(key, "agent");
+            cursor = session.snapshot().cursor();
+            session.submit("request", "user input");
+            var outbox =
+                    new CommittedEventOutbox(
+                            session,
+                            "webhook",
+                            EventFilter.all(),
+                            cursor,
+                            backend.localStorage().orElseThrow().records(),
+                            Duration.ofSeconds(30),
+                            Duration.ofMillis(1));
+            captured = outbox.capture(25);
+            assertTrue(captured > 0);
+            backend.pruneEvents(key, session.snapshot().cursor());
+            assertThrows(
+                    IllegalStateException.class,
+                    () ->
+                            outbox.deliver(
+                                    event -> {
+                                        seen.add(event.eventId());
+                                        throw new IllegalStateException("Web endpoint unavailable");
+                                    }));
+        }
+        try (var backend = LocalBackend.open(directoryPath);
+                var api = connect(backend)) {
+            var outbox =
+                    new CommittedEventOutbox(
+                            api.getSession(key),
+                            "webhook",
+                            EventFilter.all(),
+                            cursor,
+                            backend.localStorage().orElseThrow().records(),
+                            Duration.ofSeconds(30),
+                            Duration.ofMillis(1));
+            assertEquals(0, outbox.capture(25));
+            for (int i = 0; i < captured; i++)
+                assertTrue(outbox.deliver(event -> seen.add(event.eventId())));
+            assertEquals(seen.get(0), seen.get(1));
+            assertEquals(captured, seen.stream().distinct().count());
+            assertFalse(outbox.deliver(event -> seen.add(event.eventId())));
+        }
+    }
+
+    @Test
+    void convertedInputAndReceiptSurviveReopeningLocalBackend() {
+        Path data = directory.resolve("local");
+        String activeId;
+        String queuedId;
+        CommandReceipt receipt;
+        Snapshot snapshot;
+        try (var local = LocalBackend.open(data);
+                var localApi = connect(local)) {
+            var thread = localApi.createSession(key, "agent").mainThread();
+            activeId = thread.submit("active", "First").turnId();
+            queuedId = thread.submit("queued", "Second").turnId();
+            local.claim(thread.key(), "owner", Duration.ofSeconds(5)).orElseThrow();
+            receipt = thread.convertQueuedToSteer("convert", queuedId, activeId, 0);
+            snapshot = localApi.getSession(key).snapshot();
+        }
+        try (var reopened = LocalBackend.open(data);
+                var reopenedApi = connect(reopened)) {
+            var recovered = reopenedApi.getSession(key).mainThread();
+            assertEquals(receipt, recovered.convertQueuedToSteer("convert", queuedId, activeId, 0));
+            assertEquals(TurnStatus.CONVERTED, recovered.getTurn(queuedId).status().status());
+            assertEquals(snapshot, reopenedApi.getSession(key).snapshot());
+        }
+    }
 
     @Override
     protected SessionBackend openBackend() {

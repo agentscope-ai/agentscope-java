@@ -11,9 +11,9 @@ zh_link: /v2/zh/integration/protocol/agui
 
 `AguiMessage.content` is represented as typed message content. For text-only code paths, use `getTextContent()`.
 
-Multimodal input is supported, but document types are not supported yet.
+Multimodal input supports image/audio/video/document. Document parts are converted to `DocumentBlock`; provider support varies.
 
-`AguiMessageConverter.toAguiMessage()` currently preserves text and tool-call fields only; image, audio, video, and document content blocks are not serialized back into AG-UI message content.
+Structured blocks are emitted only for AG-UI user and tool messages; other roles use text references. ASJ-to-AGUI outbound message conversion is no longer officially guaranteed. Implement it yourself if your application needs it.
 
 ## When To Use
 

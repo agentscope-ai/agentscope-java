@@ -19,6 +19,7 @@ import io.agentscope.core.agent.AgentExecutionPosition;
 import io.agentscope.core.journal.JournalEventCodecRegistry;
 import io.agentscope.core.util.JsonUtils;
 import java.time.ZoneId;
+import java.util.List;
 import java.util.Map;
 
 /** Required host continuation facts must be understood before their native prefix is restored. */
@@ -26,8 +27,56 @@ public final class DurableEventSchemas {
     public static final String START = "durable/finalization_started";
     public static final String END = "durable/finalization_completed";
     public static final String MODEL = "durable/finalization_model";
+    public static final String QUEUED_MODEL = "durable/queued_model";
+    public static final String MODEL_ACCEPTED = "durable/model_accepted";
+    public static final String TOOL_POLICY = "durable/tool_policy";
+    public static final String TOOL_NORMALIZED = "durable/tool_normalized";
 
     public static void register(JournalEventCodecRegistry registry) {
+        registry.register(
+                TOOL_POLICY,
+                new JournalEventCodecRegistry.Codec(
+                        data -> {
+                            if (!(data.get("decisions") instanceof List<?> decisions)
+                                    || decisions.isEmpty())
+                                throw new IllegalArgumentException("Missing tool policy decisions");
+                        },
+                        (state, data) -> {}));
+        registry.register(
+                TOOL_NORMALIZED,
+                new JournalEventCodecRegistry.Codec(
+                        data -> {
+                            text(data, "version");
+                            text(data, "executionId");
+                            text(data, "sourceDigest");
+                            if (!(data.get("output") instanceof List<?>))
+                                throw new IllegalArgumentException(
+                                        "Missing normalized tool output");
+                        },
+                        (state, data) -> {}));
+        registry.register(
+                QUEUED_MODEL,
+                new JournalEventCodecRegistry.Codec(
+                        data -> {
+                            if (!(data.get("request") instanceof Map<?, ?> request)
+                                    || !(request.get("callId") instanceof String id)
+                                    || id.isBlank()
+                                    || !(data.get("fallback") instanceof Boolean)
+                                    || !(data.get("iteration") instanceof Number iteration)
+                                    || iteration.intValue() < 0)
+                                throw new IllegalArgumentException("Invalid queued model request");
+                        },
+                        (state, data) -> {}));
+        registry.register(
+                MODEL_ACCEPTED,
+                new JournalEventCodecRegistry.Codec(
+                        data -> {
+                            text(data, "modelCallId");
+                            if (!(data.get("replyDeadline") instanceof Number deadline)
+                                    || deadline.longValue() <= 0)
+                                throw new IllegalArgumentException("Invalid model reply deadline");
+                        },
+                        (state, data) -> {}));
         registry.register(
                 START,
                 new JournalEventCodecRegistry.Codec(

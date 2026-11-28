@@ -38,6 +38,7 @@ import io.agentscope.durable.DurableTypes.Signal;
 import io.agentscope.durable.DurableTypes.ThreadKey;
 import io.agentscope.durable.DurableTypes.ThreadSpec;
 import io.agentscope.durable.ExecutionMessages;
+import io.agentscope.durable.Executor;
 import io.agentscope.durable.SessionBackend;
 import io.agentscope.durable.SessionResources;
 import io.agentscope.durable.store.ObjectStore;
@@ -131,7 +132,10 @@ public final class SessionBackendHandler implements HttpHandler {
                             result =
                                     backend.control(
                                             thread, get(p, "command", ControlCommand.class));
-
+                    case "cancelActiveTurns" ->
+                            result =
+                                    backend.cancelActiveTurns(
+                                            key, text(p, "requestId"), text(p, "threadId"));
                     case "putObject" ->
                             result =
                                     backend.putObject(
@@ -161,15 +165,19 @@ public final class SessionBackendHandler implements HttpHandler {
                             result = backend.submit(thread, text(p, "requestId"), p.get("input"));
                     case "sessions" ->
                             result = backend.sessions(text(p, "after"), p.path("limit").asInt());
-                    case "ready" ->
-                            result =
-                                    backend.ready(
-                                            List.of(
-                                                    DurableJson.convert(
-                                                            p.get("harnesses"),
-                                                            HarnessSelector[].class)),
-                                            p.path("limit").asInt());
+                    case "ready" -> {
+                        var harnesses =
+                                List.of(
+                                        DurableJson.convert(
+                                                p.get("harnesses"), HarnessSelector[].class));
+                        int limit = p.path("limit").asInt();
+                        result =
+                                key == null
+                                        ? backend.ready(harnesses, limit)
+                                        : backend.ready(key, harnesses, limit);
+                    }
                     case "turn" -> result = backend.turn(thread, text(p, "turnId"));
+                    case "turnProgress" -> result = backend.turnProgress(thread, text(p, "turnId"));
                     case "prepareRun" -> result = backend.prepareRun(lease, text(p, "requestId"));
                     case "run" -> result = backend.run(thread, text(p, "turnId"), text(p, "runId"));
                     case "runs" ->
@@ -212,11 +220,10 @@ public final class SessionBackendHandler implements HttpHandler {
                                             p.path("limit").asInt());
                     case "claim" ->
                             result =
-                                    backend.claim(
-                                                    thread,
-                                                    text(p, "owner"),
-                                                    Duration.ofMillis(p.path("duration").asLong()))
-                                            .orElse(null);
+                                    backend.claimOutcome(
+                                            thread,
+                                            text(p, "owner"),
+                                            Duration.ofMillis(p.path("duration").asLong()));
                     case "renew" -> {
                         backend.renew(lease, Duration.ofMillis(p.path("duration").asLong()));
                         result = null;
@@ -240,6 +247,13 @@ public final class SessionBackendHandler implements HttpHandler {
                                     backend.receipt(thread, text(p, "turnId"), text(p, "commitId"))
                                             .orElse(null);
                     case "execution" -> result = backend.execution(thread, text(p, "executionId"));
+                    case "toolOutput" ->
+                            result =
+                                    backend.toolOutput(
+                                            thread,
+                                            text(p, "turnId"),
+                                            text(p, "executionId"),
+                                            p.path("offset").asLong());
                     case "delegate", "delegation", "cancelDelegation" -> {
                         var parent = get(p, "request", ExecutionRequest.class);
                         if (!thread.equals(parent.thread()))
@@ -258,8 +272,30 @@ public final class SessionBackendHandler implements HttpHandler {
                                                     parent, text(p, "childTurnId"));
                                 };
                     }
+                    case "getToolExecution" ->
+                            result =
+                                    backend.toolExecution(
+                                            thread,
+                                            text(p, "turnId"),
+                                            text(p, "callId"),
+                                            text(p, "executionId"));
+                    case "job" -> result = backend.job(thread, text(p, "jobId"));
+                    case "awaitJob" -> {
+                        var waiter = get(p, "request", ExecutionRequest.class);
+                        if (!thread.equals(waiter.thread()))
+                            throw new DurableException(
+                                    DurableException.Code.INVALID,
+                                    "Job wait request scope differs");
+                        result =
+                                backend.awaitJob(
+                                        waiter, text(p, "jobId"), p.path("timeoutMillis").asLong());
+                    }
                     case "beginDispatch" ->
-                            result = backend.beginDispatch(lease, text(p, "executionId"));
+                            result =
+                                    backend.beginDispatch(
+                                            lease,
+                                            text(p, "executionId"),
+                                            get(p, "capabilities", Executor.Capabilities.class));
                     case "resource" ->
                             result =
                                     backend.resource(
@@ -296,6 +332,10 @@ public final class SessionBackendHandler implements HttpHandler {
                                 text(p, "requestId"));
                         result = null;
                     }
+                    case "rejectNativeToolReconciliation" -> {
+                        backend.rejectNativeToolReconciliation(lease, text(p, "signalId"));
+                        result = null;
+                    }
                     case "cancel" -> {
                         backend.cancel(thread, text(p, "turnId"), text(p, "requestId"));
                         result = null;
@@ -304,6 +344,10 @@ public final class SessionBackendHandler implements HttpHandler {
                     case "events" ->
                             result =
                                     backend.events(key, text(p, "cursor"), p.path("limit").asInt());
+                    case "eventsBefore" ->
+                            result =
+                                    backend.eventsBefore(
+                                            key, text(p, "cursor"), p.path("limit").asInt());
                     case "checkpoints" ->
                             result =
                                     backend.checkpoints(

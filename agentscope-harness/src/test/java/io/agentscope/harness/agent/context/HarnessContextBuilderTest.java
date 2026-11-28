@@ -18,6 +18,7 @@ package io.agentscope.harness.agent.context;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
@@ -25,6 +26,8 @@ import static org.mockito.Mockito.when;
 
 import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agent.RuntimeContext;
+import io.agentscope.core.agent.ThreadKey;
+import io.agentscope.core.journal.JournalEvent;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
@@ -39,16 +42,28 @@ import io.agentscope.core.model.ToolSchema;
 import io.agentscope.core.state.AgentState;
 import io.agentscope.core.tool.builtin.TodoTools;
 import io.agentscope.core.tool.builtin.TodoTools.TodoItem;
+import io.agentscope.core.util.JsonUtils;
+import io.agentscope.harness.agent.filesystem.local.LocalFilesystem;
+import io.agentscope.harness.agent.journal.WorkspaceThreadJournalStore;
 import io.agentscope.harness.agent.memory.compaction.CompactionConfig;
+import io.agentscope.harness.agent.memory.compaction.ToolResultEvictionConfig;
 import io.agentscope.harness.agent.middleware.CompactionMiddleware;
+import io.agentscope.harness.agent.middleware.ToolResultEvictionMiddleware;
+import io.agentscope.harness.agent.tool.ThreadHistoryTool;
+import java.nio.file.Path;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 import reactor.core.publisher.Flux;
 import reactor.test.StepVerifier;
 
 class HarnessContextBuilderTest {
+
+    @TempDir Path directory;
+
     @Test
     void optionalMemoryYieldsToCurrentUserAndManifestRecordsOmission() {
         var manifests = new ArrayList<ContextManifest>();
@@ -131,6 +146,140 @@ class HarnessContextBuilderTest {
                 () -> ContextPolicy.fromMap(Map.of("maxInputTokens", 1.5)));
         assertThrows(
                 IllegalArgumentException.class, () -> ContextPolicy.fromMap(Map.of("unknown", 1)));
+    }
+
+    @Test
+    void boundedThreadSearchAndOffloadedToolResultsFitTheInputBudget() {
+        // C11 evidence: 12 matches, one stored message ~80K characters; plus a 143K tool output.
+        String hugeMatch = "needle huge " + "x".repeat(80_701);
+        var key = new ThreadKey("u", "HarnessAgent", "session-1", "main");
+        var toolContext = RuntimeContext.builder().userId("u").build();
+        var store = new WorkspaceThreadJournalStore(new LocalFilesystem(directory));
+        var log = store.open(key, toolContext);
+        var writer = log.acquire("owner", Duration.ofMinutes(2));
+        var events = new ArrayList<JournalEvent>();
+        for (int i = 1; i <= 11; i++) {
+            events.add(
+                    seededEvent(
+                            "m" + i,
+                            i,
+                            "message/user",
+                            Msg.builder()
+                                    .id("m" + i)
+                                    .role(MsgRole.USER)
+                                    .content(TextBlock.builder().text("needle item " + i).build())
+                                    .build()));
+        }
+        events.add(
+                seededEvent(
+                        "m12",
+                        12,
+                        "tool/result",
+                        Msg.builderForRole(MsgRole.TOOL)
+                                .id("m12")
+                                .content(
+                                        ToolResultBlock.of(
+                                                "previous-call",
+                                                "thread_search",
+                                                TextBlock.builder().text(hugeMatch).build()))
+                                .build()));
+        log.commit(writer, "messages", 0, events);
+        log.release(writer);
+
+        ThreadHistoryTool tool =
+                new ThreadHistoryTool(
+                        new WorkspaceThreadJournalStore(new LocalFilesystem(directory)));
+        String search =
+                ((TextBlock)
+                                tool.threadSearch(toolContext, "needle", "HarnessAgent", 20)
+                                        .getOutput()
+                                        .get(0))
+                        .getText();
+
+        Msg assistant =
+                Msg.builder()
+                        .role(MsgRole.ASSISTANT)
+                        .content(
+                                ToolUseBlock.builder()
+                                        .id("s1")
+                                        .name("thread_search")
+                                        .input(Map.of())
+                                        .build(),
+                                ToolUseBlock.builder()
+                                        .id("e1")
+                                        .name("execute")
+                                        .input(Map.of())
+                                        .build())
+                        .build();
+        String hugeExecute = "command output " + "z".repeat(143_000);
+        Msg toolMessage =
+                Msg.builderForRole(MsgRole.TOOL)
+                        .id("t1")
+                        .content(
+                                ToolResultBlock.of(
+                                        "s1",
+                                        "thread_search",
+                                        TextBlock.builder().text(search).build()),
+                                ToolResultBlock.of(
+                                        "e1",
+                                        "execute",
+                                        TextBlock.builder().text(hugeExecute).build()))
+                        .build();
+        List<Msg> history =
+                List.of(
+                        Msg.builder()
+                                .role(MsgRole.USER)
+                                .textContent("find the playlist history")
+                                .build(),
+                        assistant,
+                        toolMessage);
+        var state = AgentState.builder().build();
+        state.contextMutable().addAll(history);
+        var rc = RuntimeContext.builder().agentState(state).build();
+        var request =
+                new ModelCallInput(
+                        history,
+                        List.of(),
+                        GenerateOptions.builder().maxTokens(20).build(),
+                        model(128_000));
+
+        List<ContextManifest> manifests = new ArrayList<>();
+        var policy =
+                new ContextPolicy(
+                        64_000, 0, 0, ContextTokenEstimator.approximate(), manifests::add);
+        var agent = mock(Agent.class);
+        when(agent.getName()).thenReturn("HarnessAgent");
+        var prepared =
+                new HarnessContextBuilder(
+                                policy,
+                                null,
+                                new ToolResultEvictionMiddleware(
+                                        new LocalFilesystem(directory),
+                                        ToolResultEvictionConfig.defaults()))
+                        .prepare(agent, rc, request, "c1", ModelRequestPreparer.Purpose.REASONING)
+                        .block();
+
+        assertNotNull(prepared);
+        String preparedJson = JsonUtils.getJsonCodec().toJson(prepared.messages());
+        assertTrue(preparedJson.contains("Message truncated"));
+        assertTrue(preparedJson.contains("Tool output was too large"));
+        assertFalse(preparedJson.contains("x".repeat(10_000)));
+        assertEquals("passed", manifests.get(0).validation());
+        assertTrue(manifests.get(0).transforms().contains("tool_result_offload"));
+        assertTrue(manifests.get(0).estimatedInputTokens() <= manifests.get(0).inputLimit());
+    }
+
+    private static JournalEvent seededEvent(String id, long seq, String type, Msg message) {
+        return new JournalEvent(
+                JournalEvent.SCHEMA_VERSION,
+                id,
+                seq,
+                seq,
+                type,
+                "run",
+                "turn",
+                true,
+                JsonUtils.getJsonCodec().toJson(Map.of("message", message)));
     }
 
     private Model model(int window) {

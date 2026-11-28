@@ -15,6 +15,7 @@
  */
 package io.agentscope.spring.boot.openai;
 
+import java.time.Duration;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
 /**
@@ -73,6 +74,11 @@ public class OpenAIProperties {
      */
     private boolean stream = true;
 
+    private Duration http2PingInterval;
+    private Duration readTimeout;
+    private Boolean retryOnConnectionFailure;
+    private Integer maxAttempts;
+
     public boolean isEnabled() {
         return enabled;
     }
@@ -119,5 +125,37 @@ public class OpenAIProperties {
 
     public void setStream(boolean stream) {
         this.stream = stream;
+    }
+
+    public Duration getHttp2PingInterval() {
+        return http2PingInterval;
+    }
+
+    public void setHttp2PingInterval(Duration http2PingInterval) {
+        this.http2PingInterval = http2PingInterval;
+    }
+
+    public Duration getReadTimeout() {
+        return readTimeout;
+    }
+
+    public void setReadTimeout(Duration readTimeout) {
+        this.readTimeout = readTimeout;
+    }
+
+    public Boolean getRetryOnConnectionFailure() {
+        return retryOnConnectionFailure;
+    }
+
+    public void setRetryOnConnectionFailure(Boolean retryOnConnectionFailure) {
+        this.retryOnConnectionFailure = retryOnConnectionFailure;
+    }
+
+    public Integer getMaxAttempts() {
+        return maxAttempts;
+    }
+
+    public void setMaxAttempts(Integer maxAttempts) {
+        this.maxAttempts = maxAttempts;
     }
 }

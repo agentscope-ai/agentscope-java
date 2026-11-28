@@ -76,6 +76,42 @@ class WorkerRuntimeTest {
     }
 
     @Test
+    void queueDiagnosticsDistinguishCapacityWaitsFromProviderWaits() {
+        try (var records = JdbcRecordStore.sqlite(directory.resolve("queue-health.db"))) {
+            var store = new TransactionalExecutionStore(records);
+            var leased =
+                    new ExecutionRequest(
+                            "leased", request.thread(), request.turnId(), request.call());
+            var provider =
+                    new ExecutionRequest(
+                            "provider", request.thread(), request.turnId(), request.call());
+            var deferred =
+                    new ExecutionRequest(
+                            "deferred", request.thread(), request.turnId(), request.call());
+            for (var item : List.of(request, leased, provider, deferred)) store.admit(item);
+            var lease = Duration.ofMinutes(1);
+            store.claim(leased, "worker", lease).orElseThrow();
+            var awaiting = store.claim(provider, "worker", lease).orElseThrow();
+            store.begin(awaiting);
+            store.update(
+                    awaiting,
+                    new ExecutionResult(ExecutionState.RUNNING, "provider-id", null, null));
+            store.release(awaiting, lease);
+            store.defer(store.claim(deferred, "worker", lease).orElseThrow(), lease, lease);
+
+            var statistics = store.statistics(10);
+            assertEquals(4, statistics.pending());
+            assertEquals(1, statistics.readyToStart());
+            assertEquals(1, statistics.leased());
+            assertEquals(1, statistics.awaitingProvider());
+            assertEquals(1, statistics.deferred());
+            assertTrue(statistics.oldestPendingAgeMillis() >= statistics.oldestReadyAgeMillis());
+            assertFalse(statistics.truncated());
+            assertTrue(store.statistics(1).truncated());
+        }
+    }
+
+    @Test
     void forcedCloseReleasesQueuedCapacityWithoutDispatchAndReplacementContinues()
             throws Exception {
         var held = new CountDownLatch(2);
@@ -99,7 +135,10 @@ class WorkerRuntimeTest {
             var store = new TransactionalExecutionStore(records);
             store.admit(request);
             store.admit(recovered);
-            var previous = store.claim(recovered, "old", Duration.ofSeconds(1)).orElseThrow();
+            // 30s for the same reason as staleWorkerCannotPublishResult: a 1s fixture lease
+            // expires between claim and release on loaded runners (#4219) and the fenced
+            // begin/update/release sequence then fails before the behavior under test.
+            var previous = store.claim(recovered, "old", Duration.ofSeconds(30)).orElseThrow();
             store.begin(previous);
             store.update(
                     previous, new ExecutionResult(ExecutionState.RUNNING, "original", null, null));
@@ -134,7 +173,7 @@ class WorkerRuntimeTest {
                 while (worker.status().activeStarts() != 1
                         || worker.status().activeRecoveries() != 1) {
                     assertTrue(System.nanoTime() < until, "Discovery did not queue both lanes");
-                    Thread.sleep(10);
+                    pause(10);
                 }
                 worker.close();
                 assertTrue(worker.drain(Duration.ofMillis(100)));
@@ -201,7 +240,7 @@ class WorkerRuntimeTest {
                     .when(store)
                     .renew(any(ExecutionStore.Work.class), any(Duration.class));
             store.admit(recovered);
-            var previous = store.claim(recovered, "previous", Duration.ofSeconds(1)).orElseThrow();
+            var previous = store.claim(recovered, "previous", Duration.ofSeconds(30)).orElseThrow();
             store.begin(previous);
             store.update(
                     previous, new ExecutionResult(ExecutionState.RUNNING, "original", null, null));
@@ -218,10 +257,15 @@ class WorkerRuntimeTest {
                 worker.localExecutor().startExecution(request);
                 worker.start();
                 try {
-                    assertTrue(running.await(5, TimeUnit.SECONDS));
-                    assertTrue(renewed.await(5, TimeUnit.SECONDS));
+                    // The recovery lane renews the pre-existing lease under scheduler contention;
+                    // #4224 saw the first renew miss a 5s latch window on a windows-latest -T1C
+                    // run (elapsed 6.5s) while the lane was healthy. 30s is the established
+                    // deflake tier (#3726/#3774); the latches still fire as soon as the lane
+                    // delivers.
+                    assertTrue(running.await(30, TimeUnit.SECONDS));
+                    assertTrue(renewed.await(30, TimeUnit.SECONDS));
                     worker.localExecutor().cancel(recovered, null);
-                    assertTrue(cancelled.await(5, TimeUnit.SECONDS));
+                    assertTrue(cancelled.await(30, TimeUnit.SECONDS));
                     assertFalse(worker.drain(Duration.ofMillis(400)));
                     assertFalse(worker.status().accepting());
                     assertEquals(
@@ -369,7 +413,7 @@ class WorkerRuntimeTest {
             worker.localExecutor().startExecution(request);
             worker.localExecutor().startExecution(second);
             worker.tick();
-            Thread.sleep(5);
+            pause(5);
             worker.tick();
             assertEquals(
                     ExecutionState.SUCCEEDED, worker.localExecutor().query(request, null).state());
@@ -429,7 +473,7 @@ class WorkerRuntimeTest {
                 assertThrows(IllegalStateException.class, worker::tick);
                 assertFalse(worker.localExecutor().query(request, null).state().terminal());
             }
-            Thread.sleep(5);
+            pause(5);
             try (var worker = new WorkerRuntime(store, Map.of("remote", provider))) {
                 worker.tick();
                 assertEquals(
@@ -497,7 +541,7 @@ class WorkerRuntimeTest {
             assertEquals(
                     ExecutionState.UNKNOWN, worker.localExecutor().query(request, null).state());
         }
-        Thread.sleep(5);
+        pause(5);
         try (var worker =
                 new WorkerRuntime(
                         new TransactionalExecutionStore(JdbcRecordStore.sqlite(file)),
@@ -548,10 +592,13 @@ class WorkerRuntimeTest {
                         JdbcRecordStore.sqlite(directory.resolve("fence.db")));
         store.admit(request);
         var key = store.keys(null, 1).get(0);
-        var old = store.claim(key, "old", Duration.ofSeconds(1)).orElseThrow();
+        // A 1s claim lease expired between claim and release on loaded runners (#4219: "Worker
+        // lease lost" after 2.4s); the staleness under test comes from release(ZERO) plus the
+        // re-claim below, so the initial lease only needs to outlive setup.
+        var old = store.claim(key, "old", Duration.ofSeconds(30)).orElseThrow();
         store.begin(old);
         store.release(old, Duration.ZERO);
-        var current = store.claim(key, "new", Duration.ofSeconds(1)).orElseThrow();
+        var current = store.claim(key, "new", Duration.ofSeconds(30)).orElseThrow();
         assertThrows(
                 DurableException.class,
                 () ->
@@ -585,11 +632,26 @@ class WorkerRuntimeTest {
                     DurableException.Code.INCOMPATIBLE,
                     assertThrows(DurableException.class, worker::tick).code());
         }
-        Thread.sleep(5);
+        pause(5);
         var work =
                 store.claim(store.keys(null, 1).get(0), "replacement", Duration.ofSeconds(1))
                         .orElseThrow();
         assertFalse(work.attempted());
         assertEquals(ExecutionState.PENDING, work.result().state());
+    }
+
+    /**
+     * Sleeps through a stale interrupt instead of failing the test. {@link WorkerRuntime} may
+     * interrupt the thread a tick runs on when a lease renewal fails, and that thread is the test
+     * thread for manual {@code tick()} calls (#4255: the settlement pause between two workers died
+     * with "Interrupted sleep interrupted" on a loaded -T1C runner). Mirrors the {@code pause()}
+     * fix #4176 applied to ProcessRecoveryTest for the same signature.
+     */
+    private static void pause(long millis) {
+        try {
+            Thread.sleep(millis);
+        } catch (InterruptedException wakeup) {
+            Thread.interrupted();
+        }
     }
 }

@@ -16,7 +16,9 @@
 package io.agentscope.examples.chat;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.durable.DurableJson;
@@ -28,6 +30,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.Map;
+import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -192,6 +195,30 @@ class ChatControllerTest {
                     .exchange()
                     .expectStatus()
                     .isBadRequest();
+        }
+    }
+
+    @Test
+    void toolOutputPreviewIsDeliveredWithoutAdvancingTheSessionCursor() throws Exception {
+        try (var sessions =
+                new ChatSessions(
+                        workspace.resolve("preview"),
+                        new DemoChatModel(Duration.ofMillis(3), Duration.ofMillis(150)))) {
+            sessions.create("conversation");
+            String cursor = sessions.snapshot("conversation").cursor();
+            var controller = new ChatController(sessions);
+            var preview =
+                    controller.stream("conversation", cursor, null)
+                            .filter(event -> "tool-output".equals(event.event()))
+                            .next()
+                            .toFuture();
+            var turn = sessions.submit("conversation", "submit", "/slow stream");
+            var event = preview.get(10, TimeUnit.SECONDS);
+            var delta = DurableJson.parse(event.data());
+            assertNull(event.id());
+            assertEquals(turn.turnId(), delta.path("turnId").asText());
+            assertEquals("TOOL_OUTPUT", delta.path("deltaType").asText());
+            assertFalse(delta.path("data").path("data").asText().isBlank());
         }
     }
 }

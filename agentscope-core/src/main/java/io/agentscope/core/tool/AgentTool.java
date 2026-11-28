@@ -146,6 +146,28 @@ public interface AgentTool {
     }
 
     /**
+     * Whether large-tool-result eviction may offload this tool's results to a workspace file,
+     * leaving a head+tail preview. An intrinsic per-tool declaration (like {@link #isReadOnly()});
+     * consumers must honor it instead of guessing by tool name. Defaults to {@code true}.
+     *
+     * @return {@code true} if this tool's results may be offloaded by eviction
+     */
+    default boolean isEvictable() {
+        return true;
+    }
+
+    /**
+     * Whether aggregate tool-result pruning may replace this tool's older results with a
+     * head+tail preview. Defaults to {@code true}; declare {@code false} when a preview is not
+     * enough to reconstruct the tool's value.
+     *
+     * @return {@code true} if this tool's results may be pruned to a preview
+     */
+    default boolean isPrunable() {
+        return true;
+    }
+
+    /**
      * Whether this is a framework-provided system capability that must remain available for the
      * agent to operate (e.g. meta tools). System tools bypass grant-layer trimming but still
      * obey group activation. Marking a business tool {@code system=true} exempts it from grant
