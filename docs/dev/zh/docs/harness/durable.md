@@ -1142,6 +1142,32 @@ Java 入口不接受 role 参数，也不使用角色枚举。启动器接受 `<
 `make -C agentscope-durable independent`，另需 Python 3。真实队列执行需要 RocketMQ 5 服务及
 Topic/消费组配置；`--compile-only` 只打包应用，不连接 Broker 或执行工具。
 
+## 运行 Durable 基础验收测试
+
+修改 Durable 后，在仓库根目录运行功能验收。
+
+```sh
+make -C agentscope-durable acceptance
+```
+
+验收覆盖 Java 和 HTTP 用户 API、Session 和 Thread 隔离、Turn 排队、steer 和取消、审批、checkpoint fork、
+SSE 断线重放，以及 Brain 和 Hands 的故障恢复。API 重启用例通过 Durable Worker 和本地传输，
+验证工具执行期间重启 API 后的续接。基础验收使用临时 SQLite 数据库和预设行为的模型与工具，无需模型密钥或 RocketMQ。
+
+修改 RocketMQ 拓扑、调度或传输后，运行扩展验收。它用客户端测试替身验证响应丢失、确认失败和消息重复投递等场景。
+
+```sh
+make -C agentscope-durable acceptance-rocketmq
+```
+
+任一命令设置 `DURABLE_TEST_JDBC_URL` 后，支持 PostgreSQL 的 JDBC 用例会在指定测试库上运行。
+测试账号需要有创建和删除 schema 的权限。
+
+```sh
+DURABLE_TEST_JDBC_URL='jdbc:postgresql://localhost:5432/durable_test?user=durable_test' \
+  make -C agentscope-durable acceptance
+```
+
 ## Durable 子委派
 
 子任务需要跨重启恢复、独立观察或接受持续上下文中的后续请求时，使用持久委派。
