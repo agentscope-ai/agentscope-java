@@ -92,4 +92,51 @@ class AgentRunDataPlaneHttpTest {
         assertEquals("DELETE", deleteReq.getMethod());
         assertEquals("/sandboxes/sb-1", deleteReq.getPath());
     }
+
+    /**
+     * 真实接口把响应包在 data 信封里：waitUntilReady 应读到信封内的 status 并立即返回，
+     * 而不是一直轮询到超时。
+     */
+    @Test
+    void waitUntilReadyReadsStatusFromDataEnvelope() throws Exception {
+        AgentRunDataPlaneHttp http = newHttp();
+        // 多入队几份响应：未修复时客户端会继续轮询，避免阻塞在空队列上而掩盖真正的失败原因
+        enqueueRepeated("{\"data\":{\"sandboxId\":\"sb-3\",\"status\":\"READY\"}}");
+
+        http.waitUntilReady("sb-3", 2);
+
+        assertEquals(1, mockServer.getRequestCount());
+    }
+
+    /** 不带信封的响应保持兼容：status 位于根节点时同样只轮询一次即返回。 */
+    @Test
+    void waitUntilReadyStillReadsStatusFromRootObject() throws Exception {
+        AgentRunDataPlaneHttp http = newHttp();
+        enqueueRepeated("{\"status\":\"RUNNING\"}");
+
+        http.waitUntilReady("sb-4", 2);
+
+        assertEquals(1, mockServer.getRequestCount());
+    }
+
+    private AgentRunDataPlaneHttp newHttp() {
+        String baseUrl = mockServer.url("/").toString();
+        if (baseUrl.endsWith("/")) {
+            baseUrl = baseUrl.substring(0, baseUrl.length() - 1);
+        }
+        AgentRunSandboxClientOptions opt =
+                new AgentRunSandboxClientOptions()
+                        .setApiKey("test-key")
+                        .setTemplateName("agentscope-default")
+                        .setMcpServerUrl("https://example.com/mcp")
+                        .setDataPlaneBaseUrl(baseUrl)
+                        .setHttpClient(new OkHttpClient());
+        return new AgentRunDataPlaneHttp(opt);
+    }
+
+    private void enqueueRepeated(String body) {
+        for (int i = 0; i < 3; i++) {
+            mockServer.enqueue(new MockResponse().setResponseCode(200).setBody(body));
+        }
+    }
 }
