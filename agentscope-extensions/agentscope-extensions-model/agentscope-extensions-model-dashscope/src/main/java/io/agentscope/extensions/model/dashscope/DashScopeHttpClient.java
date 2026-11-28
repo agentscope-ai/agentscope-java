@@ -317,13 +317,12 @@ public class DashScopeHttpClient {
                                     if (finalEncryptionContext != null) {
                                         data = decryptResponse(data, finalEncryptionContext);
                                     }
-                                    sink.next(
-                                            new ParsedStreamResponse(
-                                                    data,
-                                                    JsonUtils.getJsonCodec()
-                                                            .fromJson(
-                                                                    data,
-                                                                    DashScopeResponse.class)));
+                                    DashScopeResponse response =
+                                            JsonUtils.getJsonCodec()
+                                                    .fromJson(data, DashScopeResponse.class);
+                                    if (response != null) {
+                                        sink.next(new ParsedStreamResponse(data, response));
+                                    }
                                 } catch (JsonException e) {
                                     log.warn(
                                             "Failed to parse SSE data: {}. Error: {}",

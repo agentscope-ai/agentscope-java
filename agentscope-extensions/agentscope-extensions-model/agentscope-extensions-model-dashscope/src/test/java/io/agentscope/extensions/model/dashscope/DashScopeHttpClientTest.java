@@ -812,6 +812,23 @@ class DashScopeHttpClientTest {
     }
 
     @Test
+    void testStreamIgnoresNullSseDataAndKeepsFollowingOutput() {
+        mockServer.enqueue(
+                new MockResponse()
+                        .setResponseCode(200)
+                        .setBody(
+                                "data: null\n\n"
+                                    + "data:"
+                                    + " {\"request_id\":\"after-null\",\"output\":{\"choices\":[]}}\n\n"
+                                    + "data: [DONE]\n\n")
+                        .setHeader("Content-Type", "text/event-stream"));
+
+        StepVerifier.create(client.stream(createTestRequest("qwen-plus", "test"), null, null, null))
+                .assertNext(response -> assertEquals("after-null", response.getRequestId()))
+                .verifyComplete();
+    }
+
+    @Test
     void testHeaderOverride() throws Exception {
         mockServer.enqueue(
                 new MockResponse()
