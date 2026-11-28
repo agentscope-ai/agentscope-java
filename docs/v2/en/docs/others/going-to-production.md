@@ -335,7 +335,7 @@ With `distributedStore(...)`, the snapshot spec and execution guard are auto-inj
 
 ### Sandbox exec serialization: `SandboxExecutionGuard`
 
-Under `SESSION` / `USER` scope, buckets are already partitioned by session/user and concurrent `exec`s don't collide. Under `AGENT` / `GLOBAL` scope with multiple replicas, N nodes can race to `exec` on the same sandbox slot. `distributedStore(...)` auto-injects the appropriate execution guard:
+Under `SESSION` scope, buckets are partitioned per session and concurrent `exec`s don't collide. Under `USER` scope the bucket is per **user** — two **concurrent sessions of the same user share one slot** and overwrite each other even on a single instance, so pair it with a `SandboxExecutionGuard` or switch to `SESSION` scope; the same applies across replicas. Under `AGENT` / `GLOBAL` scope with multiple replicas, N nodes can race to `exec` on the same sandbox slot. `distributedStore(...)` auto-injects the appropriate execution guard:
 
 | Implementation | Module | Mechanism |
 |---------------|--------|-----------|

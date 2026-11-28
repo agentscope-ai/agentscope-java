@@ -53,7 +53,7 @@ agent.call(msg, RuntimeContext.builder()
     .isolationScope(IsolationScope.SESSION))
 ```
 
-`SESSION` 是天然并发安全（每个 session 自己一份）；`USER` / `AGENT` / `GLOBAL` 多副本部署时建议配并发互斥（见下面的"并发控制"）。
+`SESSION` 是天然并发安全（每个 session 自己一份）。`USER` 按 **user** 分桶——同一用户的多个并发 session 共用同一个 slot，**单实例也会互相覆盖**，与 `AGENT` / `GLOBAL` 一样建议配并发互斥（见下面的"并发控制"）；跨副本时同理。
 
 **USER 降级逻辑：** 当 `IsolationScope.USER` 生效（不管是默认还是显式设置），但 `RuntimeContext.userId` 缺失时，框架自动降级为按 `sessionId` 隔离。不需要额外处理 userId 为空的情况——沙箱会优雅降级。
 
@@ -115,7 +115,7 @@ HarnessAgent.builder()
 
 ## 并发控制（多副本场景）
 
-`USER` / `AGENT` / `GLOBAL` 模式在多副本下，两个副本同时处理同一个用户的请求会都把状态写到同一个 slot，最后写入的为准。如果你不想这样，需要一把分布式锁。
+`USER` / `AGENT` / `GLOBAL` 模式共享 slot：`USER` 下同一用户的多个并发 session（**单实例即会发生**）以及多副本下两个副本同时处理同一个用户的请求，都会把状态写到同一个 slot，最后写入的为准。如果你不想这样，需要一把互斥锁（单实例可用本地实现）。
 
 **推荐方式**：使用 `distributedStore(...)`，快照和执行锁都会自动注入：
 

@@ -322,7 +322,7 @@ HarnessAgent agent = HarnessAgent.builder()
 
 ### 沙箱执行节点串行化：`SandboxExecutionGuard`
 
-`SESSION` / `USER` scope 下天然按 session/user 分桶，并发不会撞。但 `AGENT` / `GLOBAL` scope 多副本部署时，可能同时有 N 个节点要在同一个 sandbox slot 上 `exec`——会撞。`distributedStore(...)` 会自动注入对应 store 的执行锁：
+`SESSION` scope 天然按 session 分桶，并发不会撞。`USER` scope 按 **user** 分桶——同一用户的多个 **并发 session 共用同一个 slot**，单实例也会互相覆盖，需要 `SandboxExecutionGuard` 互斥或改用 `SESSION` scope；跨副本时同理。`AGENT` / `GLOBAL` scope 多副本部署时，可能同时有 N 个节点要在同一个 sandbox slot 上 `exec`——会撞。`distributedStore(...)` 会自动注入对应 store 的执行锁：
 
 | 实现 | 模块 | 机制 |
 |------|------|------|
