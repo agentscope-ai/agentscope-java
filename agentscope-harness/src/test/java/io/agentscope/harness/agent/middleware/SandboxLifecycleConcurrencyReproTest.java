@@ -20,6 +20,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.harness.agent.filesystem.sandbox.SandboxBackedFilesystem;
@@ -138,6 +139,7 @@ class SandboxLifecycleConcurrencyReproTest {
             Map<String, RecordingLease> leaseBySession) {
         SandboxClient<?> client = mock(SandboxClient.class);
         SessionSandboxStateStore stateStore = mock(SessionSandboxStateStore.class);
+        when(stateStore.getAgentId()).thenReturn("repro-agent");
         return new SandboxManager(client, stateStore, "repro-agent") {
             @Override
             public SandboxAcquireResult acquire(

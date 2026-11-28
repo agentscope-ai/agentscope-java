@@ -121,6 +121,45 @@ public final class SandboxIsolationKey {
         return value;
     }
 
+    /**
+     * Returns the key used for {@link SandboxExecutionGuard} acquisition.
+     *
+     * <p>The persisted slot for {@link IsolationScope#USER} scope is
+     * {@code sandbox/user/{agentId}/{userId}} (see {@link SessionSandboxStateStore}), so the
+     * execution guard has to discriminate by agent as well. Without the agent dimension a
+     * declared subagent, spawned inside its parent's call window, would request the same guard
+     * key the parent already holds and block forever — the parent cannot release the lease until
+     * the subagent returns.
+     *
+     * <p>Other scopes are returned unchanged: {@link IsolationScope#SESSION} and
+     * {@link IsolationScope#AGENT} already discriminate parent from child (a derived child
+     * session id / a distinct agent id), and {@link IsolationScope#GLOBAL} shares a single
+     * persisted slot by definition, where serialisation is required.
+     *
+     * @param agentId the agent id of the execution acquiring the sandbox; required for
+     *     {@link IsolationScope#USER}. Callers going through {@code SandboxManager} are covered
+     *     by its constructor, which already rejects a null/blank id and asserts it matches the
+     *     state store's agent id; this check remains as a guard for direct callers
+     * @return the guard key for {@code agentId}
+     * @throws IllegalArgumentException if the scope is {@link IsolationScope#USER} and
+     *     {@code agentId} is null or blank — returning {@code this} would hand back exactly the
+     *     key that deadlocks nested calls
+     */
+    public SandboxIsolationKey forExecutionGuard(String agentId) {
+        if (scope != IsolationScope.USER) {
+            return this;
+        }
+        if (agentId == null || agentId.isBlank()) {
+            throw new IllegalArgumentException(
+                    "agentId is required for the USER-scope execution guard key; without it a"
+                            + " nested call would acquire the same guard key its parent already"
+                            + " holds and deadlock");
+        }
+        // Mirrors SessionSandboxStateStore#slotSessionId's USER composition so the guard and
+        // the persisted slot stay in lockstep.
+        return new SandboxIsolationKey(scope, agentId + "/" + value);
+    }
+
     @Override
     public boolean equals(Object o) {
         if (this == o) return true;

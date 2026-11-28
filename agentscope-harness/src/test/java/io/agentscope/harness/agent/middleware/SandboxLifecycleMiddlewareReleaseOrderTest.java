@@ -56,11 +56,10 @@ class SandboxLifecycleMiddlewareReleaseOrderTest {
 
         RecordingSandbox sandbox = new RecordingSandbox(stopMutation);
         RecordingLease lease = new RecordingLease();
+        SessionSandboxStateStore stateStore = mock(SessionSandboxStateStore.class);
+        when(stateStore.getAgentId()).thenReturn("order-agent");
         SandboxManager manager =
-                new SandboxManager(
-                        mock(SandboxClient.class),
-                        mock(SessionSandboxStateStore.class),
-                        "order-agent") {
+                new SandboxManager(mock(SandboxClient.class), stateStore, "order-agent") {
                     @Override
                     public SandboxAcquireResult acquire(
                             SandboxContext sandboxContext, RuntimeContext runtimeContext) {
@@ -123,6 +122,7 @@ class SandboxLifecycleMiddlewareReleaseOrderTest {
         when(client.serializeState(any())).thenAnswer(invocation -> state.snapshotIds.toString());
         List<String> persisted = new ArrayList<>();
         SessionSandboxStateStore store = mock(SessionSandboxStateStore.class);
+        when(store.getAgentId()).thenReturn("order-agent");
         doAnswer(
                         invocation -> {
                             order.add("persist");

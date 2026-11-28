@@ -20,6 +20,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 import io.agentscope.core.agent.CapabilitySurface;
 import io.agentscope.core.agent.RuntimeContext;
@@ -104,8 +105,9 @@ class SandboxLifecycleMiddlewareProjectionNarrowingTest {
 
     /** Manager that records the context it was handed and returns a self-managed no-op sandbox. */
     private static SandboxManager capturingManager(AtomicReference<SandboxContext> captured) {
-        return new SandboxManager(
-                mock(SandboxClient.class), mock(SessionSandboxStateStore.class), "narrow-agent") {
+        SessionSandboxStateStore stateStore = mock(SessionSandboxStateStore.class);
+        when(stateStore.getAgentId()).thenReturn("narrow-agent");
+        return new SandboxManager(mock(SandboxClient.class), stateStore, "narrow-agent") {
             @Override
             public SandboxAcquireResult acquire(
                     SandboxContext sandboxContext, RuntimeContext runtimeContext) {
