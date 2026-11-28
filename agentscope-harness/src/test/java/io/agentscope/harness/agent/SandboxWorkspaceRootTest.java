@@ -32,6 +32,7 @@ import io.agentscope.core.tool.ToolCallParam;
 import io.agentscope.harness.agent.filesystem.model.FileData;
 import io.agentscope.harness.agent.filesystem.model.ReadResult;
 import io.agentscope.harness.agent.filesystem.sandbox.AbstractSandboxFilesystem;
+import io.agentscope.harness.agent.sandbox.LazySandboxBinding;
 import io.agentscope.harness.agent.sandbox.Sandbox;
 import io.agentscope.harness.agent.sandbox.SandboxAcquireResult;
 import io.agentscope.harness.agent.sandbox.SandboxException;
@@ -41,8 +42,11 @@ import io.agentscope.harness.agent.workspace.WorkspacePathNormalizer;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 class SandboxWorkspaceRootTest {
     private RuntimeContext context(String root) {
@@ -55,6 +59,27 @@ class SandboxWorkspaceRootTest {
         return RuntimeContext.builder()
                 .put(SandboxAcquireResult.class, SandboxAcquireResult.selfManaged(sandbox))
                 .build();
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"/restored/session", "C:/restored/session"})
+    void firstAbsoluteToolPathUsesTheRestoredSandboxRoot(String root) {
+        var normalizer = WorkspacePathNormalizer.forSandbox("/workspace");
+        var restored = context(root).get(SandboxAcquireResult.class);
+        var acquisitions = new AtomicInteger();
+        var binding =
+                new LazySandboxBinding(
+                        () -> {
+                            acquisitions.incrementAndGet();
+                            return restored;
+                        });
+        var call = RuntimeContext.builder().put(LazySandboxBinding.class, binding).build();
+        var toolContext = RuntimeContext.builder(call).build();
+        assertEquals("mounted/file.txt", normalizer.normalize("mounted/file.txt", toolContext));
+        assertEquals(0, acquisitions.get());
+        assertEquals("first.txt", normalizer.normalize(root + "/first.txt", toolContext));
+        assertEquals("second.txt", normalizer.normalize(root + "/second.txt", call));
+        assertEquals(1, acquisitions.get());
     }
 
     @Test

@@ -17,9 +17,11 @@ package io.agentscope.harness.agent.workspace;
 
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.harness.agent.filesystem.remote.store.NamespaceFactory;
+import io.agentscope.harness.agent.sandbox.LazySandboxBinding;
 import io.agentscope.harness.agent.sandbox.SandboxWorkspaceRoot;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.regex.Pattern;
 
 /**
  * Normalizes file paths to workspace-relative form by stripping the active mode's workspace
@@ -33,6 +35,8 @@ import java.util.List;
  * ability to access non-workspace files in modes that allow it.
  */
 public final class WorkspacePathNormalizer {
+
+    private static final Pattern ABSOLUTE_PATH = Pattern.compile("^(?:[/\\\\]|[A-Za-z]:[/\\\\])");
 
     private final List<String> prefixes;
     private final NamespaceFactory namespaceFactory;
@@ -139,6 +143,12 @@ public final class WorkspacePathNormalizer {
             return path;
         }
         if (sandbox) {
+            // Relative paths can be routed without consulting a deferred sandbox's root.
+            if (runtimeContext != null
+                    && runtimeContext.get(LazySandboxBinding.class) != null
+                    && !ABSOLUTE_PATH.matcher(path).lookingAt()) {
+                return path;
+            }
             return of(SandboxWorkspaceRoot.resolve(runtimeContext, prefixes.get(0)))
                     .normalize(path, runtimeContext);
         }
