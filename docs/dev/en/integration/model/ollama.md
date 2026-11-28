@@ -39,6 +39,26 @@ OllamaChatModel model = OllamaChatModel.builder()
     .build();
 ```
 
+## Thinking
+
+For thinking-capable models, `GenerateOptions` maps to Ollama's `think` parameter:
+
+| Option | Request |
+| --- | --- |
+| `reasoningEffort("low" / "medium" / "high")` | `think` set to that level (trimmed and case-insensitive; takes precedence over a budget) |
+| `thinkingBudget(n)` with `n > 0` | `think` enabled |
+| None set | `think` omitted |
+
+```java
+GenerateOptions options = GenerateOptions.builder()
+    .reasoningEffort("high")
+    .build();
+```
+
+Levels apply to models that support them (for example gpt-oss); toggle-based models use
+`thinkingBudget`. Unsupported effort values fail fast with an `IllegalArgumentException`.
+An `additionalBodyParams("think", ...)` entry overrides the mapping.
+
 ## Spring Boot
 
 Spring Boot applications can use the Ollama starter:
