@@ -17,6 +17,8 @@
 package io.agentscope.durable.agentscope;
 
 import io.agentscope.core.message.ContentBlock;
+import io.agentscope.core.message.Msg;
+import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolResultState;
@@ -29,11 +31,49 @@ import io.agentscope.durable.DurableTypes.ExecutionResult;
 import io.agentscope.durable.DurableTypes.ExecutionState;
 import io.modelcontextprotocol.spec.McpSchema;
 import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 /** Native/MCP result envelopes retain content and metadata instead of flattening them to text. */
 final class AgentScopeToolResults {
     private AgentScopeToolResults() {}
+
+    /** Join the completed native results immediately following their assistant tool calls. */
+    static void joinCompletedBatch(List<Msg> context) {
+        int firstResult = context.size();
+        while (firstResult > 0 && context.get(firstResult - 1).getRole() == MsgRole.TOOL)
+            firstResult--;
+        if (firstResult == 0 || firstResult == context.size()) return;
+        var assistant = context.get(firstResult - 1);
+        if (assistant.getRole() != MsgRole.ASSISTANT) return;
+        var calls =
+                assistant.getContentBlocks(ToolUseBlock.class).stream()
+                        .filter(call -> !call.isServerTool())
+                        .toList();
+        if (calls.size() < 2) return;
+
+        var fragments = context.subList(firstResult, context.size());
+        var results = new HashMap<String, ToolResultBlock>();
+        for (var fragment : fragments) {
+            for (var block : fragment.getContent()) {
+                if (!(block instanceof ToolResultBlock result)
+                        || result.isSuspended()
+                        || results.putIfAbsent(result.getId(), result) != null) return;
+            }
+        }
+        if (results.size() != calls.size()) return;
+        var ordered = new ArrayList<ContentBlock>(calls.size());
+        for (var call : calls) {
+            var result = results.remove(call.getId());
+            if (result == null) return;
+            ordered.add(result);
+        }
+        var first = fragments.get(0);
+        if (fragments.size() == 1 && ordered.equals(first.getContent())) return;
+        fragments.clear();
+        context.add(first.withContent(ordered));
+    }
 
     static ToolResultBlock convert(ToolUseBlock call, ExecutionResult result) {
         return convert(call, result, 0);
@@ -100,6 +140,8 @@ final class AgentScopeToolResults {
                                     : value.isTextual() ? value.asText() : value.toString());
         if (result.state() == ExecutionState.CANCELLED)
             block = block.withState(ToolResultState.INTERRUPTED);
+        else if (result.state() == ExecutionState.DENIED)
+            block = block.withState(ToolResultState.DENIED);
         else if (result.state() == ExecutionState.FAILED
                 && block.getState() != ToolResultState.DENIED)
             block = block.withState(ToolResultState.ERROR);

@@ -22,9 +22,11 @@ import io.agentscope.durable.DurableException;
 import io.agentscope.durable.DurableJson;
 import io.agentscope.durable.DurableTypes.LiveEvent;
 import io.agentscope.durable.DurableTypes.PublicEvent;
+import io.agentscope.durable.DurableTypes.SessionActivity;
+import io.agentscope.durable.DurableTypes.SessionKey;
+import io.agentscope.durable.DurableTypes.SessionPhase;
 import io.agentscope.durable.EventStreamOptions.EventDeltaType;
 import io.agentscope.durable.SessionStreamEvent;
-import java.time.Clock;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -42,12 +44,16 @@ import java.util.Set;
 public final class ClaudeEventAdapter {
     public static final String AGENT_MESSAGE = "agent.message";
 
-    private final Clock clock;
+    private final String primaryThreadId;
     private final Set<String> previewed = new HashSet<>();
     private final Map<String, Map<String, Integer>> blockIndexes = new HashMap<>();
 
     public ClaudeEventAdapter() {
-        this(Clock.systemUTC());
+        this("main");
+    }
+
+    public ClaudeEventAdapter(String primaryThreadId) {
+        this.primaryThreadId = DurableJson.text(primaryThreadId, "primaryThreadId");
     }
 
     /** Map one item from the public typed Durable stream. */
@@ -56,25 +62,67 @@ public final class ClaudeEventAdapter {
         if (event instanceof SessionStreamEvent.Committed committed)
             return committed(committed.event());
         if (event instanceof SessionStreamEvent.PreviewStarted preview) {
-            if (preview.previewType() != EventDeltaType.MESSAGE) return List.of();
+            if (preview.previewType() != EventDeltaType.MESSAGE
+                    || !primaryThreadId.equals(preview.threadId())) return List.of();
             return start(preview.eventId());
         }
         if (event instanceof SessionStreamEvent.EventDelta delta) {
-            if (delta.deltaType() != EventDeltaType.MESSAGE) return List.of();
+            if (delta.deltaType() != EventDeltaType.MESSAGE
+                    || !primaryThreadId.equals(delta.threadId())) return List.of();
             return delta(delta.eventId(), delta.blockId(), delta.data());
         }
         return List.of();
     }
 
-    ClaudeEventAdapter(Clock clock) {
-        this.clock = Objects.requireNonNull(clock);
-    }
-
     /** Map one committed Durable event. Unsupported internal facts are intentionally hidden. */
     List<JsonNode> committed(PublicEvent event) {
         Objects.requireNonNull(event);
+        if ("session.activity_changed".equals(event.type())) return List.of(status(event));
+        if ("interaction.requested".equals(event.type())) return interaction(event);
+        if ("confirmation.applied".equals(event.type())) {
+            var data = event.data();
+            var output =
+                    toolConfirmation(
+                            event.session(),
+                            data.required("requestId").asText(),
+                            data.required("interactionId").asText(),
+                            data.required("allowed").asBoolean() ? "allow" : "deny",
+                            event.occurredAt());
+            return List.of(routed(output, event.threadId()));
+        }
+        if ("turns.cancel_applied".equals(event.type()))
+            return List.of(
+                    interrupt(
+                            event.session(), event.data().required("requestId").asText(),
+                            event.threadId(), event.occurredAt()));
+        if ("input.applied".equals(event.type())) {
+            if (!primaryThreadId.equals(event.threadId())) return List.of();
+            var message = event.data();
+            return List.of(
+                    DurableJson.value(
+                            Map.of(
+                                    "type", "user.message",
+                                    "id", message.required("messageId").asText(),
+                                    "content", content(message.required("content")),
+                                    "processed_at", processedAt(event))));
+        }
         if (!"message.completed".equals(event.type())) return List.of();
         var data = event.data();
+        String inputKind = data.path("inputKind").asText("");
+        if ("submit".equals(inputKind)) return List.of();
+        if ("respond".equals(inputKind)) {
+            if (!data.has("toolError")) return List.of();
+            var output =
+                    customToolResult(
+                            event.session(),
+                            data.required("requestId").asText(),
+                            data.required("interactionId").asText(),
+                            content(data.required("message").required("content")),
+                            data.required("toolError").asBoolean(),
+                            event.occurredAt());
+            return List.of(routed(output, event.threadId()));
+        }
+        if (!primaryThreadId.equals(event.threadId())) return List.of();
         String id = data.required("messageId").asText();
         JsonNode message = data.required("message");
         String role = message.required("role").asText();
@@ -88,18 +136,154 @@ public final class ClaudeEventAdapter {
                                     DurableException.Code.INCOMPATIBLE,
                                     "Claude does not support Durable message role: " + role);
                 };
-        var output = DurableJson.value(Map.of("type", type, "id", id));
-        ((ObjectNode) output).set("content", content(message.required("content")));
-        ((ObjectNode) output).put("processed_at", Instant.now(clock).toString());
+        var output = (ObjectNode) DurableJson.value(Map.of("type", type, "id", id));
+        output.set("content", content(message.required("content")));
+        output.put("processed_at", processedAt(event));
         previewed.remove(id);
         blockIndexes.remove(id);
         return List.of(output);
     }
 
+    private ObjectNode routed(ObjectNode event, String threadId) {
+        if (threadId != null && !primaryThreadId.equals(threadId))
+            event.put("session_thread_id", threadId);
+        return event;
+    }
+
+    private static JsonNode status(PublicEvent event) {
+        var activity = DurableJson.convert(event.data(), SessionActivity.class);
+        boolean running = activity.phase() == SessionPhase.RUNNING;
+        var output =
+                (ObjectNode)
+                        DurableJson.value(
+                                Map.of(
+                                        "type",
+                                        running ? "session.status_running" : "session.status_idle",
+                                        "id",
+                                        responseId(event.session(), event.eventId()),
+                                        "processed_at",
+                                        processedAt(event)));
+        if (running) return output;
+        var reason =
+                switch (activity.phase()) {
+                    case REQUIRES_ACTION ->
+                            Map.of(
+                                    "type",
+                                    "requires_action",
+                                    "event_ids",
+                                    activity.interactionIds());
+                    case RETRIES_EXHAUSTED -> Map.of("type", "retries_exhausted");
+                    default -> Map.of("type", "end_turn");
+                };
+        output.set("stop_reason", DurableJson.value(reason));
+        output.putNull("stop_details");
+        return output;
+    }
+
+    static ObjectNode interrupt(
+            SessionKey session, String requestId, String threadId, Long appliedAt) {
+        var output =
+                (ObjectNode)
+                        DurableJson.value(
+                                Map.of(
+                                        "type",
+                                        "user.interrupt",
+                                        "id",
+                                        responseId(session, requestId)));
+        if (threadId != null) output.put("session_thread_id", threadId);
+        if (appliedAt == null) output.putNull("processed_at");
+        else output.put("processed_at", Instant.ofEpochMilli(appliedAt).toString());
+        return output;
+    }
+
+    static String responseId(SessionKey session, String requestId) {
+        return "evt_" + DurableJson.hash(List.of(session, requestId));
+    }
+
+    static ObjectNode toolConfirmation(
+            SessionKey session,
+            String requestId,
+            String interactionId,
+            String decision,
+            Long appliedAt) {
+        var output =
+                (ObjectNode)
+                        DurableJson.value(
+                                Map.of(
+                                        "type",
+                                        "user.tool_confirmation",
+                                        "id",
+                                        responseId(session, requestId),
+                                        "tool_use_id",
+                                        interactionId,
+                                        "result",
+                                        decision));
+        if (appliedAt == null) output.putNull("processed_at");
+        else output.put("processed_at", Instant.ofEpochMilli(appliedAt).toString());
+        return output;
+    }
+
+    static ObjectNode customToolResult(
+            SessionKey session,
+            String requestId,
+            String interactionId,
+            JsonNode content,
+            boolean error,
+            long acceptedAt) {
+        return (ObjectNode)
+                DurableJson.value(
+                        Map.of(
+                                "type",
+                                "user.custom_tool_result",
+                                "id",
+                                responseId(session, requestId),
+                                "custom_tool_use_id",
+                                interactionId,
+                                "content",
+                                content,
+                                "is_error",
+                                error,
+                                "processed_at",
+                                Instant.ofEpochMilli(acceptedAt).toString()));
+    }
+
+    private List<JsonNode> interaction(PublicEvent event) {
+        var data = event.data();
+        if (data.path("automatic").asBoolean()) return List.of();
+        String kind = data.path("kind").asText();
+        String type =
+                switch (kind) {
+                    case "confirmation" -> "agent.tool_use";
+                    case "external_execution" -> "agent.custom_tool_use";
+                    default -> null;
+                };
+        if (type == null) return List.of();
+        var call = data.required("call");
+        var output =
+                (ObjectNode)
+                        DurableJson.value(
+                                Map.of(
+                                        "type", type,
+                                        "id", data.required("id").asText(),
+                                        "name", call.required("name").asText(),
+                                        "input", call.required("arguments"),
+                                        "processed_at", processedAt(event)));
+        if ("confirmation".equals(kind)) {
+            output.put("evaluated_permission", "ask");
+            output.set("evaluation", DurableJson.value(Map.of("type", "always_ask")));
+        }
+        return List.of(routed(output, event.threadId()));
+    }
+
+    private static String processedAt(PublicEvent event) {
+        return Instant.ofEpochMilli(event.occurredAt()).toString();
+    }
+
     /** Map one best-effort live event. Preview events are emitted only when explicitly enabled. */
     List<JsonNode> live(LiveEvent event, Set<String> eventDeltas) {
         Objects.requireNonNull(event);
-        if (!eventDeltas.contains(AGENT_MESSAGE)) return List.of();
+        if (!eventDeltas.contains(AGENT_MESSAGE) || !primaryThreadId.equals(event.threadId()))
+            return List.of();
         String messageId = event.data().path("messageId").asText(null);
         if (messageId == null) return List.of();
         if ("message.started".equals(event.type())) return start(messageId);

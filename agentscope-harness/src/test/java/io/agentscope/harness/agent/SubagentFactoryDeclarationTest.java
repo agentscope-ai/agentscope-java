@@ -175,10 +175,12 @@ class SubagentFactoryDeclarationTest {
                         .buildSubagentEntries(workspace);
         AgentSpawnTool tool = new AgentSpawnTool(new DefaultAgentManager(entries, null), null, 0);
 
+        AgentState parentState =
+                AgentState.builder().userId("user").sessionId("parent-session").build();
         String first =
                 tool.agentSpawn(
                                 context("user", "parent-session"),
-                                null,
+                                parentState,
                                 "note-taker",
                                 "Remember the code word: heron.",
                                 true,
@@ -187,7 +189,7 @@ class SubagentFactoryDeclarationTest {
                                 null)
                         .map(result -> assertText(result, SUCCESS))
                         .block(TIMEOUT);
-        AgentState nextParentState = AgentState.builder().build();
+        AgentState nextParentState = parentState;
         String second =
                 tool.agentSpawn(
                                 context("user", "parent-session"),
@@ -229,6 +231,10 @@ class SubagentFactoryDeclarationTest {
     @ParameterizedTest
     @ValueSource(strings = {"", "notes"})
     void declaredFactory_persistSessionIsolatesUsers(String label) {
+        RuntimeContext aliceContext = context("alice", "s1");
+        aliceContext.setAgentState(AgentState.builder().userId("alice").sessionId("s1").build());
+        RuntimeContext bobContext = context("bob", "s1");
+        bobContext.setAgentState(AgentState.builder().userId("bob").sessionId("s1").build());
         AtomicInteger factoryCalls = new AtomicInteger();
         SubagentDeclaration declaration =
                 SubagentDeclaration.builder()
@@ -259,51 +265,19 @@ class SubagentFactoryDeclarationTest {
         AgentSpawnTool tool = new AgentSpawnTool(new DefaultAgentManager(entries, null), null, 0);
 
         String aliceFirst =
-                tool.agentSpawn(
-                                context("alice", "s1"),
-                                null,
-                                "note-taker",
-                                "first",
-                                true,
-                                label,
-                                30,
-                                null)
+                tool.agentSpawn(aliceContext, null, "note-taker", "first", true, label, 30, null)
                         .map(result -> assertText(result, SUCCESS))
                         .block(TIMEOUT);
         String bobFirst =
-                tool.agentSpawn(
-                                context("bob", "s1"),
-                                null,
-                                "note-taker",
-                                "first",
-                                true,
-                                label,
-                                30,
-                                null)
+                tool.agentSpawn(bobContext, null, "note-taker", "first", true, label, 30, null)
                         .map(result -> assertText(result, SUCCESS))
                         .block(TIMEOUT);
         String aliceAgain =
-                tool.agentSpawn(
-                                context("alice", "s1"),
-                                null,
-                                "note-taker",
-                                "again",
-                                true,
-                                label,
-                                30,
-                                null)
+                tool.agentSpawn(aliceContext, null, "note-taker", "again", true, label, 30, null)
                         .map(result -> assertText(result, SUCCESS))
                         .block(TIMEOUT);
         String bobAgain =
-                tool.agentSpawn(
-                                context("bob", "s1"),
-                                null,
-                                "note-taker",
-                                "again",
-                                true,
-                                label,
-                                30,
-                                null)
+                tool.agentSpawn(bobContext, null, "note-taker", "again", true, label, 30, null)
                         .map(result -> assertText(result, SUCCESS))
                         .block(TIMEOUT);
 
@@ -318,11 +292,11 @@ class SubagentFactoryDeclarationTest {
         assertEquals(2, factoryCalls.get(), "one child must be constructed per user");
         if (!label.isBlank()) {
             String aliceSend =
-                    tool.agentSend(context("alice", "s1"), null, null, label, "follow-up", 30)
+                    tool.agentSend(aliceContext, null, null, label, "follow-up", 30)
                             .map(result -> assertText(result, SUCCESS))
                             .block(TIMEOUT);
             String bobSend =
-                    tool.agentSend(context("bob", "s1"), null, null, label, "follow-up", 30)
+                    tool.agentSend(bobContext, null, null, label, "follow-up", 30)
                             .map(result -> assertText(result, SUCCESS))
                             .block(TIMEOUT);
             assertTrue(aliceSend.contains("child bound to alice"), aliceSend);
@@ -351,7 +325,7 @@ class SubagentFactoryDeclarationTest {
                                 })
                         .buildSubagentEntries(workspace);
         AgentSpawnTool tool = new AgentSpawnTool(new DefaultAgentManager(entries, null), null, 0);
-        RuntimeContext ctx = RuntimeContext.builder().userId("user").sessionId("s1").build();
+        AgentState parentState = AgentState.builder().userId("user").sessionId("s1").build();
         int callers = 8;
         CountDownLatch ready = new CountDownLatch(callers);
         CountDownLatch start = new CountDownLatch(1);
@@ -365,7 +339,13 @@ class SubagentFactoryDeclarationTest {
                                     ready.countDown();
                                     assertTrue(start.await(10, TimeUnit.SECONDS));
                                     return tool.agentSpawn(
-                                                    ctx, null, "worker", null, true, "notes", 30,
+                                                    context("user", "s1"),
+                                                    parentState,
+                                                    "worker",
+                                                    null,
+                                                    true,
+                                                    "notes",
+                                                    30,
                                                     null)
                                             .map(result -> assertText(result, SUCCESS))
                                             .block(TIMEOUT);

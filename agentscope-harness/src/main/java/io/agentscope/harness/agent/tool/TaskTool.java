@@ -26,6 +26,7 @@ import io.agentscope.harness.agent.subagent.task.TaskStatus;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
 import java.util.Collection;
+import java.util.Objects;
 
 /**
  * Unified tool for background task lifecycle management. Combines task result retrieval,
@@ -56,11 +57,12 @@ public class TaskTool {
             name = "task_output",
             timeoutManaged = true,
             description =
-                    "Retrieve a background task created by agent_spawn/agent_send or"
-                        + " sessions_spawn/sessions_send with timeout_seconds=0. Prefer block=false"
-                        + " to check status without waiting. Use block=true only for one specific"
-                        + " task you are ready to block on. For several async subagent tasks,"
-                        + " prefer wait_async_results(task_ids=...) or"
+                    "Read the full output of an existing background task. Reading does not start,"
+                        + " resume, or re-run work. The task was created by agent_spawn/agent_send"
+                        + " or sessions_spawn/sessions_send with timeout_seconds=0. Prefer"
+                        + " block=false to check status without waiting. Use block=true only for"
+                        + " one specific task you are ready to block on. For several async subagent"
+                        + " tasks, prefer wait_async_results(task_ids=...) or"
                         + " wait_async_results(wait_all=true) when you need a barrier. A returned"
                         + " task ID is immediately queryable. not_found is a tracking/scope error,"
                         + " never evidence that work is running.")
@@ -253,7 +255,8 @@ public class TaskTool {
             sb.append("\nResult:\n").append(task.getResult());
         } else if (task.getError() != null) {
             Exception err = task.getError();
-            sb.append("\nError:\n").append(err.getMessage());
+            sb.append("\nError:\n")
+                    .append(Objects.toString(err.getMessage(), err.getClass().getSimpleName()));
             if (err.getCause() != null) {
                 sb.append("\nCause: ").append(err.getCause().getMessage());
             }

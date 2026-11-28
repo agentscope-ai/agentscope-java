@@ -15,20 +15,34 @@
  */
 package io.agentscope.harness.agent.tool;
 
+import static io.agentscope.harness.agent.tool.ToolResultAssertions.assertNoErrorMetadata;
 import static io.agentscope.harness.agent.tool.ToolResultAssertions.assertText;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 import io.agentscope.core.ReActAgent;
+import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.agent.test.MockModel;
+import io.agentscope.core.formatter.DocumentReferenceRenderer;
+import io.agentscope.core.message.DocumentBlock;
+import io.agentscope.core.message.GenerateReason;
+import io.agentscope.core.message.Msg;
+import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolResultState;
 import io.agentscope.core.message.ToolUseBlock;
+import io.agentscope.core.message.URLSource;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.ChatUsage;
 import io.agentscope.core.tool.AgentTool;
@@ -54,6 +68,8 @@ import java.util.function.Function;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.mockito.Mockito;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
@@ -222,6 +238,71 @@ class AgentSpawnToolPromotionTest {
         // Promotion is supposed to keep the agent running, not kill it. If the orphan-cancel
         // fix accidentally fires on the promotion path, interrupt() would be invoked here.
         verify(agentSpy, never()).interrupt(any(RuntimeContext.class));
+    }
+
+    @ParameterizedTest
+    @EnumSource(
+            value = GenerateReason.class,
+            names = {"MODEL_STOP", "MAX_ITERATIONS"})
+    @Timeout(10)
+    void promotedFuturePreservesCompletionReasonAndDocuments(GenerateReason reason)
+            throws Exception {
+        Agent agent = Mockito.mock(Agent.class);
+        CompletableFuture<Msg> pendingReply = new CompletableFuture<>();
+        when(agent.call(anyList())).thenReturn(Mono.fromFuture(pendingReply));
+        DefaultAgentManager manager =
+                new DefaultAgentManager(
+                        List.of(new SubagentEntry("worker", "worker", rc -> agent)), null);
+        AtomicReference<TaskRunSpec> capturedSpec = new AtomicReference<>();
+        AtomicReference<String> capturedTaskId = new AtomicReference<>();
+        AgentSpawnTool tool =
+                new AgentSpawnTool(
+                        manager, new CapturingTaskRepository(capturedSpec, capturedTaskId), 0);
+        RuntimeContext context = RuntimeContext.builder().sessionId("parent").build();
+
+        ToolResultBlock promoted =
+                tool.agentSpawn(context, null, "worker", "go", null, 1, null)
+                        .block(Duration.ofSeconds(5));
+        assertNoErrorMetadata(promoted);
+        assertTrue(
+                assertText(promoted, ToolResultState.SUCCESS).contains("status: timeout_promoted"));
+        TaskRunSpec.AdoptedTaskRunSpec adopted =
+                assertInstanceOf(TaskRunSpec.AdoptedTaskRunSpec.class, capturedSpec.get());
+        assertFalse(pendingReply.isCancelled());
+        assertFalse(adopted.future().isDone());
+
+        Msg reply =
+                Msg.builder()
+                        .role(MsgRole.ASSISTANT)
+                        .content(
+                                List.of(
+                                        TextBlock.builder().text("Findings so far.").build(),
+                                        DocumentBlock.builder()
+                                                .name("report.pdf")
+                                                .mimeType("application/pdf")
+                                                .source(
+                                                        URLSource.builder()
+                                                                .url(
+                                                                        "https://example.com/report.pdf")
+                                                                .build())
+                                                .build()))
+                        .generateReason(reason)
+                        .build();
+        assertTrue(pendingReply.complete(reply));
+        String result = adopted.future().get(5, TimeUnit.SECONDS);
+        String rendered = DocumentReferenceRenderer.renderMessageText(reply);
+        if (reason == GenerateReason.MAX_ITERATIONS) {
+            assertTrue(
+                    result.startsWith("status: max_iterations\ngenerate_reason: MAX_ITERATIONS\n"));
+            assertTrue(result.contains("partial result"));
+            assertFalse(result.contains("status: ok"));
+            assertTrue(result.endsWith("\nreply:\n" + rendered));
+        } else {
+            assertEquals(rendered, result);
+        }
+        BackgroundTask task = new BackgroundTask(capturedTaskId.get(), "worker", adopted.future());
+        assertEquals(TaskStatus.COMPLETED, task.getTaskStatus());
+        assertNull(task.getError());
     }
 
     /** Captures the {@link TaskRunSpec} submitted to {@code putTask} so the test can inspect it. */

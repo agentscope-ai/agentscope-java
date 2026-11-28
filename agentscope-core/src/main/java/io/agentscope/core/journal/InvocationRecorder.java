@@ -973,16 +973,29 @@ public final class InvocationRecorder {
             return;
         }
         if (event instanceof RequireExternalExecutionEvent external) {
-            for (var call : external.getToolCalls())
-                append(
-                        "interaction/requested",
-                        Map.of(
-                                "requestId",
-                                call.getId(),
-                                "kind",
-                                "external_execution",
-                                "call",
-                                call));
+            // A delayed flush must not publish a partial model action to the execution host.
+            synchronized (this) {
+                int start = pending.size();
+                int bytes = pendingBytes;
+                long version = acceptedVersion;
+                try {
+                    for (var call : external.getToolCalls())
+                        append(
+                                "interaction/requested",
+                                Map.of(
+                                        "requestId",
+                                        call.getId(),
+                                        "kind",
+                                        "external_execution",
+                                        "call",
+                                        call));
+                } catch (RuntimeException invalid) {
+                    pending.subList(start, pending.size()).clear();
+                    pendingBytes = bytes;
+                    acceptedVersion = version;
+                    throw invalid;
+                }
+            }
             return;
         }
         if (event instanceof ExternalExecutionResultEvent external) {

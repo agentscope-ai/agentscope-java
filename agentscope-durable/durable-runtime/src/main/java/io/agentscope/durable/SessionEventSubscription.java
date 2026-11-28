@@ -22,9 +22,7 @@ import io.agentscope.durable.DurableTypes.PublicEvent;
 import io.agentscope.durable.DurableTypes.Snapshot;
 import java.time.Duration;
 import java.util.Objects;
-import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
@@ -48,6 +46,7 @@ public final class SessionEventSubscription implements AutoCloseable {
     private final Consumer<SessionEventSubscription> removed;
     private final ScheduledExecutorService scheduler;
     private final long pollMillis;
+    private final long retryMillis;
     private final Object lifecycle = new Object();
     private volatile SessionEventClient reader;
     private volatile Throwable lastFailure;
@@ -59,9 +58,9 @@ public final class SessionEventSubscription implements AutoCloseable {
     private long generation;
     private long retryAfter;
     private ScheduledFuture<?> scheduled;
-    private final ConcurrentLinkedQueue<LiveEvent> live = new ConcurrentLinkedQueue<>();
-    private final Set<String> completedMessages = ConcurrentHashMap.newKeySet();
-    private final Set<String> completedToolCalls = ConcurrentHashMap.newKeySet();
+    private final ArrayBlockingQueue<LiveEvent> live =
+            new ArrayBlockingQueue<>(EventStreamOptions.LIVE_BUFFER_CAPACITY);
+    private final LivePreviewState previews = new LivePreviewState();
     private AutoCloseable liveSubscription;
 
     SessionEventSubscription(
@@ -75,6 +74,7 @@ public final class SessionEventSubscription implements AutoCloseable {
             Consumer<Throwable> errors,
             ScheduledExecutorService scheduler,
             Duration pollInterval,
+            Duration retryInterval,
             Consumer<SessionEventSubscription> removed) {
         this.session = Objects.requireNonNull(session);
         this.filter = Objects.requireNonNull(filter);
@@ -86,6 +86,7 @@ public final class SessionEventSubscription implements AutoCloseable {
         this.errors = Objects.requireNonNull(errors);
         this.scheduler = Objects.requireNonNull(scheduler);
         this.pollMillis = pollInterval.toMillis();
+        this.retryMillis = retryInterval.toMillis();
         this.removed = Objects.requireNonNull(removed);
     }
 
@@ -98,8 +99,10 @@ public final class SessionEventSubscription implements AutoCloseable {
                             session.liveEvents()
                                     .subscribe(
                                             event -> {
-                                                if (filter.matches(event)) {
-                                                    live.add(event);
+                                                if (!closed
+                                                        && session.key().equals(event.session())
+                                                        && filter.matches(event)
+                                                        && live.offer(event)) {
                                                     changed();
                                                 }
                                             });
@@ -152,7 +155,10 @@ public final class SessionEventSubscription implements AutoCloseable {
                                 session,
                                 filter,
                                 initialCursor,
-                                snapshots,
+                                snapshot -> {
+                                    live.clear();
+                                    snapshots.accept(snapshot);
+                                },
                                 this::durable,
                                 this::changed);
                 if (closed) {
@@ -165,7 +171,8 @@ public final class SessionEventSubscription implements AutoCloseable {
                 snapshotPending = false;
             }
             if (closed) return;
-            if (reader.poll() > 0) delay = 0;
+            String before = reader.cursor();
+            if (reader.poll() > 0 || !Objects.equals(before, reader.cursor())) delay = 0;
             if (reader.replayCaughtUp() && drainLive() > 0) delay = 0;
             lastFailure = null;
         } catch (RuntimeException error) {
@@ -180,9 +187,9 @@ public final class SessionEventSubscription implements AutoCloseable {
                 if (!closed) {
                     retryAfter =
                             failed
-                                    ? System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(pollMillis)
+                                    ? System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(retryMillis)
                                     : 0;
-                    schedule(failed ? pollMillis : signalled ? 0 : delay);
+                    schedule(failed ? retryMillis : signalled ? 0 : delay);
                 }
             }
         }
@@ -190,11 +197,10 @@ public final class SessionEventSubscription implements AutoCloseable {
 
     private int drainLive() {
         int delivered = 0;
-        for (LiveEvent event; (event = live.poll()) != null; ) {
-            String messageId = event.data().path("messageId").asText(null);
-            if (messageId != null && completedMessages.contains(messageId)) continue;
-            String toolCallId = event.data().path("toolCallId").asText(null);
-            if (toolCallId != null && completedToolCalls.contains(toolCallId)) continue;
+        for (int i = 0; i < EventStreamOptions.LIVE_BUFFER_CAPACITY; i++) {
+            LiveEvent event = live.poll();
+            if (event == null || closed) break;
+            if (!previews.accepts(event)) continue;
             liveEvents.accept(event);
             delivered++;
         }
@@ -202,10 +208,7 @@ public final class SessionEventSubscription implements AutoCloseable {
     }
 
     private void durable(PublicEvent event) {
-        if ("message.completed".equals(event.type()))
-            completedMessages.add(event.data().path("messageId").asText());
-        if ("tool.call.updated".equals(event.type()))
-            completedToolCalls.add(event.data().path("callId").asText());
+        previews.committed(event);
         events.accept(event);
     }
 
@@ -237,6 +240,7 @@ public final class SessionEventSubscription implements AutoCloseable {
             if (current != null) current.close();
         } finally {
             closeLiveSubscription();
+            live.clear();
             removed.accept(this);
         }
     }

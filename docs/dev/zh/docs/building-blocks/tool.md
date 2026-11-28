@@ -404,6 +404,27 @@ toolkit.registerMcpClient(search).block();
 
 完整运行示例：`agentscope-examples/documentation/.../mcp/McpStdioExample.java`、`mcp/McpSseExample.java`、`mcp/McpStreamableHttpExample.java`。
 
+### MCP 工具结果元数据
+
+MCP server 可以在工具结果里附带 `_meta` 映射。AgentScope 默认不会暴露这份原始映射。如需暴露选中的字段，可以在连接上注册有序的 `resultCustomizers` 列表。传给 customizer 的可变 map 从空开始，所有 customizer 执行完后会作为 `McpTool.METADATA_MCP_RESULT_META`（`io.agentscope/mcpResultMeta`）的值写入 tool result。运行时随后把该元数据复制到发出的 `ToolResultEndEvent` 上。模型看不到这些元数据：结果里的 `output` 不受影响。
+
+如需显式暴露 server 返回的整份 map，可以这样复制：
+
+```java
+McpClientWrapper customized =
+        McpClientBuilder.create("customized-mcp")
+                .streamableHttpTransport("https://mcp.example.com/http")
+                .resultCustomizers(
+                        List.of(
+                                (ctx, resultMetadata) ->
+                                        resultMetadata.putAll(ctx.resultMeta())))
+                .buildSync();
+```
+
+Customizer 也可用于筛选字段或生成稳定 key。它们按列表顺序对该连接上每次调用完成执行，包括 server 标记为失败的结果。每个 customizer 会收到调用身份（`toolName`、`remoteToolName`、`toolCallId`）、实际发送的参数（已合并 preset 参数）、server 的 `_meta`、原始 `CallToolResult`，以及初始为空的可变结果 metadata map。后面的 customizer 可以覆盖或删除前面的条目。列表在 wrapper 构建时固定；要调整规则应重建连接。某个 customizer 抛异常时，框架会记录并跳过，不改变原工具结果；customizer 写入的 null key 或 null value 会在附加前被清理。未配置 customizer 时，即使 server 返回了 `_meta`，也不会添加 `io.agentscope/mcpResultMeta`。
+
+如果业务实现自定义 `McpClientWrapper` 装饰器，应把 `delegate.getResultCustomizers()` 传给父类构造器，或重写 `getResultCustomizers()` 返回 delegate 的列表；同时应让 `propagateMeta` 与 delegate 保持一致。
+
 ## Skill
 
 Skill 是基于 markdown 的指令集，无需写新工具代码即可拓展 agent 能力。每个 skill 是一个目录，包含一个带 frontmatter 元数据与详细指令的 `SKILL.md` 文件。

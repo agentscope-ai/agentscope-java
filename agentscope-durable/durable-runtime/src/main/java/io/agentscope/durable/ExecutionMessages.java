@@ -19,7 +19,9 @@ import io.agentscope.durable.DurableTypes.ExecutionRequest;
 import io.agentscope.durable.DurableTypes.ExecutionResult;
 import io.agentscope.durable.DurableTypes.ExecutionState;
 import io.agentscope.durable.DurableTypes.OutputPage;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Objects;
 
 /** Broker-neutral, replayable execution stream. Source sequence is distinct from the SSE cursor. */
 public final class ExecutionMessages {
@@ -56,6 +58,35 @@ public final class ExecutionMessages {
             ExecutionRequest request,
             ExecutionResult result,
             OutputPage output) {}
+
+    /** One Hands dispatch envelope for the approved calls of a single action and route. */
+    public record ExecuteBatch(String version, String batchId, List<ExecutionRequest> requests) {
+        public ExecuteBatch {
+            requests = List.copyOf(requests);
+        }
+    }
+
+    public static ExecuteBatch batch(List<ExecutionRequest> requests) {
+        return new ExecuteBatch(DurableProtocol.VERSION, DurableJson.hash(requests), requests);
+    }
+
+    public static void validate(ExecuteBatch batch) {
+        DurableProtocol.validate("executionBatch", batch);
+        if (!batch(batch.requests()).equals(batch)) invalid();
+        var first = batch.requests().get(0);
+        var origin = first.call().origin();
+        if (batch.requests().size() > 1 && (origin == null || origin.stepId() == null)) invalid();
+        var executions = new HashSet<String>();
+        var calls = new HashSet<String>();
+        for (var request : batch.requests()) {
+            if (!first.thread().equals(request.thread())
+                    || !first.turnId().equals(request.turnId())
+                    || !first.call().executor().equals(request.call().executor())
+                    || !Objects.equals(origin, request.call().origin())
+                    || !executions.add(request.executionId())
+                    || !calls.add(request.call().callId())) invalid();
+        }
+    }
 
     public static String identity(ExecutionRequest request) {
         return DurableJson.hash(List.of(request.session().namespace(), request.executionId()));

@@ -23,15 +23,20 @@ flowchart LR
 ## 基础设施
 
 按 [RocketMQ 官方快速开始](https://rocketmq.apache.org/docs/quick-start/) 准备 Java 17+、Maven、
-可访问的 RocketMQ 5 **gRPC Proxy endpoint**（不是 NameServer 地址）与三个普通 Topic：
+支持 LiteTopic 的 Broker 与独立 Cluster Proxy。配置可访问的 **gRPC Proxy endpoint**，
+并创建以下 LITE 父 Topic：
 
+- `durable-turn-dispatch`
+- `durable-turn-signal`
+- `durable-turn-owner`
 - `durable-hands-commands`
 - `durable-hands-controls`
 - `durable-hands-updates`
 
 Topic 和消费组由默认 MQ namespace `durable` 与 executor route `hands` 派生。
-消费组为 `durable-hands-brain`、`durable-hands-worker`、`durable-hands-worker-controls`，
-需授予对应生产/消费权限。脚本不创建基础设施、不配置凭证；生产宿主应在
+按 [Durable LiteTopic 配置](../../../../docs/dev/zh/docs/harness/durable.md) 建立各父 Topic 的
+Shared 消费组并授予对应生产和消费权限。`durable-turn-owner` 使用显式订阅，其余使用
+wildcard。脚本不创建基础设施、不配置凭证；生产宿主应在
 `ClientConfiguration` 中增加鉴权与 TLS。不要让独立 Brain 数据库混用同一消费组。
 
 ## 构建与运行

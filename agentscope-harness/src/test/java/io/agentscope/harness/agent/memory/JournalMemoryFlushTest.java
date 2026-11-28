@@ -170,6 +170,7 @@ class JournalMemoryFlushTest {
                             .model(routing)
                             .workspace(directory)
                             .threadJournalStore(store)
+                            .enableLongTermMemory()
                             .build()) {
                 agent.call(List.of(message(text)), rc).block();
             }

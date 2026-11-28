@@ -30,6 +30,7 @@ import io.agentscope.core.event.AgentStartEvent;
 import io.agentscope.core.event.SubagentExposedEvent;
 import io.agentscope.core.formatter.DocumentReferenceRenderer;
 import io.agentscope.core.journal.JournalException;
+import io.agentscope.core.message.GenerateReason;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolResultState;
@@ -37,6 +38,7 @@ import io.agentscope.core.permission.PermissionContextState;
 import io.agentscope.core.permission.PermissionMode;
 import io.agentscope.core.permission.PermissionRule;
 import io.agentscope.core.state.AgentState;
+import io.agentscope.core.state.ToolContextState.SpawnEntry;
 import io.agentscope.core.tool.Tool;
 import io.agentscope.core.tool.ToolParam;
 import io.agentscope.core.tool.ToolSuspendException;
@@ -332,12 +334,8 @@ public class AgentSpawnTool implements AutoCloseable {
 
         private static RegistryScope from(RuntimeContext context) {
             return new RegistryScope(
-                    normalize(context != null ? context.getUserId() : null),
-                    normalize(context != null ? context.getSessionId() : null));
-        }
-
-        private static String normalize(String value) {
-            return value != null && !value.isBlank() ? value.trim() : "";
+                    context != null ? context.getUserId() : null,
+                    context != null ? context.getSessionId() : null);
         }
     }
 
@@ -413,21 +411,13 @@ public class AgentSpawnTool implements AutoCloseable {
             timeoutManaged = true,
             description =
                     """
-                    Spawn an isolated subagent for delegated or background work. \
-                    Every response starts with three lines: agent_key (pass this verbatim to \
-                    agent_send as agent_key), agent_id (the subagent type name), and session_id \
-                    (internal; do not use as agent_key). Sync mode returns the reply below that; \
-                    async (timeout_seconds=0) adds task_id for task_output or wait_async_results; \
-                    task_id is NOT agent_key. Multiple sync tool calls in one turn run in parallel \
-                    by default; pass a Toolkit with parallel=false to serialize, \
-                    or use async tasks for fire-and-forget parallelism. \
-                    The subagent does not inherit the parent conversation, so include every \
-                    file path, constraint, and expected output format the task needs. New \
-                    sessions start from the supplied task; persistent sessions may retain their own history. \
-                    Set reusable=false for a one-shot subagent whose agent_key is invalid after \
-                    the initial task. Set reusable=true when follow-up agent_send calls are needed. \
-                    Do not re-spawn the same task reworded to bypass a permission denial; \
-                    report the limitation instead.\
+                    Spawn an isolated subagent. Returns agent_key (copy verbatim to agent_send), \
+                    agent_id (type), and session_id (internal). Sync mode includes the reply; \
+                    async or timeout promotion includes task_id for task_output / wait_async_results. \
+                    task_id is NOT agent_key. Set reusable=true for follow-ups or to spawn without a task. \
+                    Set reusable=false for a one-shot task that closes when it finishes. \
+                    The child does not see your conversation; provide a self-contained task. \
+                    A persistent local agent retains its history. Do not rephrase a denied request to bypass permissions.\
                     """)
     public Mono<ToolResultBlock> agentSpawn(
             RuntimeContext runtimeContext,
@@ -472,6 +462,17 @@ public class AgentSpawnTool implements AutoCloseable {
                             required = false)
                     Boolean exposeToUser) {
 
+        if (parentState == null && runtimeContext != null) {
+            parentState = runtimeContext.getAgentState();
+        }
+        if (!hostOwnsChildState(runtimeContext)
+                && runtimeContext != null
+                && runtimeContext.getSessionId() != null
+                && !runtimeContext.getSessionId().isBlank()
+                && parentState != null
+                && !isParentStateOwner(parentState, runtimeContext)) {
+            return Mono.just(ToolResultBlock.error("Unknown agent_key."));
+        }
         log.debug(
                 "agent_spawn called: agentId={}, reusable={}, timeoutSeconds={}, task={}",
                 agentId,
@@ -625,7 +626,8 @@ public class AgentSpawnTool implements AutoCloseable {
                                                 "outboundAddress", OutboundAddress.class)
                                         : null;
                         SubagentGatewayBridge.ExposeResult er =
-                                exposureBridge.expose(agentId, sessionId, agent, replyTo);
+                                exposureBridge.expose(
+                                        agentId, sessionId, agent, replyTo, runtimeContext);
                         subagentId = er.subagentId();
                     }
                 } catch (RuntimeException | Error e) {
@@ -641,7 +643,7 @@ public class AgentSpawnTool implements AutoCloseable {
 
                 ManagedAgent winner;
                 synchronized (registry) {
-                    winner = registry.agentsByKey.putIfAbsent(key, managed);
+                    winner = registry.agentsByKey.get(key);
                     if (winner == null) {
                         persistSpawnEntry(
                                 parentState,
@@ -651,6 +653,7 @@ public class AgentSpawnTool implements AutoCloseable {
                                 canonLabel,
                                 nextDepth,
                                 reusable);
+                        registry.agentsByKey.put(key, managed);
                     }
                 }
                 if (winner != null) {
@@ -715,6 +718,26 @@ public class AgentSpawnTool implements AutoCloseable {
         }
     }
 
+    /** Runs a reusable subagent for Java callers using the original overload. */
+    public Mono<ToolResultBlock> agentSpawn(
+            RuntimeContext runtimeContext,
+            AgentState parentState,
+            String agentId,
+            String task,
+            String label,
+            Integer timeoutSeconds,
+            Boolean exposeToUser) {
+        return agentSpawn(
+                runtimeContext,
+                parentState,
+                agentId,
+                task,
+                true,
+                label,
+                timeoutSeconds,
+                exposeToUser);
+    }
+
     private Mono<ToolResultBlock> reuseManagedAgent(
             ManagedAgent managed,
             RuntimeContext runtimeContext,
@@ -723,6 +746,9 @@ public class AgentSpawnTool implements AutoCloseable {
             String task,
             Integer timeoutSeconds,
             Optional<SubagentDeclaration> declOpt) {
+        if (!isAccessible(managed, runtimeContext, parentState)) {
+            return Mono.just(ToolResultBlock.error("Unknown agent_key."));
+        }
         if (managed.isReleasing()) {
             return Mono.just(
                     ToolResultBlock.error("Agent is being released: " + managed.spawned.key()));
@@ -759,13 +785,9 @@ public class AgentSpawnTool implements AutoCloseable {
             timeoutManaged = true,
             description =
                     """
-                    Send a message to an existing subagent. Use the exact string from the \
-                    agent_key line of agent_spawn output (starts with agent:), or the label \
-                    you set at spawn. Do not pass agent_id, session_id, or task_id here. \
-                    timeout_seconds=0 returns task_id for task_output or wait_async_results. \
-                    Sends are follow-ups to a subagent that already holds the context you \
-                    gave it. Use follow-ups to steer the task or continue its work. Do not \
-                    re-send the same request reworded to bypass a permission denial.\
+                    Send a follow-up to an existing subagent using agent_key or label. \
+                    Returns the reply, or task_id for background work / timeout promotion. \
+                    Do not rephrase a denied request to bypass permissions.\
                     """)
     public Mono<ToolResultBlock> agentSend(
             RuntimeContext runtimeContext,
@@ -809,6 +831,14 @@ public class AgentSpawnTool implements AutoCloseable {
             return Mono.just(ToolResultBlock.error("message is required"));
         }
 
+        if (parentState == null && runtimeContext != null) {
+            parentState = runtimeContext.getAgentState();
+        }
+        if (!canUseParentState(parentState, runtimeContext)) {
+            return Mono.just(
+                    ToolResultBlock.error(
+                            hasKey ? "Unknown agent_key." : "Unknown label: " + label.trim()));
+        }
         ScopedRegistry registry = registries.get(RegistryScope.from(runtimeContext));
         String key;
         if (hasKey) {
@@ -826,24 +856,24 @@ public class AgentSpawnTool implements AutoCloseable {
             }
         }
 
-        io.agentscope.core.state.ToolContextState.SpawnEntry stateEntry =
-                parentState == null
-                        ? null
-                        : parentState.getToolContext().getSpawnRegistry().get(key);
-        if (stateEntry != null && !stateEntry.reusable()) {
-            return Mono.just(ToolResultBlock.error("Agent is not reusable: " + key));
-        }
-
         ManagedAgent resolved = registry != null ? registry.agentsByKey.get(key) : null;
         if (resolved == null) {
+            var entry =
+                    parentState == null
+                            ? null
+                            : parentState.getToolContext().getSpawnRegistry().get(key);
+            if (entry != null
+                    && key.equals(entry.key())
+                    && !entry.reusable()
+                    && !knownInAnotherScope(key, runtimeContext)) {
+                return Mono.just(ToolResultBlock.error("Agent is not reusable: " + key));
+            }
             resolved = tryRestoreFromState(parentState, key, runtimeContext);
         }
-        if (resolved == null) {
-            return Mono.just(ToolResultBlock.error("Unknown agent_key: " + key));
-        }
-        if (parentState != null
-                && !parentState.getToolContext().getSpawnRegistry().containsKey(key)) {
-            return Mono.just(ToolResultBlock.error("Unknown agent_key: " + key));
+        if (resolved == null || !isAccessible(resolved, runtimeContext, parentState)) {
+            return Mono.just(
+                    ToolResultBlock.error(
+                            hasKey ? "Unknown agent_key." : "Unknown label: " + label.trim()));
         }
         if (!resolved.spawned.reusable()) {
             return Mono.just(ToolResultBlock.error("Agent is not reusable: " + key));
@@ -879,6 +909,13 @@ public class AgentSpawnTool implements AutoCloseable {
             return ToolResultBlock.error("Provide exactly one of agent_key or label.");
         }
 
+        if (parentState == null && runtimeContext != null) {
+            parentState = runtimeContext.getAgentState();
+        }
+        if (!canUseParentState(parentState, runtimeContext)) {
+            return ToolResultBlock.error(
+                    hasKey ? "Unknown agent_key." : "Unknown label: " + label.trim());
+        }
         ScopedRegistry registry = registries.get(RegistryScope.from(runtimeContext));
         String key =
                 hasKey
@@ -893,6 +930,9 @@ public class AgentSpawnTool implements AutoCloseable {
             return ToolResultBlock.error("Unknown label: " + label.trim());
         }
 
+        if (knownInAnotherScope(key, runtimeContext)) {
+            return ToolResultBlock.error("Unknown agent_key.");
+        }
         ManagedAgent managed;
         boolean releasedPersistedOnly = false;
         if (registry != null) {
@@ -904,6 +944,9 @@ public class AgentSpawnTool implements AutoCloseable {
                         registry.labelToKey.values().removeIf(key::equals);
                     }
                 } else {
+                    if (!isAccessible(managed, runtimeContext, parentState)) {
+                        return ToolResultBlock.error("Unknown agent_key.");
+                    }
                     if (!managed.beginRelease()) {
                         return ToolResultBlock.error(
                                 "Agent is busy and cannot be released: " + key);
@@ -927,7 +970,7 @@ public class AgentSpawnTool implements AutoCloseable {
                 }
                 return ToolResultBlock.success("status: released\nagent_key: " + key);
             }
-            return ToolResultBlock.error("Unknown agent_key: " + key);
+            return ToolResultBlock.error("Unknown agent_key.");
         }
         closeManagedAgent(managed);
         removeRegistryIfEmpty(runtimeContext, registry);
@@ -940,63 +983,55 @@ public class AgentSpawnTool implements AutoCloseable {
             description =
                     "List retained subagents addressable in the current user and parent session.")
     public ToolResultBlock agentList(RuntimeContext runtimeContext, AgentState parentState) {
+        if (parentState == null && runtimeContext != null) {
+            parentState = runtimeContext.getAgentState();
+        }
+        if (!canUseParentState(parentState, runtimeContext)) {
+            return formatAgentList(Map.of(), null);
+        }
         ScopedRegistry registry = registries.get(RegistryScope.from(runtimeContext));
-        Map<String, io.agentscope.core.state.ToolContextState.SpawnEntry> entries =
-                new LinkedHashMap<>();
-        if (parentState != null) {
-            entries.putAll(parentState.getToolContext().getSpawnRegistry());
+        Map<String, SpawnEntry> entries = new LinkedHashMap<>();
+        if (isParentStateOwner(parentState, runtimeContext)) {
+            for (var item : parentState.getToolContext().getSpawnRegistry().entrySet()) {
+                String key = item.getKey();
+                SpawnEntry entry = item.getValue();
+                ManagedAgent live = registry == null ? null : registry.agentsByKey.get(key);
+                if (key.equals(entry.key())
+                        && (live == null
+                                ? !knownInAnotherScope(key, runtimeContext)
+                                : isAccessible(live, runtimeContext, parentState))) {
+                    entries.put(key, entry);
+                }
+            }
         }
         if (registry != null) {
             for (ManagedAgent managed : registry.agentsByKey.values()) {
                 SpawnedAgent a = managed.spawned;
-                if (!managed.isReleasing()) {
-                    entries.put(
-                            a.key(),
-                            new io.agentscope.core.state.ToolContextState.SpawnEntry(
-                                    a.key(),
-                                    a.agentId(),
-                                    a.sessionId(),
-                                    a.label(),
-                                    a.depth(),
-                                    a.reusable()));
+                if (!managed.isReleasing() && isAccessible(managed, runtimeContext, parentState)) {
+                    entries.put(a.key(), spawnEntry(a));
                 }
             }
         }
         return formatAgentList(entries, registry);
     }
 
-    /** Compatibility view across all in-memory scopes. Not exposed as an LLM tool. */
+    public ToolResultBlock agentList(RuntimeContext runtimeContext) {
+        return agentList(runtimeContext, null);
+    }
+
+    /** Compatibility entry point without call identity. */
     public ToolResultBlock agentList() {
-        Map<String, io.agentscope.core.state.ToolContextState.SpawnEntry> entries =
-                new LinkedHashMap<>();
-        for (ScopedRegistry registry : registries.values()) {
-            for (ManagedAgent managed : registry.agentsByKey.values()) {
-                SpawnedAgent a = managed.spawned;
-                if (!managed.isReleasing()) {
-                    entries.put(
-                            a.key(),
-                            new io.agentscope.core.state.ToolContextState.SpawnEntry(
-                                    a.key(),
-                                    a.agentId(),
-                                    a.sessionId(),
-                                    a.label(),
-                                    a.depth(),
-                                    a.reusable()));
-                }
-            }
-        }
-        return formatAgentList(entries, null);
+        return agentList(RuntimeContext.empty());
     }
 
     private static ToolResultBlock formatAgentList(
-            Map<String, io.agentscope.core.state.ToolContextState.SpawnEntry> entries,
-            ScopedRegistry registry) {
+            Map<String, SpawnEntry> entries, ScopedRegistry registry) {
         if (entries.isEmpty()) {
             return ToolResultBlock.success("No addressable subagents.");
         }
         StringBuilder sb =
                 new StringBuilder("Addressable subagents (").append(entries.size()).append("):\n");
-        for (io.agentscope.core.state.ToolContextState.SpawnEntry entry : entries.values()) {
+        for (SpawnEntry entry : entries.values()) {
             sb.append("- agent_key: ").append(entry.key()).append("\n");
             sb.append("  agent_id: ").append(entry.agentId()).append("\n");
             if (entry.label() != null) {
@@ -1060,11 +1095,11 @@ public class AgentSpawnTool implements AutoCloseable {
     }
 
     private boolean releasePersistedSpawnEntry(AgentState parentState, String key) {
-        io.agentscope.core.state.ToolContextState.SpawnEntry entry =
+        SpawnEntry entry =
                 parentState == null
                         ? null
                         : parentState.getToolContext().getSpawnRegistry().get(key);
-        if (entry == null) {
+        if (entry == null || !key.equals(entry.key())) {
             return false;
         }
         revokeGatewayExposure(entry.sessionId());
@@ -1165,6 +1200,53 @@ public class AgentSpawnTool implements AutoCloseable {
                         ? runtimeContext.get(CTX_AGENT_MANAGER, DefaultAgentManager.class)
                         : null;
         return scoped != null ? scoped : agentManager;
+    }
+
+    private static boolean canUseParentState(AgentState state, RuntimeContext context) {
+        return hostOwnsChildState(context) || isParentStateOwner(state, context);
+    }
+
+    private static boolean isAccessible(
+            ManagedAgent managed, RuntimeContext context, AgentState parentState) {
+        if (hostOwnsChildState(context)) {
+            return true;
+        }
+        SpawnedAgent child = managed.spawned;
+        return isParentStateOwner(parentState, context)
+                && spawnEntry(child)
+                        .equals(parentState.getToolContext().getSpawnRegistry().get(child.key()));
+    }
+
+    private boolean knownInAnotherScope(String key, RuntimeContext context) {
+        RegistryScope scope = RegistryScope.from(context);
+        return registries.entrySet().stream()
+                .anyMatch(
+                        entry ->
+                                !scope.equals(entry.getKey())
+                                        && entry.getValue().agentsByKey.containsKey(key));
+    }
+
+    private static SpawnEntry spawnEntry(SpawnedAgent child) {
+        return new SpawnEntry(
+                child.key(),
+                child.agentId(),
+                child.sessionId(),
+                child.label(),
+                child.depth(),
+                child.reusable());
+    }
+
+    /**
+     * Never infer a caller's identity from supplied state. Anonymous users remain valid, but local
+     * continuation requires an explicit context with a non-blank session matching that state.
+     */
+    private static boolean isParentStateOwner(AgentState parentState, RuntimeContext context) {
+        return parentState != null
+                && context != null
+                && context.getSessionId() != null
+                && !context.getSessionId().isBlank()
+                && Objects.equals(parentState.getUserId(), context.getUserId())
+                && Objects.equals(parentState.getSessionId(), context.getSessionId());
     }
 
     private static boolean propagateWithLease(
@@ -1470,8 +1552,9 @@ public class AgentSpawnTool implements AutoCloseable {
                                                 sink.success(
                                                         ToolResultBlock.success(
                                                                 header
-                                                                        + "\nstatus: ok\nreply:\n"
-                                                                        + textOf(msg)));
+                                                                        + "\n"
+                                                                        + formatLocalSyncReply(
+                                                                                msg)));
                                             }
                                         });
 
@@ -1605,9 +1688,7 @@ public class AgentSpawnTool implements AutoCloseable {
         parentState
                 .getToolContext()
                 .putSpawnEntry(
-                        key,
-                        new io.agentscope.core.state.ToolContextState.SpawnEntry(
-                                key, agentId, sessionId, label, depth, reusable));
+                        key, new SpawnEntry(key, agentId, sessionId, label, depth, reusable));
     }
 
     private String tryResolveLabelFromState(AgentState parentState, String label) {
@@ -1615,8 +1696,7 @@ public class AgentSpawnTool implements AutoCloseable {
             return null;
         }
         String lowerLabel = label.toLowerCase(Locale.ROOT);
-        for (io.agentscope.core.state.ToolContextState.SpawnEntry entry :
-                parentState.getToolContext().getSpawnRegistry().values()) {
+        for (SpawnEntry entry : parentState.getToolContext().getSpawnRegistry().values()) {
             if (entry.label() != null
                     && entry.label().toLowerCase(Locale.ROOT).equals(lowerLabel)) {
                 return entry.key();
@@ -1627,20 +1707,19 @@ public class AgentSpawnTool implements AutoCloseable {
 
     private ManagedAgent tryRestoreFromState(
             AgentState parentState, String key, RuntimeContext runtimeContext) {
-        if (parentState == null) {
+        if (!isParentStateOwner(parentState, runtimeContext)) {
             return null;
         }
-        io.agentscope.core.state.ToolContextState.SpawnEntry entry =
-                parentState.getToolContext().getSpawnRegistry().get(key);
-        if (entry == null) {
+        SpawnEntry entry = parentState.getToolContext().getSpawnRegistry().get(key);
+        if (entry == null
+                || !Objects.equals(key, entry.key())
+                || !entry.reusable()
+                || knownInAnotherScope(key, runtimeContext)) {
             return null;
         }
         Optional<Agent> agentOpt =
                 managerFor(runtimeContext).createAgentIfPresent(entry.agentId(), runtimeContext);
         if (agentOpt.isEmpty()) {
-            log.warn(
-                    "Failed to restore subagent from state: agentId={} not found in registry",
-                    entry.agentId());
             return null;
         }
         SpawnedAgent restored =
@@ -1657,8 +1736,7 @@ public class AgentSpawnTool implements AutoCloseable {
         try {
             ManagedAgent winner;
             synchronized (registry) {
-                io.agentscope.core.state.ToolContextState.SpawnEntry currentEntry =
-                        parentState.getToolContext().getSpawnRegistry().get(key);
+                SpawnEntry currentEntry = parentState.getToolContext().getSpawnRegistry().get(key);
                 if (!entry.equals(currentEntry)) {
                     closeAgent(restored.agent());
                     return null;
@@ -1689,14 +1767,30 @@ public class AgentSpawnTool implements AutoCloseable {
         }
     }
 
+    private static String formatLocalSyncReply(Msg msg) {
+        String reply = textOf(msg);
+        if (msg != null && msg.getGenerateReason() == GenerateReason.MAX_ITERATIONS) {
+            return reply;
+        }
+        return "status: ok\nreply:\n" + reply;
+    }
+
     /**
      * Renders a subagent reply as text for the task result.
      *
      * <p>The background task contract stores a string, so a delivered document cannot travel as
-     * a block here. It is named in a reference instead of disappearing.
+     * a block here. It is named in a reference instead of disappearing. Replies stopped by the
+     * iteration limit retain their completion reason and are explicitly marked as partial.
      */
     private static String textOf(Msg msg) {
-        return DocumentReferenceRenderer.renderMessageText(msg);
+        String reply = DocumentReferenceRenderer.renderMessageText(msg);
+        if (msg != null && msg.getGenerateReason() == GenerateReason.MAX_ITERATIONS) {
+            return "status: max_iterations\ngenerate_reason: MAX_ITERATIONS\n"
+                    + "note: The subagent reached its maximum iterations. The reply is a partial"
+                    + " result; the task may be incomplete.\nreply:\n"
+                    + reply;
+        }
+        return reply;
     }
 
     private static String formatTimeoutPromoted(String taskId, long timeoutMs) {

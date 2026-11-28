@@ -36,13 +36,15 @@ No registration step.
 
 ## Three ways to declare
 
-Three sources are merged at build time:
+Declarations come from three sources:
 
 | Way | Use for | How |
 |-----|---------|-----|
 | Built-in `general-purpose` | Generic fallback (mirrors parent capability) | Always present, no config |
 | Workspace spec files | Project-specific, version-controlled | `workspace/subagents/<id>.md` |
 | Programmatic declarations | Decided at runtime (remote, dynamic params) | `builder.subagent(SubagentDeclaration.builder()...)` |
+
+`DynamicSubagentsMiddleware` loads the workspace catalog and its manager as a call-scoped snapshot in `RuntimeContext`. Interleaved calls for different users keep their own catalogs; loading one user's declarations does not replace another session's catalog. Supply the authorized `userId` and parent `sessionId` on each call. Declarations are reloaded before reasoning, and the resulting snapshot is shared by that model request and its tool execution.
 
 ### Workspace spec files
 
@@ -104,6 +106,8 @@ results, including calls loaded from a failed session. Pending permission confir
 require confirmation; empty-input resume and caller-supplied tool results retain their existing
 behavior. Remote agents and custom factories configure recovery themselves.
 
+Automatically built local children also inherit the parent's `disableWebTools()` setting. Both the default factory and the declaration-aware factory apply it, including for `general-purpose`, so delegating a task does not restore web tools disabled on the parent. If the task needs web access, resolve that restriction in the authorized parent configuration instead of using a child as a workaround.
+
 ### Built-in `general-purpose`
 
 No spec file needed; always available. Its role is "generic fallback" — it mirrors the parent's capability (same model, tools, skills) and shares the parent's workspace. Useful when the parent wants to isolate context for a sub-task without writing a dedicated spec.
@@ -121,6 +125,8 @@ The parent creates a subagent with `agent_spawn`; the key knob is `timeout_secon
 
 - `timeout_seconds > 0` (default 30, max 600) — **synchronous** call; the parent blocks on this step, result returns as the tool result. By default, when the wait expires the in-flight run is **promoted** to a background task (`status: timeout_promoted` + `task_id`) and keeps running.
 - `timeout_seconds = 0` — **background** call; returns a `task_id` immediately, subagent runs in the background.
+
+When a local subagent returns `GenerateReason.MAX_ITERATIONS`, its result is marked `status: max_iterations` and explicitly identified as partial, preserving all text and document references. This applies to synchronous replies, background results and timeout-promoted results. The tool result remains successful and the background task lifecycle remains `COMPLETED`; these mean execution returned, not that the requested work is complete. Other replies and inherited iteration budgets are unchanged. Remote tasks without a protocol-provided generation reason are not inferred from reply text.
 
 **Force sync via `RuntimeContext`.** Application code can put `AgentSpawnTool.CTX_FORCE_SYNC = true` on the current call's `RuntimeContext` to override the LLM's async choice, and optionally `CTX_FORCE_SYNC_TIMEOUT_SECONDS` for a hard wait budget (seconds):
 
@@ -146,17 +152,25 @@ Decompose work by independence and dependency graph first: nodes without depende
 
 ### Background tasks push back automatically
 
-When a background task finishes, the parent **does not need to poll** — before the parent's next reasoning step, the framework injects completed task results as a system reminder at the end of the conversation:
+With the default workspace-backed task repository, both static and dynamic subagents deliver terminal results as an aggregate reminder in the parent's next reasoning request:
 
 ```
 <system-reminder>
-Background tasks delivered:
-- task_id=xxx, agent=research-analyst, status=COMPLETED
-  result summary: ...
+1 background subagent task has completed since your last turn. These results are now part of your conversation history.
+
+<task id="xxx" state="completed" agent="research-analyst">
+<task_result>
+...
+</task_result>
+</task>
 </system-reminder>
 ```
 
-The parent naturally responds or continues. This means **you do not** write "remember to poll task_output" in your prompt — that was the old way.
+The message bus signals availability for idle-session wakeups and no-argument `wait_async_results()`. When a bus is configured, the inbox hint carries a copy of the result for older replicas and as a fallback if the terminal result is missing from the task repository. Harness prefers the stored result and includes one copy per task in each request. A pending reminder survives history compaction and overflow retry. After the model receives it in a successful request, Harness saves the reminder in conversation history and acknowledges the tasks delivered from the repository. Custom task repositories that support completion callbacks can deliver results through the inbox.
+
+Automatic delivery and wait barriers include the full output of each result they return. Task status summaries report execution state. Retrieve the task's output when the summary alone cannot answer your question.
+
+`task_output` returns the full result of a completed task.
 
 ### Background task tools
 
@@ -175,11 +189,11 @@ Behind the scenes, subagent lifecycle is split across two groups of tools:
 
 `agent_spawn` / `agent_send` manage subagent **instances** (create, reuse, communicate); `task_output` / `wait_async_results` / `task_cancel` / `task_list` manage background **task results** (check status, fetch output, wait, cancel). The bridge between them is the `task_id` — returned by `agent_spawn` or `agent_send` when `timeout_seconds=0`.
 
-> In most cases the auto push-back mechanism delivers results without any explicit tool call. The task tools are useful as escape hatches: checking progress before push-back fires, waiting for a set of results that must be available together, cancelling tasks that are no longer needed, or recovering task state after conversation compaction.
+> When automatic delivery supplies the required output, no explicit read is needed. The task tools are useful as escape hatches: checking progress before push-back fires, waiting for a set of results that must be available together, cancelling tasks that are no longer needed, or recovering task state after conversation compaction.
 
 There are three common ways to collect asynchronous results:
 
-- **Automatic push-back**: the default path when you do not block. Completed child tasks are injected as a `<system-reminder>` before the next reasoning step.
+- **Automatic push-back**: when delivery is wired, completed child results can arrive as a `<system-reminder>` before a later reasoning step.
 - **Targeted task check**: call `task_output(task_id, block=false)` to inspect one task's current state or final result.
 - **Wait barrier (preferred for must-collect-all)**: call `wait_async_results(task_ids="id1,id2")` or `wait_async_results(wait_all=true)`. Barrier mode waits until the set is terminal and **embeds each task's result in the tool return**, so you can continue immediately. `wait_all=true` uses a snapshot of unfinished tasks at call start and does not add tasks created while waiting.
 
@@ -201,6 +215,8 @@ agent_send label="pr-reviewer" message="also check the schema changes"
 ```
 
 To list active subagents: `agent_list`.
+
+`agent_key`, label-based follow-ups and `agent_list` are scoped to the caller's user and parent session. A handle from another user or parent session cannot be used to inspect or message that instance; an unknown key and an out-of-scope key return indistinguishable errors. If a follow-up cannot resolve its target, use `agent_list` in the original authorized parent session to find the handle rather than try other identities or guess keys.
 
 ## Reusable and one-shot subagents
 

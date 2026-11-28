@@ -35,6 +35,7 @@ import io.agentscope.core.tool.Toolkit;
 import io.agentscope.core.util.ExceptionUtils;
 import io.agentscope.core.util.JsonException;
 import io.agentscope.core.util.JsonUtils;
+import io.agentscope.harness.agent.context.LearnedContextWindows;
 import io.agentscope.harness.agent.memory.MemoryConfig;
 import io.agentscope.harness.agent.memory.MemoryFlushManager;
 import io.agentscope.harness.agent.memory.compaction.CompactionConfig;
@@ -71,7 +72,8 @@ import reactor.core.publisher.Mono;
  *
  * <p>When {@link CompactionConfig#getTriggerTokens()} is 0 (dynamic mode, the default), the
  * effective trigger threshold is computed as {@code model.getContextWindowSize() - reserved}.
- * If the model does not report its context window, falls back to
+ * A window learned from a previous overflow error (see {@link LearnedContextWindows}) is used
+ * in place of an unreported one; when neither exists, falls back to
  * {@link CompactionConfig#FALLBACK_TRIGGER_TOKENS}.
  */
 public class CompactionMiddleware implements HarnessRuntimeMiddleware {
@@ -91,21 +93,52 @@ public class CompactionMiddleware implements HarnessRuntimeMiddleware {
     private final WorkspaceManager workspaceManager;
     private final Model model;
     private final CompactionConfig config;
+    private final LearnedContextWindows learnedWindows;
+    private final boolean memoryEnabled;
     private final MemoryConfig memoryConfig;
 
     public CompactionMiddleware(
             WorkspaceManager workspaceManager, Model model, CompactionConfig config) {
-        this(workspaceManager, model, config, MemoryConfig.defaults());
+        this(workspaceManager, model, config, null);
     }
 
     public CompactionMiddleware(
             WorkspaceManager workspaceManager,
             Model model,
             CompactionConfig config,
+            LearnedContextWindows learnedWindows) {
+        this(workspaceManager, model, config, learnedWindows, true);
+    }
+
+    /** Allows Harness to gate memory extraction independently of conversation compaction. */
+    public CompactionMiddleware(
+            WorkspaceManager workspaceManager,
+            Model model,
+            CompactionConfig config,
+            LearnedContextWindows learnedWindows,
+            boolean memoryEnabled) {
+        this(
+                workspaceManager,
+                model,
+                config,
+                learnedWindows,
+                memoryEnabled,
+                MemoryConfig.defaults());
+    }
+
+    /** Carries the caller's memory settings into the flush this middleware may trigger. */
+    public CompactionMiddleware(
+            WorkspaceManager workspaceManager,
+            Model model,
+            CompactionConfig config,
+            LearnedContextWindows learnedWindows,
+            boolean memoryEnabled,
             MemoryConfig memoryConfig) {
         this.workspaceManager = workspaceManager;
         this.model = model;
         this.config = config;
+        this.learnedWindows = learnedWindows;
+        this.memoryEnabled = memoryEnabled;
         this.memoryConfig = memoryConfig;
     }
 
@@ -122,7 +155,7 @@ public class CompactionMiddleware implements HarnessRuntimeMiddleware {
             ReasoningInput input,
             Function<ReasoningInput, Flux<AgentEvent>> next) {
         Model executionModel = effectiveModel(agent, ctx);
-        int window = executionModel.getContextWindowSize();
+        int window = windowOf(executionModel);
         int budget =
                 window > 0
                         ? Math.max(1, window - config.getReserved())
@@ -160,7 +193,28 @@ public class CompactionMiddleware implements HarnessRuntimeMiddleware {
         return null;
     }
 
-    /** Retry provider context overflow inside the same execution, before its recorder is closed. */
+    /** Declared window when available, else one learned from a previous overflow. */
+    private int windowOf(Model executionModel) {
+        return executionModel == null
+                ? 0
+                : learnedWindows != null
+                        ? learnedWindows.effectiveWindow(executionModel)
+                        : executionModel.getContextWindowSize();
+    }
+
+    /** Learning must never turn a recoverable overflow into a different failure. */
+    private void learnOverflowWindow(Model overflowed, Throwable error) {
+        if (learnedWindows == null || overflowed == null) {
+            return;
+        }
+        try {
+            learnedWindows.recordOverflow(overflowed, error);
+        } catch (RuntimeException e) {
+            log.debug("Could not learn the context window from the overflow error", e);
+        }
+    }
+
+    /** Retry provider context overflow within the same reasoning step. */
     public HarnessRuntimeMiddleware overflowRecovery() {
         return new HarnessRuntimeMiddleware() {
             @Override
@@ -174,8 +228,7 @@ public class CompactionMiddleware implements HarnessRuntimeMiddleware {
                     RuntimeContext ctx,
                     ReasoningInput input,
                     Function<ReasoningInput, Flux<AgentEvent>> next) {
-                if (!(agent instanceof ReActAgent react) || !react.journalEnabled())
-                    return next.apply(input);
+                if (!(agent instanceof ReActAgent react)) return next.apply(input);
                 AgentState initialState = RuntimeContext.resolveAgentState(ctx, agent);
                 List<Msg> initialHistory =
                         initialState == null ? List.of() : List.copyOf(initialState.getContext());
@@ -186,6 +239,10 @@ public class CompactionMiddleware implements HarnessRuntimeMiddleware {
                                             || JournalException.causedBy(error)
                                             || !isContextOverflowError(error))
                                         return Flux.error(error);
+                                    // Per-call resolution (ctx-aware) so a string-reference agent
+                                    // works here too.
+                                    Model overflowed = react.getModel(ctx);
+                                    learnOverflowWindow(overflowed, error);
                                     AgentState state = RuntimeContext.resolveAgentState(ctx, agent);
                                     if (state == null || state.getContext().isEmpty())
                                         return Flux.error(error);
@@ -211,11 +268,13 @@ public class CompactionMiddleware implements HarnessRuntimeMiddleware {
                                                     model,
                                                     CompactionConfig.builder()
                                                             .triggerMessages(1)
-                                                            .keepMessages(1)
+                                                            .keepMessages(recoveryTailSize(before))
                                                             .keepTokens(0)
                                                             .flushBeforeCompact(
                                                                     config.isFlushBeforeCompact())
                                                             .build(),
+                                                    learnedWindows,
+                                                    memoryEnabled,
                                                     memoryConfig);
                                     return forced.prepareCandidate(
                                                     agent,
@@ -227,7 +286,7 @@ public class CompactionMiddleware implements HarnessRuntimeMiddleware {
                                                             // Per-call resolution (ctx-aware) so a
                                                             // string-reference agent works here
                                                             // too.
-                                                            react.getModel(ctx)),
+                                                            overflowed),
                                                     CompactionConfig.FALLBACK_TRIGGER_TOKENS,
                                                     before)
                                             .flatMapMany(
@@ -252,6 +311,22 @@ public class CompactionMiddleware implements HarnessRuntimeMiddleware {
                                 });
             }
         };
+    }
+
+    private int recoveryTailSize(List<Msg> history) {
+        // Keep the current user input with its tool results if it is still within the recent
+        // message window and there is an older prefix to compact.
+        int first = Math.max(1, history.size() - config.getKeepMessages());
+        for (int i = history.size() - 1; i >= first; i--) {
+            Msg msg = history.get(i);
+            if (msg.getRole() == MsgRole.USER
+                    && !Boolean.TRUE.equals(msg.getMetadata().get(Msg.METADATA_SYNTHETIC))
+                    && !Boolean.TRUE.equals(msg.getMetadata().get("synthetic"))
+                    && !ConversationCompactor.SUMMARY_MSG_NAME.equals(msg.getName())) {
+                return history.size() - i;
+            }
+        }
+        return 1;
     }
 
     public static boolean isContextOverflowError(Throwable error) {
@@ -372,12 +447,14 @@ public class CompactionMiddleware implements HarnessRuntimeMiddleware {
                     ConversationCompactor compactor =
                             new ConversationCompactor(
                                     compactModel,
-                                    new MemoryFlushManager(
-                                            workspaceManager,
-                                            compactModel,
-                                            memoryConfig.flushPrompt(),
-                                            memoryConfig.admission(),
-                                            memoryConfig.flushTimeout()),
+                                    memoryEnabled
+                                            ? new MemoryFlushManager(
+                                                    workspaceManager,
+                                                    compactModel,
+                                                    memoryConfig.flushPrompt(),
+                                                    memoryConfig.admission(),
+                                                    memoryConfig.flushTimeout())
+                                            : null,
                                     tokenCounter,
                                     toolResultTokenCounter);
                     // Copies may retain message IDs. Only an unchanged view can become durable;

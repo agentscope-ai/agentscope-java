@@ -19,6 +19,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import io.agentscope.core.journal.JournalEvent;
 import io.agentscope.core.message.Msg;
+import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolResultState;
 import io.agentscope.core.message.ToolUseBlock;
@@ -26,22 +27,47 @@ import io.agentscope.core.util.JsonUtils;
 import io.agentscope.durable.DurableJson;
 import io.agentscope.durable.DurableMessages;
 import io.agentscope.durable.DurableTypes.EventInput;
+import io.agentscope.durable.DurableTypes.LiveEventInput;
+import io.agentscope.durable.DurableTypes.RunStepRef;
+import io.agentscope.durable.DurableTypes.ToolOutputDelta;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.Base64;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.stream.Collectors;
 
 /** Native tool observations do not create or impersonate Hands execution records. */
 final class AgentScopeToolEvents {
     private final Set<String> returned = new HashSet<>();
     private final Set<String> uncertain = new HashSet<>();
+    private final Map<String, Set<String>> unsettled = new HashMap<>();
+    private final Map<String, Long> previewOffsets = new HashMap<>();
 
     AgentScopeToolEvents() {}
 
     AgentScopeToolEvents(AgentScopeToolEvents source) {
         returned.addAll(source.returned);
         uncertain.addAll(source.uncertain);
+        source.unsettled.forEach((turn, calls) -> unsettled.put(turn, new HashSet<>(calls)));
+        previewOffsets.putAll(source.previewOffsets);
+    }
+
+    boolean hasUnsettledTools(String turnId) {
+        return unsettled.containsKey(turnId);
+    }
+
+    boolean unsettled(String turnId, String callId) {
+        return unsettled.getOrDefault(turnId, Set.of()).contains(callId);
+    }
+
+    private void closeOutstanding(String turnId, String callId) {
+        var pending = unsettled.get(turnId);
+        if (pending != null && pending.remove(callId) && pending.isEmpty())
+            unsettled.remove(turnId);
     }
 
     List<EventInput> accept(JournalEvent event, AgentScopeMessageEvents messages) {
@@ -59,12 +85,11 @@ final class AgentScopeToolEvents {
                         messages.messageId(event.turnId(), (String) data.get("messageId")));
                 result.add(event(event, "tool.call.updated", value));
             }
-            case "tool/dispatch" ->
-                    result.add(
-                            event(
-                                    event,
-                                    "tool.call.updated",
-                                    update((String) data.get("toolCallId"), "RUNNING")));
+            case "tool/dispatch" -> {
+                String callId = (String) data.get("toolCallId");
+                unsettled.computeIfAbsent(event.turnId(), turn -> new HashSet<>()).add(callId);
+                result.add(event(event, "tool.call.updated", update(callId, "RUNNING")));
+            }
             case "presentation/tool_result" -> {
                 String callId = (String) data.get("toolCallId");
                 if (!uncertain.contains(key(event, callId)))
@@ -77,20 +102,6 @@ final class AgentScopeToolEvents {
                                             status(
                                                     ToolResultState.valueOf(
                                                             (String) data.get("status"))))));
-            }
-            case "tool/chunk" -> {
-                if (uncertain.contains(key(event, (String) data.get("toolCallId")))) break;
-                var chunk =
-                        JsonUtils.getJsonCodec()
-                                .convertValue(data.get("chunk"), ToolResultBlock.class);
-                var value =
-                        DurableJson.value(
-                                Map.of(
-                                        "callId",
-                                        data.get("toolCallId"),
-                                        "content",
-                                        content(chunk)));
-                result.add(event(event, "tool.call.progress", (ObjectNode) value));
             }
             case "interaction/requested" -> {
                 var call =
@@ -113,12 +124,19 @@ final class AgentScopeToolEvents {
             }
             case "action/end" -> {
                 String callId = (String) data.get("toolCallId");
+                previewOffsets.remove(key(event, callId));
                 if (data.get("result") != null) {
                     var block =
                             JsonUtils.getJsonCodec()
                                     .convertValue(data.get("result"), ToolResultBlock.class);
                     var value = outcome(block);
                     result.add(event(event, "tool.call.updated", value));
+                    if (block.hasUnknownOutcome())
+                        unsettled
+                                .computeIfAbsent(event.turnId(), turn -> new HashSet<>())
+                                .add(callId);
+                    else if (block.getState() != ToolResultState.INTERRUPTED)
+                        closeOutstanding(event.turnId(), callId);
                     if ("UNKNOWN".equals(value.path("status").asText()))
                         uncertain.add(key(event, callId));
                     if (!block.isSuspended()) returned.add(key(event, callId));
@@ -139,27 +157,91 @@ final class AgentScopeToolEvents {
                     // it.
                     boolean reconciled = Boolean.TRUE.equals(data.get("reconciled"));
                     String key = key(event, block.getId());
-                    if (reconciled || !returned.contains(key) && !uncertain.contains(key)) {
-                        var value = outcome(block);
-                        if ("UNKNOWN".equals(value.path("status").asText())) uncertain.add(key);
-                        else if (reconciled) uncertain.remove(key);
-                        result.add(event(event, "tool.call.updated", value));
+                    String status =
+                            data.get("settlement") instanceof String settlement
+                                    ? settlement
+                                    : status(block);
+                    if (reconciled && block.getState() == ToolResultState.INTERRUPTED)
+                        status = "CANCELLED";
+                    boolean showResult =
+                            reconciled || !returned.contains(key) && !uncertain.contains(key);
+                    boolean applied =
+                            !block.isSuspended()
+                                    && !"UNKNOWN".equals(status)
+                                    && !Boolean.TRUE.equals(data.get("synthetic"))
+                                    && (reconciled || !uncertain.contains(key));
+                    if (!showResult && !applied) continue;
+                    var value = showResult ? outcome(block) : update(block.getId(), status);
+                    value.put("status", status);
+                    if ("UNKNOWN".equals(status)) uncertain.add(key);
+                    else if (reconciled) uncertain.remove(key);
+                    if (applied) {
+                        value.put("applied", true);
+                        if (event.executionRunId() != null)
+                            value.set(
+                                    "appliedAt",
+                                    DurableJson.value(
+                                            new RunStepRef(
+                                                    event.executionRunId(),
+                                                    (String) data.get("stepId"))));
                     }
+                    result.add(event(event, "tool.call.updated", value));
                 }
+            }
+            case "recovery/applied" -> {
+                if (data.get("resolvedToolCallIds") instanceof List<?> calls)
+                    for (var call : calls) closeOutstanding(event.turnId(), String.valueOf(call));
             }
             default -> {}
         }
         return result;
     }
 
+    LiveEventInput preview(JournalEvent event, long attempt) {
+        if (!"tool/chunk".equals(event.type())) return null;
+        var source = event.data();
+        String callId = (String) source.get("toolCallId");
+        String key = key(event, callId);
+        if (uncertain.contains(key)) return null;
+        var chunk =
+                JsonUtils.getJsonCodec().convertValue(source.get("chunk"), ToolResultBlock.class);
+        if (chunk.getOutput() == null) return null;
+        byte[] bytes =
+                chunk.getOutput().stream()
+                        .filter(TextBlock.class::isInstance)
+                        .map(TextBlock.class::cast)
+                        .map(TextBlock::getText)
+                        .collect(Collectors.joining())
+                        .getBytes(StandardCharsets.UTF_8);
+        if (bytes.length == 0) return null;
+        long offset = previewOffsets.getOrDefault(key, 0L);
+        long next = Math.addExact(offset, bytes.length);
+        previewOffsets.put(key, next);
+        return new LiveEventInput(
+                event.eventId(),
+                event.occurredAt(),
+                ToolOutputDelta.TYPE,
+                DurableJson.value(
+                        new ToolOutputDelta(
+                                callId,
+                                null,
+                                attempt,
+                                0,
+                                offset,
+                                next,
+                                Base64.getEncoder().encodeToString(bytes))),
+                event.executionRunId(),
+                (String) source.get("stepId"));
+    }
+
     private static ObjectNode outcome(ToolResultBlock result) {
-        String status = status(result.getState());
-        if (result.getExecutionDetails() != null
-                && "UNKNOWN".equals(result.getExecutionDetails().outcome().name()))
-            status = "UNKNOWN";
-        var value = update(result.getId(), status);
+        var value = update(result.getId(), status(result));
         value.set("content", content(result));
         return value;
+    }
+
+    private static String status(ToolResultBlock result) {
+        return result.hasUnknownOutcome() ? "UNKNOWN" : status(result.getState());
     }
 
     private static String status(ToolResultState state) {

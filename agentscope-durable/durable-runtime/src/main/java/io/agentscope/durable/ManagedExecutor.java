@@ -23,7 +23,7 @@ package io.agentscope.durable;
  */
 public interface ManagedExecutor extends Executor {
     /** Called exactly once while the Runtime is built, before execution can begin. */
-    void bind(String route, SessionBackend backend);
+    void bind(String route, SessionBackend backend, LiveEvents liveEvents);
 
     /** Opens transport delivery. Repeated calls must be harmless. */
     void open();

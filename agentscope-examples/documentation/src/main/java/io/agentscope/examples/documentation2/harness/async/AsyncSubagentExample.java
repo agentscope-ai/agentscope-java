@@ -17,7 +17,6 @@ package io.agentscope.examples.documentation2.harness.async;
 
 import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.event.AgentResultEvent;
-import io.agentscope.core.event.HintBlockEvent;
 import io.agentscope.core.event.TextBlockDeltaEvent;
 import io.agentscope.core.event.ToolCallStartEvent;
 import io.agentscope.core.event.ToolResultTextDeltaEvent;
@@ -29,23 +28,23 @@ import io.agentscope.harness.agent.bus.MessageBus;
 import io.agentscope.harness.agent.bus.WorkspaceMessageBus;
 import io.agentscope.harness.agent.filesystem.local.LocalFilesystem;
 import io.agentscope.harness.agent.gateway.HarnessGateway;
+import io.agentscope.harness.agent.gateway.MsgContext;
 import io.agentscope.harness.agent.gateway.WakeupDispatcher;
 import java.nio.file.Path;
+import java.util.List;
 
 /**
  * Demonstrates async subagent execution with wakeup-driven result delivery (Mode B).
  *
- * <p>The Gateway + WakeupDispatcher require a shared {@link MessageBus} instance, so this
- * example creates one explicitly. For the agent itself, InboxMiddleware and other bus-dependent
- * components are auto-wired — the explicit bus is only needed for the gateway layer.
+ * <p>The agent and its WakeupDispatcher share a {@link MessageBus} instance.
  *
  * <p>Flow:
  * <pre>
  * HarnessAgent (with messageBus)
  *     → SubagentsMiddleware wires TaskCompletionCallback
- *     → Subagent completes → inbox push + enqueue wakeup
+ *     → Subagent completes → signal readiness in the inbox + enqueue wakeup
  *     → WakeupDispatcher polls wakeup queue → gateway.runWakeup(sessionId)
- *     → InboxMiddleware drains inbox → LLM sees the result
+ *     → Harness delivers the task repository result in the next model request
  * </pre>
  *
  * <p><b>Run:</b>
@@ -61,7 +60,8 @@ public class AsyncSubagentExample {
         System.out.println("\n" + "=".repeat(60));
         System.out.println("Async Subagent Example — Mode B (Wakeup)");
         System.out.println("=".repeat(60));
-        System.out.println("Subagent results are automatically delivered via inbox + wakeup.\n");
+        System.out.println(
+                "The parent session wakes up to receive results from its task repository.\n");
 
         // ── Shared MessageBus (needed by both agent and gateway) ─────────────
 
@@ -86,6 +86,7 @@ public class AsyncSubagentExample {
                                         + "running. The result will arrive automatically.")
                         .model("dashscope:qwen-plus")
                         .stateStore(stateStore)
+                        .messageBus(bus)
                         .build();
 
         HarnessGateway gateway = HarnessGateway.create();
@@ -101,7 +102,10 @@ public class AsyncSubagentExample {
         System.out.println("─── Sending: 'Research the latest trends in AI agents' ───\n");
 
         Msg response =
-                agent.streamEvents(new UserMessage("Research the latest trends in AI agents"))
+                gateway.runStream(
+                                MsgContext.defaultContext(),
+                                List.of(new UserMessage("Research the latest trends in AI agents")),
+                                null)
                         .doOnNext(AsyncSubagentExample::printEvent)
                         .filter(e -> e instanceof AgentResultEvent)
                         .cast(AgentResultEvent.class)
@@ -125,12 +129,6 @@ public class AsyncSubagentExample {
             System.out.println("\n[Tool Call] " + e.getToolCallName());
         } else if (event instanceof ToolResultTextDeltaEvent e) {
             System.out.println("[Tool Result] " + AsyncToolExample.truncate(e.getDelta(), 120));
-        } else if (event instanceof HintBlockEvent e) {
-            System.out.println(
-                    "[HintBlock from "
-                            + e.getHintSource()
-                            + "] "
-                            + AsyncToolExample.truncate(e.getHint(), 120));
         }
     }
 }

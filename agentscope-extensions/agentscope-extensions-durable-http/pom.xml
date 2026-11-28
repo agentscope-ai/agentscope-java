@@ -9,6 +9,8 @@
 <dependency><groupId>org.postgresql</groupId><artifactId>postgresql</artifactId><scope>test</scope></dependency>
 <dependency><groupId>io.agentscope</groupId><artifactId>agentscope-durable-runtime</artifactId><version>${revision}</version></dependency>
 <dependency><groupId>io.agentscope</groupId><artifactId>agentscope-extensions-durable-jdbc</artifactId><version>${revision}</version><scope>test</scope></dependency>
+<dependency><groupId>io.agentscope</groupId><artifactId>agentscope-durable-worker</artifactId><version>${revision}</version><scope>test</scope></dependency>
+<dependency><groupId>io.agentscope</groupId><artifactId>agentscope-durable-adapter-harness-agentscope</artifactId><version>${revision}</version><scope>test</scope></dependency>
 </dependencies>
 <profiles>
 <profile>

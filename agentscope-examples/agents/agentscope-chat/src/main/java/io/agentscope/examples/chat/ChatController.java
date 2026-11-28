@@ -36,6 +36,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 import reactor.core.publisher.Flux;
+import reactor.core.publisher.FluxSink;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
 
@@ -46,6 +47,11 @@ public class ChatController {
     public record InputRequest(String requestId, String message) {}
 
     public record ControlRequest(String requestId, Long expectedRevision) {}
+
+    public record SteerQueuedRequest(
+            String requestId, String sourceTurnId, long expectedInputRevision) {}
+
+    public record EditQueuedRequest(String requestId, long expectedInputRevision, String message) {}
 
     public record AnswerRequest(String requestId, String interactionId, String output) {}
 
@@ -84,6 +90,36 @@ public class ChatController {
     public Mono<String> steer(
             @PathVariable String id, @PathVariable String turn, @RequestBody InputRequest body) {
         return json(() -> sessions.steer(id, turn, body.requestId(), body.message()));
+    }
+
+    @PostMapping("/sessions/{id}/turns/{turn}/steer-queued")
+    public Mono<String> steerQueued(
+            @PathVariable String id,
+            @PathVariable String turn,
+            @RequestBody SteerQueuedRequest body) {
+        return json(
+                () ->
+                        sessions.steerQueued(
+                                id,
+                                turn,
+                                body.requestId(),
+                                body.sourceTurnId(),
+                                body.expectedInputRevision()));
+    }
+
+    @PostMapping("/sessions/{id}/turns/{turn}/edit-queued")
+    public Mono<String> editQueued(
+            @PathVariable String id,
+            @PathVariable String turn,
+            @RequestBody EditQueuedRequest body) {
+        return json(
+                () ->
+                        sessions.editQueued(
+                                id,
+                                turn,
+                                body.requestId(),
+                                body.expectedInputRevision(),
+                                body.message()));
     }
 
     @PostMapping("/sessions/{id}/turns/{turn}/inject")
@@ -192,7 +228,7 @@ public class ChatController {
                                                             ServerSentEvent.<String>builder()
                                                                     .comment("keepalive")
                                                                     .build());
-                            return Flux.merge(committed, heartbeat)
+                            return Flux.merge(committed, toolPreviews(id, cursor.get()), heartbeat)
                                     .startWith(
                                             ServerSentEvent.<String>builder()
                                                     .comment("connected")
@@ -214,6 +250,28 @@ public class ChatController {
                                             })
                                     .subscribeOn(Schedulers.boundedElastic());
                         });
+    }
+
+    private Flux<ServerSentEvent<String>> toolPreviews(String sessionId, String cursor) {
+        return Flux.<ServerSentEvent<String>>create(
+                        sink -> {
+                            var subscription =
+                                    sessions.observeToolOutput(
+                                            sessionId,
+                                            cursor,
+                                            delta -> {
+                                                var sse =
+                                                        ServerSentEvent.builder(
+                                                                        DurableJson.value(delta)
+                                                                                .toString())
+                                                                .event("tool-output")
+                                                                .build();
+                                                sink.next(sse);
+                                            });
+                            sink.onDispose(subscription::close);
+                        },
+                        FluxSink.OverflowStrategy.DROP)
+                .subscribeOn(Schedulers.boundedElastic());
     }
 
     @ExceptionHandler(DurableException.class)

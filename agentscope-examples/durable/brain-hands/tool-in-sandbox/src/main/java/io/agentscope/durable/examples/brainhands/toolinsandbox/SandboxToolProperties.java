@@ -28,6 +28,7 @@ public class SandboxToolProperties {
     private String sessionId = "conversation";
     private String requestId = "request-1";
     private Duration timeout = Duration.ofSeconds(60);
+    private Duration receiveWait = Duration.ofSeconds(1);
     private String mqNamespace = "durable-sandbox";
 
     public void validate() {
@@ -94,6 +95,15 @@ public class SandboxToolProperties {
 
     public void setTimeout(Duration timeout) {
         this.timeout = timeout;
+    }
+
+    /** Dispatch consumer long-poll wait used by Brain. */
+    public Duration getReceiveWait() {
+        return receiveWait;
+    }
+
+    public void setReceiveWait(Duration receiveWait) {
+        this.receiveWait = receiveWait;
     }
 
     public String getMqNamespace() {

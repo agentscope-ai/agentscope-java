@@ -21,7 +21,6 @@ import static io.agentscope.extensions.model.openai.OpenAIModelProviderSupport.a
 
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.Model;
-import io.agentscope.core.model.ModelContextWindows;
 import io.agentscope.core.model.ModelCreationContext;
 import io.agentscope.core.model.spi.ModelProvider;
 import io.agentscope.extensions.model.openai.OpenAIChatModel;
@@ -74,10 +73,7 @@ public final class DeepSeekModelProvider implements ModelProvider {
                         .endpointPath(endpointPath)
                         .formatter(new DeepSeekFormatter())
                         .nativeStructuredOutput(false)
-                        .supportsToolChoiceSpecific(officialEndpoint)
-                        .contextWindowSize(
-                                ModelContextWindows.lookup(
-                                        modelName, ModelContextWindows.DEEPSEEK));
+                        .supportsToolChoiceSpecific(officialEndpoint);
 
         GenerateOptions userOptions = context.component(GenerateOptions.class);
         GenerateOptions deepSeekDefaults = deepSeekDefaultOptions(context);

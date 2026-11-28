@@ -116,6 +116,16 @@ public sealed interface SessionStreamEvent
                             event.runId(),
                             event.stepId(),
                             data);
+            case "tool.output.delta" ->
+                    new EventDelta(
+                            data.required("callId").asText(),
+                            EventDeltaType.TOOL_OUTPUT,
+                            null,
+                            event.threadId(),
+                            event.turnId(),
+                            event.runId(),
+                            event.stepId(),
+                            data);
             default ->
                     throw new IllegalArgumentException(
                             "Unsupported live stream event: " + event.type());

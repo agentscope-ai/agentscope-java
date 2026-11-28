@@ -136,6 +136,34 @@ class ActivePointsResolverTest {
     }
 
     @Test
+    void eventNotificationIsInferredAndExplicitOptOutWins() {
+        MiddlewareBase observer =
+                new MiddlewareBase() {
+                    @Override
+                    public void onAgentEvent(Agent agent, RuntimeContext ctx, AgentEvent event) {}
+                };
+        MiddlewareBase optedOut =
+                new MiddlewareBase() {
+                    @Override
+                    public Set<ExtensionPoint> activePoints() {
+                        return Set.of();
+                    }
+
+                    @Override
+                    public void onAgentEvent(Agent agent, RuntimeContext ctx, AgentEvent event) {}
+                };
+        assertEquals(Set.of(ExtensionPoint.ON_AGENT_EVENT), ActivePointsResolver.resolve(observer));
+        assertEquals(
+                Set.of(ExtensionPoint.ON_AGENT_EVENT),
+                ActivePointsResolver.infer(optedOut.getClass()));
+        assertTrue(ActivePointsResolver.resolve(optedOut).isEmpty());
+        assertEquals(
+                List.of(observer),
+                ActivePointsResolver.groupByPoint(List.of(optedOut, observer))
+                        .get(ExtensionPoint.ON_AGENT_EVENT));
+    }
+
+    @Test
     void nullArgumentsFailFast() {
         assertThrows(NullPointerException.class, () -> ActivePointsResolver.resolve(null));
         assertThrows(

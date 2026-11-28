@@ -312,7 +312,8 @@
         "stepId": "acting-step",
         "threadId": "main",
         "turnId": "r",
-        "sequence": "9007199254740998"
+        "sequence": "9007199254740998",
+        "updatedAt": 0
       }
     },
     "session": null,
