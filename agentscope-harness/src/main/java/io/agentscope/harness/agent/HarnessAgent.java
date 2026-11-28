@@ -71,6 +71,7 @@ import io.agentscope.harness.agent.coordination.LocalPeriodicGate;
 import io.agentscope.harness.agent.coordination.PeriodicGate;
 import io.agentscope.harness.agent.coordination.StoreBackedPeriodicGate;
 import io.agentscope.harness.agent.filesystem.AbstractFilesystem;
+import io.agentscope.harness.agent.filesystem.BakedContextFilesystem;
 import io.agentscope.harness.agent.filesystem.CompositeFilesystem;
 import io.agentscope.harness.agent.filesystem.OverlayFilesystem;
 import io.agentscope.harness.agent.filesystem.RoutedSandboxFilesystem;
@@ -151,11 +152,14 @@ import io.agentscope.harness.agent.workspace.WorkspaceIndex;
 import io.agentscope.harness.agent.workspace.WorkspaceManager;
 import io.agentscope.harness.agent.workspace.WorkspacePathNormalizer;
 import io.agentscope.harness.agent.workspace.plan.PlanModeManager;
+import java.lang.reflect.Field;
+import java.lang.reflect.Modifier;
 import java.net.http.HttpClient;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -3229,6 +3233,8 @@ public class HarnessAgent implements Agent, AutoCloseable {
                                         : new WorkspaceThreadJournalStore(wsManager)));
             }
             WorkspacePathNormalizer pathNormalizer;
+            // What a pass-through wrapper delegates to, or null when `filesystem` is not one.
+            AbstractFilesystem wrapped = passThroughDelegate(filesystem);
             if (filesystem instanceof OverlayFilesystem ov
                     && ov.getUpper() instanceof LocalFilesystemWithShell) {
                 // Local overlay mode. ShellAwareOverlay is instanceof AbstractSandboxFilesystem,
@@ -3242,6 +3248,20 @@ public class HarnessAgent implements Agent, AutoCloseable {
                         WorkspacePathNormalizer.of(
                                 resolvedWorkspace.toAbsolutePath().toString(), nsFactory);
             } else if (filesystem instanceof AbstractSandboxFilesystem) {
+                pathNormalizer =
+                        WorkspacePathNormalizer.forSandbox(
+                                defaultSandboxContext != null
+                                        ? defaultSandboxContext.getWorkspaceSpec().getRoot()
+                                        : ShellPathPolicy.SANDBOX_WORKSPACE_PREFIX);
+            } else if (wrapped != null && runsOnHostShell(wrapped)) {
+                // A pass-through wrapper over a host-shell filesystem gets the same
+                // namespace-aware local semantics as the overlay branch. Judged by the
+                // wrapper's own type, it silently fell through to the plain local
+                // normalizer (#3671).
+                pathNormalizer =
+                        WorkspacePathNormalizer.of(
+                                resolvedWorkspace.toAbsolutePath().toString(), nsFactory);
+            } else if (wrapped instanceof AbstractSandboxFilesystem) {
                 pathNormalizer =
                         WorkspacePathNormalizer.forSandbox(
                                 defaultSandboxContext != null
@@ -3261,8 +3281,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
                                 filesystem, pathNormalizer, artifactDeliveryTarget));
             }
             if (!disableShellTool
-                    && FilesystemUtils.primaryBackend(filesystem)
-                            instanceof AbstractSandboxFilesystem sandbox) {
+                    && servingBackend(filesystem) instanceof AbstractSandboxFilesystem sandbox) {
                 agentToolkit.registerTool(new ShellExecuteTool(sandbox));
             }
             if (!disableWebTools) {
@@ -3519,10 +3538,94 @@ public class HarnessAgent implements Agent, AutoCloseable {
         return new CompositeFilesystem(primary, routes);
     }
 
+    /**
+     * The filesystem a chain of pass-through wrappers ends in, or {@code null} when {@code
+     * filesystem} is not a pass-through wrapper.
+     *
+     * <p>A pass-through wrapper is an {@link AbstractFilesystem} that only forwards to another
+     * filesystem: its class declares exactly one instance field of a filesystem type. Checks made
+     * on the wrapper's own type then miss what the delegate can do — a wrapper around a
+     * shell-capable filesystem silently lost {@code ShellExecuteTool} (#3671). The framework's
+     * own routing layers, overlays and context-bound views are not pass-through wrappers: they
+     * choose between several filesystems or add behaviour of their own. A class with zero or
+     * several filesystem fields is a leaf, and so is one whose field cannot be read; only
+     * unambiguous delegation is seen through. The end of the chain may well be one of the
+     * framework's routing layers, which is then returned as-is.
+     */
+    static AbstractFilesystem passThroughDelegate(AbstractFilesystem filesystem) {
+        AbstractFilesystem current = filesystem;
+        AbstractFilesystem delegate = singleFilesystemDelegate(current);
+        Set<AbstractFilesystem> visited = new HashSet<>();
+        while (delegate != null && visited.add(delegate)) {
+            current = delegate;
+            delegate = singleFilesystemDelegate(current);
+        }
+        return current == filesystem ? null : current;
+    }
+
+    /**
+     * The one filesystem {@code filesystem} forwards to, or {@code null} unless it declares
+     * exactly one instance field of a filesystem type and that field can be read.
+     */
+    private static AbstractFilesystem singleFilesystemDelegate(AbstractFilesystem filesystem) {
+        if (filesystem == null
+                || filesystem instanceof CompositeFilesystem
+                || filesystem instanceof RoutedSandboxFilesystem
+                || filesystem instanceof OverlayFilesystem
+                || filesystem instanceof BakedContextFilesystem) {
+            return null;
+        }
+        AbstractFilesystem delegate = null;
+        boolean seen = false;
+        try {
+            for (Class<?> type = filesystem.getClass();
+                    type != null && type != Object.class;
+                    type = type.getSuperclass()) {
+                for (Field field : type.getDeclaredFields()) {
+                    if (Modifier.isStatic(field.getModifiers())
+                            || !AbstractFilesystem.class.isAssignableFrom(field.getType())) {
+                        continue;
+                    }
+                    if (seen) {
+                        return null;
+                    }
+                    seen = true;
+                    field.setAccessible(true);
+                    delegate = (AbstractFilesystem) field.get(filesystem);
+                }
+            }
+        } catch (ReflectiveOperationException | RuntimeException unreadable) {
+            return null;
+        }
+        return delegate;
+    }
+
+    /**
+     * The backend that serves unrouted paths: what {@link FilesystemUtils#primaryBackend} returns
+     * with pass-through wrappers seen through as well. Wrappers and routing layers are followed
+     * until the answer stops changing.
+     */
+    static AbstractFilesystem servingBackend(AbstractFilesystem filesystem) {
+        AbstractFilesystem backend = filesystem;
+        Set<AbstractFilesystem> visited = new HashSet<>();
+        while (visited.add(backend)) {
+            AbstractFilesystem next = FilesystemUtils.primaryBackend(backend);
+            AbstractFilesystem wrapped = passThroughDelegate(next);
+            if (wrapped != null) {
+                next = wrapped;
+            }
+            if (next == backend) {
+                break;
+            }
+            backend = next;
+        }
+        return backend;
+    }
+
     /** Shell mode the skill runtime advertises for the backend that serves the workspace. */
     static ShellPathPolicy skillShellPolicy(
             AbstractFilesystem filesystem, SandboxContext sandboxContext, Path workspace) {
-        AbstractFilesystem backend = FilesystemUtils.primaryBackend(filesystem);
+        AbstractFilesystem backend = servingBackend(filesystem);
         if (runsOnHostShell(backend)) {
             return ShellPathPolicy.localWithShell(workspace);
         }
