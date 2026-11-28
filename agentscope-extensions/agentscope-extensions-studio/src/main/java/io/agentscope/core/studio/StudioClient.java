@@ -35,6 +35,7 @@ import okhttp3.Response;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Mono;
+import reactor.core.scheduler.Schedulers;
 import reactor.util.retry.Retry;
 
 /**
@@ -224,20 +225,29 @@ public class StudioClient {
     /**
      * Executes a Studio API operation with automatic retry logic.
      *
+     * <p>Every caller wraps a blocking OkHttp {@code Call.execute()} in {@code Mono.fromCallable},
+     * so the callable is moved to Reactor's bounded-elastic scheduler. Subscribing from a
+     * non-blocking thread (the agent's own reactive chain, or a WebFlux request) would otherwise
+     * run the HTTP round trip on that thread and stall whatever else it serves. The single
+     * {@link reactor.core.scheduler.Schedulers#boundedElastic()} here covers {@code registerRun},
+     * {@code pushMessage} and {@code requestUserInput} because all three go through this method.
+     *
      * @param operation The operation to execute
      * @param <T> Return type
      * @return A Mono with retry logic applied
      */
     private <T> Mono<T> executeWithRetry(Mono<T> operation) {
-        return operation.retryWhen(
-                Retry.backoff(config.getMaxRetries(), Duration.ofMillis(100))
-                        .maxBackoff(Duration.ofSeconds(5))
-                        .filter(throwable -> throwable instanceof IOException)
-                        .doBeforeRetry(
-                                signal ->
-                                        logger.warn(
-                                                "Retrying Studio API call, attempt: {}",
-                                                signal.totalRetries() + 1)));
+        return operation
+                .subscribeOn(Schedulers.boundedElastic())
+                .retryWhen(
+                        Retry.backoff(config.getMaxRetries(), Duration.ofMillis(100))
+                                .maxBackoff(Duration.ofSeconds(5))
+                                .filter(throwable -> throwable instanceof IOException)
+                                .doBeforeRetry(
+                                        signal ->
+                                                logger.warn(
+                                                        "Retrying Studio API call, attempt: {}",
+                                                        signal.totalRetries() + 1)));
     }
 
     private String formatTimestamp(Instant instant) {

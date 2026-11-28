@@ -16,6 +16,7 @@
 package io.agentscope.core.studio;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -24,6 +25,7 @@ import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
 import java.io.IOException;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicReference;
 import okhttp3.mockwebserver.MockResponse;
 import okhttp3.mockwebserver.MockWebServer;
 import okhttp3.mockwebserver.RecordedRequest;
@@ -32,6 +34,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import reactor.core.publisher.Mono;
+import reactor.core.scheduler.Schedulers;
 import reactor.test.StepVerifier;
 
 @DisplayName("StudioClient Tests")
@@ -225,5 +228,74 @@ class StudioClientTest {
         StepVerifier.create(client.requestUserInput("agent-1", "Agent", null))
                 .assertNext(id -> assertNotNull(id))
                 .verifyComplete();
+    }
+
+    /**
+     * Every Studio call blocks inside {@code Mono.fromCallable} on an OkHttp
+     * {@code Call.execute()}. {@code StudioMessageHook} subscribes to {@code pushMessage} from
+     * the agent's own reactive chain and documents itself as "send to Studio asynchronously
+     * (fire and forget) — don't block agent execution", so the blocking call must not run on the
+     * subscriber's thread.
+     */
+    @Test
+    @DisplayName("pushMessage should keep the blocking HTTP call off a non-blocking subscriber")
+    void testPushMessageRunsOffTheSubscriberThread() {
+        mockServer.enqueue(new MockResponse().setResponseCode(200).setBody("{}"));
+
+        Msg msg =
+                Msg.builder()
+                        .name("TestAgent")
+                        .role(MsgRole.ASSISTANT)
+                        .content(TextBlock.builder().text("Hello Studio!").build())
+                        .build();
+
+        Boolean onNonBlockingThread = signalledOnNonBlockingThread(client.pushMessage(msg));
+
+        assertNotNull(onNonBlockingThread, "pushMessage must emit a terminal signal");
+        assertFalse(
+                onNonBlockingThread,
+                "the blocking Studio HTTP call must not run on the subscriber's non-blocking"
+                        + " thread");
+    }
+
+    @Test
+    @DisplayName(
+            "requestUserInput should keep the blocking HTTP call off a non-blocking subscriber")
+    void testRequestUserInputRunsOffTheSubscriberThread() {
+        mockServer.enqueue(new MockResponse().setResponseCode(200).setBody("{}"));
+
+        Boolean onNonBlockingThread =
+                signalledOnNonBlockingThread(client.requestUserInput("agent-1", "Agent", null));
+
+        assertNotNull(onNonBlockingThread, "requestUserInput must emit a terminal signal");
+        assertFalse(
+                onNonBlockingThread,
+                "the blocking Studio HTTP call must not run on the subscriber's non-blocking"
+                        + " thread");
+    }
+
+    /**
+     * Subscribes from a Reactor non-blocking thread and reports whether the terminal signal was
+     * emitted there. The signal travels the same thread that ran the blocking call, so this needs
+     * no instrumentation inside the client. Returns {@code null} when the operation emitted no
+     * signal at all, so a broken assertion cannot pass by accident.
+     */
+    private <T> Boolean signalledOnNonBlockingThread(Mono<T> operation) {
+        AtomicReference<Boolean> onNonBlockingThread = new AtomicReference<>();
+        StepVerifier.create(
+                        operation
+                                .doOnSuccess(
+                                        ignored ->
+                                                onNonBlockingThread.set(
+                                                        Schedulers.isInNonBlockingThread()))
+                                .doOnError(
+                                        error ->
+                                                onNonBlockingThread.set(
+                                                        Schedulers.isInNonBlockingThread()))
+                                .onErrorResume(error -> Mono.empty())
+                                .subscribeOn(Schedulers.parallel()))
+                .thenConsumeWhile(value -> true)
+                .verifyComplete();
+        return onNonBlockingThread.get();
     }
 }
