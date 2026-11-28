@@ -548,9 +548,12 @@ class HarnessContextRegressionTest {
                             stream);
             assertEquals("done", reply.getTextContent());
             assertEquals(overflow ? 2 : 1, model.getCallCount());
-            assertEquals(memory && flush ? 2 : 1, compactionModel.getCallCount());
+            // Native execution journals the originals, so the prefix is extracted from the
+            // journal instead of a second pre-compaction request.
+            boolean flushed = memory && flush && !journal;
+            assertEquals(flushed ? 2 : 1, compactionModel.getCallCount());
             var files = agent.getWorkspaceManager().listMemoryFilePaths(rc);
-            assertEquals(memory && flush, !files.isEmpty());
+            assertEquals(flushed, !files.isEmpty());
             if (!files.isEmpty())
                 assertTrue(
                         agent.getWorkspaceManager()
