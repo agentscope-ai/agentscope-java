@@ -25,6 +25,7 @@ import static org.mockito.Mockito.doNothing;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.harness.agent.sandbox.Sandbox;
@@ -746,6 +747,7 @@ class E2bSandboxOptionsAndStateTest {
             E2bSandbox sandbox = new E2bSandbox(state, opt);
 
             SessionSandboxStateStore store = mock(SessionSandboxStateStore.class);
+            when(store.getAgentId()).thenReturn("e2b-agent");
             SandboxManager manager = new SandboxManager(client, store, "e2b-agent");
             SandboxAcquireResult acquired = SandboxAcquireResult.selfManaged(sandbox);
 

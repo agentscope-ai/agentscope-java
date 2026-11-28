@@ -94,6 +94,7 @@ class KubernetesSandboxColdRestoreTest {
         previousState.setSnapshot(new RemoteSandboxSnapshot(oldStorage, snapshotId));
         String json = client.serializeState(previousState);
         SessionSandboxStateStore stateStore = mock(SessionSandboxStateStore.class);
+        when(stateStore.getAgentId()).thenReturn("agent");
         when(stateStore.load(any())).thenReturn(Optional.of(json));
         SandboxManager manager = new SandboxManager(client, stateStore, "agent");
         SandboxContext context =
