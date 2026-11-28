@@ -235,46 +235,64 @@ final class ResponsesRequestMapper {
             builder.reasoning(buildReasoning(options));
         }
 
-        if (options.getResponseFormat() != null) {
-            ResponseFormat format = options.getResponseFormat();
-            if (format.getType() != null) {
-                switch (format.getType()) {
-                    case "json_object" ->
-                            builder.text(
-                                    ResponseTextConfig.builder()
-                                            .format(ResponseFormatJsonObject.builder().build())
-                                            .build());
-                    case "json_schema" -> {
-                        JsonSchema schema = format.getJsonSchema();
-                        if (schema == null || schema.getName() == null) {
-                            throw new OpenAIOfficialModelException(
-                                    "json_schema response format requires a non-null"
-                                            + " schema or schema name.");
-                        }
-                        ResponseFormatTextJsonSchemaConfig.Builder schemaBuilder =
-                                ResponseFormatTextJsonSchemaConfig.builder()
-                                        .name(schema.getName())
-                                        .schema(buildSchema(schema.getSchema()));
-                        if (schema.getDescription() != null) {
-                            schemaBuilder.description(schema.getDescription());
-                        }
-                        Boolean effectiveStrict =
-                                schema.getStrict() != null ? schema.getStrict() : strictJsonSchema;
-                        if (effectiveStrict != null) {
-                            schemaBuilder.strict(effectiveStrict);
-                        }
-                        builder.text(
-                                ResponseTextConfig.builder().format(schemaBuilder.build()).build());
-                    }
-                    case "text" -> {
-                        // SDK default is plain text; no need to set text param
-                    }
-                    default ->
-                            throw new OpenAIOfficialModelException(
-                                    "Unsupported response format type: " + format.getType());
+        ResponseTextConfig textConfig = buildTextConfig(options, strictJsonSchema);
+        if (textConfig != null) {
+            builder.text(textConfig);
+        }
+    }
+
+    private static ResponseTextConfig buildTextConfig(
+            GenerateOptions options, Boolean strictJsonSchema) {
+        ResponseTextConfig.Builder textBuilder = null;
+
+        ResponseFormat format = options.getResponseFormat();
+        if (format != null && format.getType() != null) {
+            switch (format.getType()) {
+                case "json_object" -> {
+                    textBuilder = ResponseTextConfig.builder();
+                    textBuilder.format(ResponseFormatJsonObject.builder().build());
                 }
+                case "json_schema" -> {
+                    JsonSchema schema = format.getJsonSchema();
+                    if (schema == null || schema.getName() == null) {
+                        throw new OpenAIOfficialModelException(
+                                "json_schema response format requires a non-null"
+                                        + " schema or schema name.");
+                    }
+                    ResponseFormatTextJsonSchemaConfig.Builder schemaBuilder =
+                            ResponseFormatTextJsonSchemaConfig.builder()
+                                    .name(schema.getName())
+                                    .schema(buildSchema(schema.getSchema()));
+                    if (schema.getDescription() != null) {
+                        schemaBuilder.description(schema.getDescription());
+                    }
+                    Boolean effectiveStrict =
+                            schema.getStrict() != null ? schema.getStrict() : strictJsonSchema;
+                    if (effectiveStrict != null) {
+                        schemaBuilder.strict(effectiveStrict);
+                    }
+                    textBuilder = ResponseTextConfig.builder();
+                    textBuilder.format(schemaBuilder.build());
+                }
+                case "text" -> {
+                    // SDK default is plain text; no need to set format on text config
+                }
+                default ->
+                        throw new OpenAIOfficialModelException(
+                                "Unsupported response format type: " + format.getType());
             }
         }
+
+        Map<String, Object> params = options.getAdditionalBodyParams();
+        String verbosity = params != null ? asString(params.get("text.verbosity")) : null;
+        if (verbosity != null) {
+            if (textBuilder == null) {
+                textBuilder = ResponseTextConfig.builder();
+            }
+            textBuilder.verbosity(ResponseTextConfig.Verbosity.of(verbosity).validate());
+        }
+
+        return textBuilder != null ? textBuilder.build() : null;
     }
 
     private static boolean hasWhitelistKey(GenerateOptions options, String key) {
@@ -541,15 +559,7 @@ final class ResponsesRequestMapper {
             mapReasoningReplay(msg, encryptedContent, items);
         }
 
-        String text = collectAssistantText(msg);
-        if (text != null && !text.isEmpty()) {
-            items.add(
-                    ResponseInputItem.ofEasyInputMessage(
-                            EasyInputMessage.builder()
-                                    .role(EasyInputMessage.Role.ASSISTANT)
-                                    .content(text)
-                                    .build()));
-        }
+        mapAssistantText(msg, items);
 
         List<?> blocks = msg.getContent();
         if (blocks != null) {
@@ -593,6 +603,69 @@ final class ResponsesRequestMapper {
             builder.summary(List.of());
         }
         items.add(ResponseInputItem.ofReasoning(builder.build()));
+    }
+
+    private static void mapAssistantText(Msg msg, List<ResponseInputItem> items) {
+        String text = collectAssistantText(msg);
+        if (text == null || text.isEmpty()) {
+            return;
+        }
+        if (tryRestoreAssistantMessages(msg, text, items)) {
+            return;
+        }
+        EasyInputMessage.Builder builder =
+                EasyInputMessage.builder().role(EasyInputMessage.Role.ASSISTANT).content(text);
+        String phase = extractAssistantPhase(msg.getMetadata());
+        if (phase != null) {
+            builder.phase(EasyInputMessage.Phase.of(phase));
+        }
+        items.add(ResponseInputItem.ofEasyInputMessage(builder.build()));
+    }
+
+    private static boolean tryRestoreAssistantMessages(
+            Msg msg, String expectedText, List<ResponseInputItem> items) {
+        Map<String, Object> metadata = msg.getMetadata();
+        if (metadata == null
+                || !(metadata.get(OpenAIOfficialConstants.MD_ASSISTANT_MESSAGES)
+                        instanceof List<?> rawEntries)
+                || rawEntries.isEmpty()) {
+            return false;
+        }
+        List<ResponseInputItem> restored = new ArrayList<>(rawEntries.size());
+        StringBuilder reconstructed = new StringBuilder();
+        for (Object rawEntry : rawEntries) {
+            if (!(rawEntry instanceof Map<?, ?> map)) {
+                return false;
+            }
+            if (!(map.get("text") instanceof String entryText) || entryText.isEmpty()) {
+                return false;
+            }
+            EasyInputMessage.Builder builder =
+                    EasyInputMessage.builder()
+                            .role(EasyInputMessage.Role.ASSISTANT)
+                            .content(entryText);
+            if (map.get("phase") instanceof String entryPhase && !entryPhase.isBlank()) {
+                builder.phase(EasyInputMessage.Phase.of(entryPhase));
+            }
+            reconstructed.append(entryText);
+            restored.add(ResponseInputItem.ofEasyInputMessage(builder.build()));
+        }
+        if (!expectedText.equals(reconstructed.toString())) {
+            return false;
+        }
+        items.addAll(restored);
+        return true;
+    }
+
+    private static String extractAssistantPhase(Map<String, Object> metadata) {
+        if (metadata == null) {
+            return null;
+        }
+        Object rawPhase = metadata.get(OpenAIOfficialConstants.MD_MESSAGE_PHASE);
+        if (rawPhase instanceof String phase && !phase.isBlank()) {
+            return phase;
+        }
+        return null;
     }
 
     private static void mapToolUseBlock(ToolUseBlock tb, List<ResponseInputItem> items) {

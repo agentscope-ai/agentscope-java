@@ -25,6 +25,7 @@ import static org.mockito.Mockito.mock;
 
 import com.openai.models.responses.Response;
 import com.openai.models.responses.ResponseOutputItem;
+import com.openai.models.responses.ResponseOutputMessage;
 import com.openai.models.responses.ResponseStatus;
 import io.agentscope.core.message.Base64Source;
 import io.agentscope.core.message.ContentBlock;
@@ -462,6 +463,78 @@ class ResponsesResponseParserTest {
         assertEquals("file_001", citation.get("file_id"));
         assertEquals("result.png", citation.get("filename"));
         assertEquals(0L, citation.get("start_index"));
+    }
+
+    @Test
+    void singleCommentaryPhasePreservedInMetadata() {
+        Response response =
+                TestSdkFixtures.completedResponse(
+                        List.of(
+                                TestSdkFixtures.messageItemWithPhase(
+                                        "Checking tools...",
+                                        ResponseOutputMessage.Phase.COMMENTARY)));
+        ChatResponse result = parse(response);
+
+        assertEquals(
+                "commentary", result.getMetadata().get(OpenAIOfficialConstants.MD_MESSAGE_PHASE));
+        assertFalse(
+                result.getMetadata().containsKey(OpenAIOfficialConstants.MD_ASSISTANT_MESSAGES));
+    }
+
+    @Test
+    void singleFinalAnswerPhasePreservedInMetadata() {
+        Response response =
+                TestSdkFixtures.completedResponse(
+                        List.of(
+                                TestSdkFixtures.messageItemWithPhase(
+                                        "Done.", ResponseOutputMessage.Phase.FINAL_ANSWER)));
+        ChatResponse result = parse(response);
+
+        assertEquals(
+                "final_answer", result.getMetadata().get(OpenAIOfficialConstants.MD_MESSAGE_PHASE));
+        assertFalse(
+                result.getMetadata().containsKey(OpenAIOfficialConstants.MD_ASSISTANT_MESSAGES));
+    }
+
+    @Test
+    void missingPhaseOmitsPhaseMetadata() {
+        Response response = TestSdkFixtures.textResponse("hello");
+        ChatResponse result = parse(response);
+
+        assertFalse(result.getMetadata().containsKey(OpenAIOfficialConstants.MD_MESSAGE_PHASE));
+        assertFalse(
+                result.getMetadata().containsKey(OpenAIOfficialConstants.MD_ASSISTANT_MESSAGES));
+    }
+
+    @Test
+    void multipleMessagesWithPhasesPreservePerMessageEntries() {
+        Response response =
+                TestSdkFixtures.completedResponse(
+                        List.of(
+                                TestSdkFixtures.messageItemWithPhase(
+                                        "Checking...", ResponseOutputMessage.Phase.COMMENTARY),
+                                TestSdkFixtures.messageItemWithPhase(
+                                        "All set.", ResponseOutputMessage.Phase.FINAL_ANSWER)));
+        ChatResponse result = parse(response);
+
+        assertEquals(
+                "final_answer", result.getMetadata().get(OpenAIOfficialConstants.MD_MESSAGE_PHASE));
+        Object rawMessages =
+                result.getMetadata().get(OpenAIOfficialConstants.MD_ASSISTANT_MESSAGES);
+        assertTrue(rawMessages instanceof List);
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> messages = (List<Map<String, Object>>) rawMessages;
+        assertEquals(2, messages.size());
+        assertEquals(Map.of("text", "Checking...", "phase", "commentary"), messages.get(0));
+        assertEquals(Map.of("text", "All set.", "phase", "final_answer"), messages.get(1));
+        for (Map.Entry<String, Object> entry : result.getMetadata().entrySet()) {
+            Object value = entry.getValue();
+            assertTrue(
+                    value instanceof String
+                            || value instanceof Number
+                            || value instanceof Map
+                            || value instanceof List);
+        }
     }
 
     // ── Unknown output item handling ─────────────────────────────────────

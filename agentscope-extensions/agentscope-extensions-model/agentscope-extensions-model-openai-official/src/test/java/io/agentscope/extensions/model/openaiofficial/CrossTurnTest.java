@@ -27,12 +27,17 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.openai.client.OpenAIClient;
+import com.openai.models.responses.EasyInputMessage;
 import com.openai.models.responses.FunctionTool;
 import com.openai.models.responses.ResponseCreateParams;
+import com.openai.models.responses.ResponseFunctionToolCall;
 import com.openai.models.responses.ResponseInputItem;
+import com.openai.models.responses.ResponseOutputItem;
+import com.openai.models.responses.ResponseOutputMessage;
 import com.openai.models.responses.ResponseReasoningItem;
 import com.openai.models.responses.ResponseStreamEvent;
 import com.openai.services.blocking.ResponseService;
+import io.agentscope.core.agent.accumulator.ReasoningContext;
 import io.agentscope.core.message.AssistantMessage;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.TextBlock;
@@ -364,6 +369,58 @@ class CrossTurnTest {
             assertFalse(turn1Params.previousResponseId().isPresent());
             assertFalse(turn2Params.store().orElseThrow());
             assertEquals("resp_turn1", turn2Params.previousResponseId().orElseThrow());
+        }
+
+        @Test
+        void textVerbosityOverridesAcrossTurns() {
+            OpenAIClient client = mockClient();
+            ResponseService svc = client.responses();
+            when(svc.create(any(ResponseCreateParams.class)))
+                    .thenReturn(
+                            TestSdkFixtures.textResponse("turn1"),
+                            TestSdkFixtures.textResponse("turn2"));
+
+            GenerateOptions configured =
+                    withExecConfig(
+                            GenerateOptions.builder()
+                                    .apiKey(API_KEY)
+                                    .modelName("gpt-6.2-astra")
+                                    .stream(false)
+                                    .additionalBodyParam("text.verbosity", "low")
+                                    .build());
+            OpenAIResponsesChatModel model = createModel(client, configured, null, null, 0);
+
+            model.stream(simpleMessages(), null, null).collectList().block();
+            model.stream(
+                            simpleMessages(),
+                            null,
+                            GenerateOptions.builder()
+                                    .additionalBodyParam("text.verbosity", "high")
+                                    .build())
+                    .collectList()
+                    .block();
+
+            ArgumentCaptor<ResponseCreateParams> captor =
+                    ArgumentCaptor.forClass(ResponseCreateParams.class);
+            verify(svc, times(2)).create(captor.capture());
+            assertEquals(
+                    "low",
+                    captor.getAllValues()
+                            .get(0)
+                            .text()
+                            .orElseThrow()
+                            .verbosity()
+                            .orElseThrow()
+                            .asString());
+            assertEquals(
+                    "high",
+                    captor.getAllValues()
+                            .get(1)
+                            .text()
+                            .orElseThrow()
+                            .verbosity()
+                            .orElseThrow()
+                            .asString());
         }
     }
 
@@ -706,6 +763,209 @@ class CrossTurnTest {
             assertTrue(
                     reasoningIndex < input.size() - 1,
                     "Reasoning item should not be the last item");
+        }
+
+        @Test
+        void gpt62NonStreamingToolCallPreservesPhaseAndReasoningAcrossTurns() {
+            OpenAIClient client = mockClient();
+            ResponseService svc = client.responses();
+            when(svc.create(any(ResponseCreateParams.class)))
+                    .thenReturn(
+                            TestSdkFixtures.completedResponse(
+                                    List.of(
+                                            TestSdkFixtures.reasoningItem(
+                                                    "plan", "enc_gpt62", null),
+                                            TestSdkFixtures.messageItemWithPhase(
+                                                    "Checking weather...",
+                                                    ResponseOutputMessage.Phase.COMMENTARY),
+                                            TestSdkFixtures.functionCallItem(
+                                                    "call_w",
+                                                    "get_weather",
+                                                    "{\"city\":\"NYC\"}"))),
+                            TestSdkFixtures.completedResponse(
+                                    List.of(
+                                            TestSdkFixtures.messageItemWithPhase(
+                                                    "It is sunny in NYC.",
+                                                    ResponseOutputMessage.Phase.FINAL_ANSWER))));
+
+            GenerateOptions configured =
+                    withExecConfig(
+                            GenerateOptions.builder()
+                                    .apiKey(API_KEY)
+                                    .modelName("gpt-6.2-astra")
+                                    .stream(false)
+                                    .reasoningEffort("medium")
+                                    .build());
+            OpenAIResponsesChatModel model = createModel(client, configured, null, null, 0);
+
+            List<ChatResponse> turn1Results =
+                    model.stream(simpleMessages(), null, null).collectList().block();
+            assertNotNull(turn1Results);
+            assertEquals(1, turn1Results.size());
+            ChatResponse turn1 = turn1Results.get(0);
+
+            Msg assistantTurn1 =
+                    AssistantMessage.builder()
+                            .content(turn1.getContent())
+                            .metadata(turn1.getMetadata())
+                            .build();
+            List<Msg> turn2Messages =
+                    List.of(
+                            UserMessage.builder().content(text("Weather in NYC?")).build(),
+                            assistantTurn1,
+                            ToolResultMessage.builder()
+                                    .content(
+                                            ToolResultBlock.builder()
+                                                    .id("call_w")
+                                                    .name("get_weather")
+                                                    .output(text("Sunny, 72F"))
+                                                    .build())
+                                    .build());
+
+            List<ChatResponse> turn2Results =
+                    model.stream(turn2Messages, null, null).collectList().block();
+            assertNotNull(turn2Results);
+            assertEquals(
+                    "final_answer",
+                    turn2Results
+                            .get(0)
+                            .getMetadata()
+                            .get(OpenAIOfficialConstants.MD_MESSAGE_PHASE));
+
+            ArgumentCaptor<ResponseCreateParams> captor =
+                    ArgumentCaptor.forClass(ResponseCreateParams.class);
+            verify(svc, times(2)).create(captor.capture());
+            ResponseCreateParams turn2Params = captor.getAllValues().get(1);
+
+            ResponseReasoningItem replayReasoning = findReasoningItem(turn2Params);
+            assertNotNull(replayReasoning);
+            assertEquals("enc_gpt62", replayReasoning.encryptedContent().orElseThrow());
+
+            List<ResponseInputItem> input = turn2Params.input().orElseThrow().asResponse();
+            EasyInputMessage assistantInput =
+                    input.stream()
+                            .filter(ResponseInputItem::isEasyInputMessage)
+                            .map(ResponseInputItem::asEasyInputMessage)
+                            .filter(m -> m.role() == EasyInputMessage.Role.ASSISTANT)
+                            .findFirst()
+                            .orElseThrow();
+            assertEquals("Checking weather...", assistantInput.content().asTextInput());
+            assertEquals(EasyInputMessage.Phase.COMMENTARY, assistantInput.phase().orElseThrow());
+        }
+
+        @Test
+        void gpt62StreamingToolCallPreservesPhaseAndReasoningViaReasoningContext() {
+            OpenAIClient client = mockClient();
+            ResponseService svc = client.responses();
+            ResponseOutputItem fnItemWithId =
+                    ResponseOutputItem.ofFunctionCall(
+                            ResponseFunctionToolCall.builder()
+                                    .arguments("{}")
+                                    .callId("call_w")
+                                    .name("get_weather")
+                                    .id("fc_001")
+                                    .build());
+            ResponseStreamEvent completedTurn1 =
+                    TestSdkFixtures.completedEvent(
+                            TestSdkFixtures.completedResponse(
+                                    List.of(
+                                            TestSdkFixtures.reasoningItem(
+                                                    "plan", "enc_stream", null),
+                                            TestSdkFixtures.messageItemWithPhase(
+                                                    "Checking...",
+                                                    ResponseOutputMessage.Phase.COMMENTARY),
+                                            TestSdkFixtures.functionCallItem(
+                                                    "call_w",
+                                                    "get_weather",
+                                                    "{\"city\":\"NYC\"}"))));
+            ResponseStreamEvent completedTurn2 =
+                    TestSdkFixtures.completedEvent(
+                            TestSdkFixtures.completedResponse(
+                                    List.of(
+                                            TestSdkFixtures.messageItemWithPhase(
+                                                    "Sunny.",
+                                                    ResponseOutputMessage.Phase.FINAL_ANSWER))));
+
+            var turn1Stream =
+                    TestSdkFixtures.streamOf(
+                            List.of(
+                                    TestSdkFixtures.reasoningSummaryDeltaEvent("plan", "rs_001"),
+                                    TestSdkFixtures.textDeltaEvent("Checking...", "msg_001"),
+                                    TestSdkFixtures.outputItemAddedEvent(fnItemWithId),
+                                    TestSdkFixtures.functionCallArgsDeltaEvent(
+                                            "{\"city\":\"NYC\"}", "fc_001"),
+                                    completedTurn1));
+            var turn2Stream =
+                    TestSdkFixtures.streamOf(
+                            List.of(
+                                    TestSdkFixtures.textDeltaEvent("Sunny.", "msg_002"),
+                                    completedTurn2));
+
+            when(svc.createStreaming(any(ResponseCreateParams.class)))
+                    .thenReturn(turn1Stream, turn2Stream);
+
+            GenerateOptions configured =
+                    withExecConfig(
+                            GenerateOptions.builder()
+                                    .apiKey(API_KEY)
+                                    .modelName("gpt-6.2-astra")
+                                    .stream(true)
+                                    .reasoningEffort("medium")
+                                    .build());
+            OpenAIResponsesChatModel model = createModel(client, configured, null, null, 0);
+
+            ReasoningContext context = new ReasoningContext("assistant");
+            List<ChatResponse> turn1Chunks =
+                    model.stream(simpleMessages(), null, null).collectList().block();
+            assertNotNull(turn1Chunks);
+            for (ChatResponse chunk : turn1Chunks) {
+                context.processChunk(chunk);
+            }
+            Msg assistantTurn1 = context.buildFinalMessage();
+            assertNotNull(assistantTurn1);
+
+            List<Msg> turn2Messages =
+                    List.of(
+                            UserMessage.builder().content(text("Weather in NYC?")).build(),
+                            assistantTurn1,
+                            ToolResultMessage.builder()
+                                    .content(
+                                            ToolResultBlock.builder()
+                                                    .id("call_w")
+                                                    .name("get_weather")
+                                                    .output(text("Sunny, 72F"))
+                                                    .build())
+                                    .build());
+
+            List<ChatResponse> turn2Chunks =
+                    model.stream(turn2Messages, null, null).collectList().block();
+            assertNotNull(turn2Chunks);
+            assertEquals(
+                    "final_answer",
+                    turn2Chunks
+                            .get(turn2Chunks.size() - 1)
+                            .getMetadata()
+                            .get(OpenAIOfficialConstants.MD_MESSAGE_PHASE));
+
+            ArgumentCaptor<ResponseCreateParams> captor =
+                    ArgumentCaptor.forClass(ResponseCreateParams.class);
+            verify(svc, times(2)).createStreaming(captor.capture());
+            ResponseCreateParams turn2Params = captor.getAllValues().get(1);
+
+            ResponseReasoningItem replayReasoning = findReasoningItem(turn2Params);
+            assertNotNull(replayReasoning);
+            assertEquals("enc_stream", replayReasoning.encryptedContent().orElseThrow());
+
+            List<ResponseInputItem> input = turn2Params.input().orElseThrow().asResponse();
+            EasyInputMessage assistantInput =
+                    input.stream()
+                            .filter(ResponseInputItem::isEasyInputMessage)
+                            .map(ResponseInputItem::asEasyInputMessage)
+                            .filter(m -> m.role() == EasyInputMessage.Role.ASSISTANT)
+                            .findFirst()
+                            .orElseThrow();
+            assertEquals("Checking...", assistantInput.content().asTextInput());
+            assertEquals(EasyInputMessage.Phase.COMMENTARY, assistantInput.phase().orElseThrow());
         }
     }
 

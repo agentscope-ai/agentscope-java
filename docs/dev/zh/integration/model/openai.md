@@ -5,6 +5,8 @@ en_link: /dev/en/integration/model/openai
 
 `agentscope-extensions-model-openai` 接入 OpenAI Chat Completions 风格的模型。OpenAI 兼容端点也使用这个适配模块，例如 DeepSeek、GLM、Kimi、MiniMax 等遵循 OpenAI API 载荷格式的服务。
 
+> **注意**：本模块默认调用 `/v1/chat/completions`。对于工具调用必须走 Responses API 的 OpenAI 模型（如 `gpt-6.2-astra` 和 `gpt-6.2-sol`），请改用 [OpenAI Official](/dev/zh/integration/model/openai-official)（`openai-official`）。此外，`temperature` 与 `top_p` 会在显式设置时透传，调用不支持采样参数的模型时请勿设置。
+
 ## 添加依赖
 
 ```xml

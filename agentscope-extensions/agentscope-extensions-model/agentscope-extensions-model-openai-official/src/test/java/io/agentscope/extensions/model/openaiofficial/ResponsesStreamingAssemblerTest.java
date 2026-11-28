@@ -29,6 +29,7 @@ import com.openai.core.http.StreamResponse;
 import com.openai.models.responses.ResponseFunctionToolCall;
 import com.openai.models.responses.ResponseFunctionWebSearch;
 import com.openai.models.responses.ResponseOutputItem;
+import com.openai.models.responses.ResponseOutputMessage;
 import com.openai.models.responses.ResponseStatus;
 import com.openai.models.responses.ResponseStreamEvent;
 import io.agentscope.core.message.Base64Source;
@@ -608,6 +609,58 @@ class ResponsesStreamingAssemblerTest {
         assertEquals(
                 "max_output_tokens",
                 terminal.getMetadata().get(OpenAIOfficialConstants.MD_RESPONSE_INCOMPLETE_REASON));
+    }
+
+    @Test
+    void terminalReextractsMessagePhase() {
+        List<ResponseStreamEvent> events =
+                List.of(
+                        TestSdkFixtures.textDeltaEvent("Checking...", "msg_001"),
+                        TestSdkFixtures.completedEvent(
+                                TestSdkFixtures.completedResponse(
+                                        List.of(
+                                                TestSdkFixtures.messageItemWithPhase(
+                                                        "Checking...",
+                                                        ResponseOutputMessage.Phase.COMMENTARY)))));
+        List<ChatResponse> results = assemble(events);
+
+        ChatResponse terminal = terminalBlock(results);
+        assertEquals(
+                "commentary", terminal.getMetadata().get(OpenAIOfficialConstants.MD_MESSAGE_PHASE));
+        assertFalse(
+                terminal.getMetadata().containsKey(OpenAIOfficialConstants.MD_ASSISTANT_MESSAGES));
+    }
+
+    @Test
+    void terminalReextractsMultiplePhasedMessages() {
+        List<ResponseStreamEvent> events =
+                List.of(
+                        TestSdkFixtures.textDeltaEvent("Checking...", "msg_001"),
+                        TestSdkFixtures.textDeltaEvent("All set.", "msg_002"),
+                        TestSdkFixtures.completedEvent(
+                                TestSdkFixtures.completedResponse(
+                                        List.of(
+                                                TestSdkFixtures.messageItemWithPhase(
+                                                        "Checking...",
+                                                        ResponseOutputMessage.Phase.COMMENTARY),
+                                                TestSdkFixtures.messageItemWithPhase(
+                                                        "All set.",
+                                                        ResponseOutputMessage.Phase
+                                                                .FINAL_ANSWER)))));
+        List<ChatResponse> results = assemble(events);
+
+        ChatResponse terminal = terminalBlock(results);
+        assertEquals(
+                "final_answer",
+                terminal.getMetadata().get(OpenAIOfficialConstants.MD_MESSAGE_PHASE));
+        Object rawMessages =
+                terminal.getMetadata().get(OpenAIOfficialConstants.MD_ASSISTANT_MESSAGES);
+        assertInstanceOf(List.class, rawMessages);
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> messages = (List<Map<String, Object>>) rawMessages;
+        assertEquals(2, messages.size());
+        assertEquals(Map.of("text", "Checking...", "phase", "commentary"), messages.get(0));
+        assertEquals(Map.of("text", "All set.", "phase", "final_answer"), messages.get(1));
     }
 
     @Test

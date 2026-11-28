@@ -46,6 +46,7 @@ final class OpenAIOfficialConstants {
                     "service_tier",
                     "safety_identifier",
                     "store",
+                    "text.verbosity",
                     "reasoning.summary",
                     "reasoning.context",
                     "reasoning.mode");
@@ -60,6 +61,10 @@ final class OpenAIOfficialConstants {
     static final String MD_RESPONSE_INCOMPLETE_REASON = "openai.response.incomplete_reason";
     static final String MD_RESPONSE_ERROR = "openai.response.error";
     static final String MD_RESPONSE_CITATIONS = "openai.response.citations";
+    static final String MD_ASSISTANT_MESSAGES = "openai.response.messages";
+
+    // Message-level (internal state, used for history replay)
+    static final String MD_MESSAGE_PHASE = "openai.message.phase";
 
     // Reasoning-level (internal state, used for history replay)
     static final String MD_REASONING_ENCRYPTED_CONTENT = "openai.reasoning.encrypted_content";

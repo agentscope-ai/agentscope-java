@@ -34,6 +34,7 @@ import com.openai.models.responses.ResponseInputContent;
 import com.openai.models.responses.ResponseInputFile;
 import com.openai.models.responses.ResponseInputItem;
 import com.openai.models.responses.ResponseOutputItem;
+import com.openai.models.responses.ResponseTextConfig;
 import com.openai.models.responses.Tool;
 import com.openai.models.responses.ToolSearchTool;
 import com.openai.models.responses.WebSearchTool;
@@ -352,6 +353,96 @@ class ResponsesRequestMapperTest {
             ResponseCreateParams params = mapWith(opts, null, null);
             assertTrue(params.toolChoice().isPresent());
         }
+
+        @ParameterizedTest
+        @ValueSource(strings = {"low", "medium", "high"})
+        void textVerbosity(String verbosity) {
+            GenerateOptions opts =
+                    GenerateOptions.builder().modelName(MODEL).stream(false)
+                            .additionalBodyParam("text.verbosity", verbosity)
+                            .build();
+            ResponseCreateParams params = mapWith(opts, null, null);
+            assertTrue(params.text().isPresent());
+            assertFalse(params.text().orElseThrow().format().isPresent());
+            assertEquals(
+                    verbosity, params.text().orElseThrow().verbosity().orElseThrow().asString());
+        }
+
+        @Test
+        void textVerbosityInvalidValueThrows() {
+            GenerateOptions opts =
+                    GenerateOptions.builder().modelName(MODEL).stream(false)
+                            .additionalBodyParam("text.verbosity", "verbose")
+                            .build();
+            assertThrows(RuntimeException.class, () -> mapWith(opts, null, null));
+        }
+
+        @Test
+        void textVerbosityWithResponseFormatText() {
+            GenerateOptions opts =
+                    GenerateOptions.builder().modelName(MODEL).stream(false)
+                            .responseFormat(ResponseFormat.text())
+                            .additionalBodyParam("text.verbosity", "low")
+                            .build();
+            ResponseCreateParams params = mapWith(opts, null, null);
+            assertTrue(params.text().isPresent());
+            assertFalse(params.text().orElseThrow().format().isPresent());
+            assertEquals(
+                    ResponseTextConfig.Verbosity.LOW,
+                    params.text().orElseThrow().verbosity().orElseThrow());
+        }
+
+        @Test
+        void textVerbosityCoexistsWithJsonObject() {
+            GenerateOptions opts =
+                    GenerateOptions.builder().modelName(MODEL).stream(false)
+                            .responseFormat(ResponseFormat.jsonObject())
+                            .additionalBodyParam("text.verbosity", "low")
+                            .build();
+            ResponseCreateParams params = mapWith(opts, null, null);
+            assertTrue(params.text().isPresent());
+            assertTrue(params.text().orElseThrow().format().orElseThrow().isJsonObject());
+            assertEquals(
+                    ResponseTextConfig.Verbosity.LOW,
+                    params.text().orElseThrow().verbosity().orElseThrow());
+        }
+
+        @Test
+        void textVerbosityCoexistsWithJsonSchema() {
+            JsonSchema schema =
+                    JsonSchema.builder().name("Result").schema(Map.of("type", "object")).build();
+            GenerateOptions opts =
+                    GenerateOptions.builder().modelName(MODEL).stream(false)
+                            .responseFormat(ResponseFormat.jsonSchema(schema))
+                            .additionalBodyParam("text.verbosity", "high")
+                            .build();
+            ResponseCreateParams params =
+                    ResponsesRequestMapper.map(
+                            List.of(SystemMessage.builder().content(text("s")).build()),
+                            null,
+                            null,
+                            opts,
+                            null,
+                            true,
+                            ResponsesRequestMapper::mapHistory);
+            ResponseTextConfig textConfig = params.text().orElseThrow();
+            assertTrue(textConfig.format().orElseThrow().isJsonSchema());
+            assertEquals(
+                    true, textConfig.format().orElseThrow().asJsonSchema().strict().orElseThrow());
+            assertEquals(ResponseTextConfig.Verbosity.HIGH, textConfig.verbosity().orElseThrow());
+        }
+
+        @ParameterizedTest
+        @ValueSource(strings = {"xhigh", "max"})
+        void reasoningEffortAcceptsXhighAndMax(String effort) {
+            GenerateOptions opts =
+                    GenerateOptions.builder().modelName(MODEL).stream(false)
+                            .reasoningEffort(effort)
+                            .build();
+            ResponseCreateParams params = mapWith(opts, null, null);
+            assertTrue(params.reasoning().isPresent());
+            assertEquals(effort, params.reasoning().get().effort().orElseThrow().asString());
+        }
     }
 
     // ── AdditionalBodyParams whitelist ──────────────────────────
@@ -648,6 +739,130 @@ class ResponsesRequestMapperTest {
                     "[document: report.pdf, application/pdf, url:"
                             + " https://example.com/report.pdf]",
                     item.asEasyInputMessage().content().asTextInput());
+        }
+
+        @Test
+        void assistantMessageReplaysCommentaryPhase() {
+            Msg assistant =
+                    AssistantMessage.builder()
+                            .content(text("Checking files..."))
+                            .metadata(
+                                    Map.of(OpenAIOfficialConstants.MD_MESSAGE_PHASE, "commentary"))
+                            .build();
+
+            ResponseCreateParams params = mapHistory(baseOptions(), List.of(assistant));
+
+            EasyInputMessage item =
+                    params.input().orElseThrow().asResponse().get(0).asEasyInputMessage();
+            assertEquals(EasyInputMessage.Role.ASSISTANT, item.role());
+            assertEquals("Checking files...", item.content().asTextInput());
+            assertEquals(EasyInputMessage.Phase.COMMENTARY, item.phase().orElseThrow());
+        }
+
+        @Test
+        void assistantMessageReplaysFinalAnswerPhase() {
+            Msg assistant =
+                    AssistantMessage.builder()
+                            .content(text("All done."))
+                            .metadata(
+                                    Map.of(
+                                            OpenAIOfficialConstants.MD_MESSAGE_PHASE,
+                                            "final_answer"))
+                            .build();
+
+            ResponseCreateParams params = mapHistory(baseOptions(), List.of(assistant));
+
+            EasyInputMessage item =
+                    params.input().orElseThrow().asResponse().get(0).asEasyInputMessage();
+            assertEquals(EasyInputMessage.Phase.FINAL_ANSWER, item.phase().orElseThrow());
+        }
+
+        @Test
+        void assistantMessageReplaysUnknownPhaseForwardCompatibly() {
+            Msg assistant =
+                    AssistantMessage.builder()
+                            .content(text("Draft"))
+                            .metadata(
+                                    Map.of(
+                                            OpenAIOfficialConstants.MD_MESSAGE_PHASE,
+                                            "custom_phase"))
+                            .build();
+
+            ResponseCreateParams params = mapHistory(baseOptions(), List.of(assistant));
+
+            EasyInputMessage item =
+                    params.input().orElseThrow().asResponse().get(0).asEasyInputMessage();
+            assertEquals("custom_phase", item.phase().orElseThrow().asString());
+        }
+
+        @Test
+        void assistantMessageWithoutPhaseOmitsPhase() {
+            Msg assistant = AssistantMessage.builder().content(text("Plain reply")).build();
+
+            ResponseCreateParams params = mapHistory(baseOptions(), List.of(assistant));
+
+            EasyInputMessage item =
+                    params.input().orElseThrow().asResponse().get(0).asEasyInputMessage();
+            assertFalse(item.phase().isPresent());
+        }
+
+        @Test
+        void assistantMultipleMessagesReplayPreservesIndividualPhases() {
+            Msg assistant =
+                    AssistantMessage.builder()
+                            .content(text("Checking...Done."))
+                            .metadata(
+                                    Map.of(
+                                            OpenAIOfficialConstants.MD_MESSAGE_PHASE,
+                                            "final_answer",
+                                            OpenAIOfficialConstants.MD_ASSISTANT_MESSAGES,
+                                            List.of(
+                                                    Map.of(
+                                                            "text", "Checking...",
+                                                            "phase", "commentary"),
+                                                    Map.of(
+                                                            "text", "Done.",
+                                                            "phase", "final_answer"))))
+                            .build();
+
+            ResponseCreateParams params = mapHistory(baseOptions(), List.of(assistant));
+
+            List<ResponseInputItem> input = params.input().orElseThrow().asResponse();
+            assertEquals(2, input.size());
+            EasyInputMessage first = input.get(0).asEasyInputMessage();
+            EasyInputMessage second = input.get(1).asEasyInputMessage();
+            assertEquals("Checking...", first.content().asTextInput());
+            assertEquals(EasyInputMessage.Phase.COMMENTARY, first.phase().orElseThrow());
+            assertEquals("Done.", second.content().asTextInput());
+            assertEquals(EasyInputMessage.Phase.FINAL_ANSWER, second.phase().orElseThrow());
+        }
+
+        @Test
+        void assistantEditedTextFallsBackToSingleMessageWithFallbackPhase() {
+            Msg assistant =
+                    AssistantMessage.builder()
+                            .content(text("Edited summary"))
+                            .metadata(
+                                    Map.of(
+                                            OpenAIOfficialConstants.MD_MESSAGE_PHASE,
+                                            "final_answer",
+                                            OpenAIOfficialConstants.MD_ASSISTANT_MESSAGES,
+                                            List.of(
+                                                    Map.of(
+                                                            "text", "Checking...",
+                                                            "phase", "commentary"),
+                                                    Map.of(
+                                                            "text", "Done.",
+                                                            "phase", "final_answer"))))
+                            .build();
+
+            ResponseCreateParams params = mapHistory(baseOptions(), List.of(assistant));
+
+            List<ResponseInputItem> input = params.input().orElseThrow().asResponse();
+            assertEquals(1, input.size());
+            EasyInputMessage item = input.get(0).asEasyInputMessage();
+            assertEquals("Edited summary", item.content().asTextInput());
+            assertEquals(EasyInputMessage.Phase.FINAL_ANSWER, item.phase().orElseThrow());
         }
 
         @Test

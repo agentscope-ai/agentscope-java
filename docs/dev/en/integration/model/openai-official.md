@@ -96,7 +96,7 @@ agentscope:
 
 ## Reasoning
 
-Control reasoning effort via `GenerateOptions.reasoningEffort` (`low` / `medium` / `high` / `minimal`). To make reasoning visible in the response, explicitly enable `reasoning.summary`:
+Control reasoning effort via `GenerateOptions.reasoningEffort` (`none` / `minimal` / `low` / `medium` / `high` / `xhigh` / `max`; supported levels vary by model). To make reasoning visible in the response, explicitly enable `reasoning.summary`:
 
 ```java
 GenerateOptions options = GenerateOptions.builder()
@@ -105,14 +105,21 @@ GenerateOptions options = GenerateOptions.builder()
     .build();
 ```
 
-Encrypted reasoning content from previous turns is automatically replayed in multi-turn conversations via `Msg.metadata`. No manual management is needed.
+Encrypted reasoning content and assistant message phases (`commentary` / `final_answer`, recorded in `Msg.metadata` under `openai.message.phase`) from previous turns are automatically replayed in multi-turn conversations. No manual management is needed. When `ResponsesMultiAgentFormatter` is used, `phase` is preserved on pass-through assistant turns (tool sequences, encrypted reasoning, or bypass messages); plain assistant messages merged into `<history>` text do not retain `phase`.
 
 ## Compatibility notes
 
 This module integrates via the OpenAI Java SDK and currently supports only the Responses API; Chat Completions API support may be added in the future. The following options are **not supported** and will fail-fast when set: `frequencyPenalty`, `presencePenalty`, `topK`, `seed`, `cacheControl`, `thinkingBudget`, `endpointPath`, per-request `additionalHeaders`, and per-request `additionalQueryParams`.
 
-Responses-specific parameters are available through `GenerateOptions.additionalBodyParams` with a whitelist: `reasoning.summary`, `reasoning.context`, `reasoning.mode`, `service_tier`, `prompt_cache_key`, `prompt_cache_options`, `max_tool_calls`, `safety_identifier`, `store`, and `previous_response_id`.
+Responses-specific parameters are available through `GenerateOptions.additionalBodyParams` with a whitelist: `text.verbosity` (`low` / `medium` / `high`), `reasoning.summary`, `reasoning.context`, `reasoning.mode`, `service_tier`, `prompt_cache_key`, `prompt_cache_options`, `max_tool_calls`, `safety_identifier`, `store`, and `previous_response_id`.
 
 `store` controls server-side response storage and defaults to `false`. To use OpenAI's server-side conversation chaining, store the first response, read its ID from response metadata (`openai.response.id`), and pass that ID as `previous_response_id` in a later request. When `previous_response_id` is used, send only the new turn's input rather than repeating the full conversation history.
 
 Native structured output is always enabled (`supportsNativeStructuredOutput()` returns `true`). The SDK retry is disabled (`maxRetries=0`); retry is managed by AgentScope.
+
+### GPT-6.2 notes
+
+- **Tool calling:** Models such as `gpt-6.2-astra` and `gpt-6.2-sol` require the Responses API (`openai-official`) for tool calling; the Chat Completions module (`openai`) only supports plain chat on these models.
+- **Sampling parameters:** `temperature` and `top_p` are passed through when configured. Omit them when targeting GPT-6.2 models, as the OpenAI API rejects them with HTTP 400.
+- **Reasoning effort & service tier:** `reasoningEffort` values `none` and `minimal` and `service_tier: flex` are not supported on GPT-6.2 (use `low` or higher; OpenAI recommends starting from `medium`).
+- **Prefix immutability & prompt caching:** Starting with GPT-6.2, the Responses API drops cached reasoning items if earlier conversation history prefixes are edited (for example after compaction). System prompts are sent as leading `input` messages with the `system` role rather than top-level `instructions`; keep conversation prefixes stable to take advantage of prompt caching, and use `text.verbosity` to adjust output conciseness.
