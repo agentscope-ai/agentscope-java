@@ -80,7 +80,7 @@ ReActAgent agent =
 
 - `invoke_agent <name>` —— 包裹整次 reply
 - `chat <model>` —— 包裹每次模型 API 调用
-- `execute_tool <name>` —— 包裹每次工具执行
+- `execute_tool <name>` —— 记录同一批工具调用。只要有一个工具返回 `ToolResultState.ERROR`，即使事件流正常结束，该批次的 span 状态也是 `ERROR`。
 
 未配置 OpenTelemetry SDK（只剩默认的 no-op provider）时，所有 hook 会直接短路到 `next.apply(input)`，几乎零开销。
 

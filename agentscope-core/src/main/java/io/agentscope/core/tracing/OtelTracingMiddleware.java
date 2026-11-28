@@ -21,6 +21,7 @@ import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.event.AgentStartEvent;
 import io.agentscope.core.event.ModelCallEndEvent;
 import io.agentscope.core.event.ToolResultEndEvent;
+import io.agentscope.core.message.ToolResultState;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.middleware.ActingInput;
 import io.agentscope.core.middleware.AgentInput;
@@ -38,6 +39,7 @@ import java.util.EnumSet;
 import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Function;
 import java.util.stream.Collectors;
@@ -328,22 +330,30 @@ public class OtelTracingMiddleware implements MiddlewareBase {
 
                     Context otelCtx = span.storeInContext(parentContext);
                     AtomicReference<Boolean> ended = new AtomicReference<>(false);
+                    AtomicBoolean toolFailed = new AtomicBoolean();
                     Set<String> callIds = ConcurrentHashMap.newKeySet();
 
                     return ContextPropagationOperator.runWithContext(
                             next.apply(input)
                                     .doOnNext(
                                             event -> {
-                                                if (event instanceof ToolResultEndEvent tre
-                                                        && tre.getToolCallId() != null) {
-                                                    callIds.add(tre.getToolCallId());
+                                                if (event instanceof ToolResultEndEvent tre) {
+                                                    if (tre.getToolCallId() != null) {
+                                                        callIds.add(tre.getToolCallId());
+                                                    }
+                                                    if (tre.getState() == ToolResultState.ERROR) {
+                                                        toolFailed.set(true);
+                                                    }
                                                 }
                                             })
                                     .doOnComplete(
                                             () -> {
                                                 if (ended.compareAndSet(false, true)) {
                                                     setToolCallIds(span, callIds);
-                                                    span.setStatus(StatusCode.OK);
+                                                    span.setStatus(
+                                                            toolFailed.get()
+                                                                    ? StatusCode.ERROR
+                                                                    : StatusCode.OK);
                                                     span.end();
                                                 }
                                             })
