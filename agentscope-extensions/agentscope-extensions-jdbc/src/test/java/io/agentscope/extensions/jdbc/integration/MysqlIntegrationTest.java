@@ -22,19 +22,34 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.mysql.cj.jdbc.MysqlDataSource;
+import io.agentscope.core.agent.RuntimeContext;
+import io.agentscope.core.message.Msg;
+import io.agentscope.core.message.MsgRole;
+import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.model.ChatResponse;
+import io.agentscope.core.model.GenerateOptions;
+import io.agentscope.core.model.Model;
+import io.agentscope.core.model.ToolSchema;
 import io.agentscope.core.skill.AgentSkill;
 import io.agentscope.core.state.State;
 import io.agentscope.extensions.jdbc.JdbcDistributedStore;
 import io.agentscope.extensions.jdbc.dialect.AbstractJdbcDialect;
 import io.agentscope.extensions.jdbc.skill.JdbcAgentSkillRepository;
+import io.agentscope.harness.agent.HarnessAgent;
 import io.agentscope.harness.agent.IsolationScope;
 import io.agentscope.harness.agent.filesystem.remote.store.StoreItem;
+import io.agentscope.harness.agent.filesystem.spec.RemoteFilesystemSpec;
+import io.agentscope.harness.agent.journal.WorkspaceThreadJournalStore;
 import io.agentscope.harness.agent.sandbox.SandboxIsolationKey;
 import io.agentscope.harness.agent.sandbox.SandboxLease;
 import io.agentscope.harness.agent.sandbox.snapshot.RemoteSnapshotClient;
 import java.io.ByteArrayInputStream;
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.sql.Connection;
 import java.sql.Statement;
+import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -43,9 +58,11 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.MethodOrderer;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestMethodOrder;
+import org.junit.jupiter.api.io.TempDir;
 import org.testcontainers.containers.MySQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
+import reactor.core.publisher.Flux;
 
 /**
  * Testcontainers integration test for MySQL — validates all four components
@@ -65,6 +82,62 @@ class MysqlIntegrationTest {
             new MySQLContainer<>("mysql:8.0").withDatabaseName("agentscope");
 
     record TestState(String value) implements State {}
+
+    @Test
+    void userScopedRemoteSessionWritesNoLocalTranscripts(@TempDir Path workspace)
+            throws IOException {
+        RuntimeContext context =
+                RuntimeContext.builder().userId("transcript-user").sessionId("session").build();
+        Model model =
+                new Model() {
+                    @Override
+                    public String getModelName() {
+                        return "stub-model";
+                    }
+
+                    @Override
+                    public Flux<ChatResponse> stream(
+                            List<Msg> messages, List<ToolSchema> tools, GenerateOptions options) {
+                        return Flux.just(
+                                new ChatResponse(
+                                        "response",
+                                        List.of(TextBlock.builder().text("ok").build()),
+                                        null,
+                                        Map.of(),
+                                        "stop"));
+                    }
+                };
+        try (HarnessAgent agent =
+                HarnessAgent.builder()
+                        .name("transcript-agent")
+                        .model(model)
+                        .workspace(workspace)
+                        .distributedStore(JdbcDistributedStore.create(createDataSource()))
+                        .filesystem(new RemoteFilesystemSpec().isolationScope(IsolationScope.USER))
+                        .build()) {
+            Msg input =
+                    Msg.builder()
+                            .role(MsgRole.USER)
+                            .content(TextBlock.builder().text("hello").build())
+                            .build();
+            Msg reply = agent.call(input, context).block(Duration.ofSeconds(30));
+            assertNotNull(reply);
+            assertEquals("ok", reply.getTextContent());
+            var journal = new WorkspaceThreadJournalStore(agent.getWorkspaceManager());
+            var keys = journal.list(context);
+            assertEquals(1, keys.size());
+            assertTrue(journal.open(keys.get(0), context).head().seq() > 0);
+        }
+
+        try (var paths = Files.walk(workspace)) {
+            assertEquals(
+                    List.of(),
+                    paths.filter(Files::isRegularFile)
+                            .filter(path -> path.getFileName().toString().endsWith(".jsonl"))
+                            .map(workspace::relativize)
+                            .toList());
+        }
+    }
 
     @Test
     @DisplayName("01: AbstractJdbcDialect.from detects MySQL")
