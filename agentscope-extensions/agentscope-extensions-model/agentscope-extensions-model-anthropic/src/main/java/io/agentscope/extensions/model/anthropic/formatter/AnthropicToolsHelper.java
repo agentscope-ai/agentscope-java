@@ -23,6 +23,8 @@ import static com.anthropic.models.messages.ToolChoice.ofTool;
 import com.anthropic.core.JsonValue;
 import com.anthropic.core.ObjectMappers;
 import com.anthropic.models.messages.MessageCreateParams;
+import com.anthropic.models.messages.ThinkingConfigDisabled;
+import com.anthropic.models.messages.ThinkingConfigEnabled;
 import com.anthropic.models.messages.Tool;
 import com.anthropic.models.messages.ToolChoiceAny;
 import com.anthropic.models.messages.ToolChoiceAuto;
@@ -46,6 +48,9 @@ import org.slf4j.LoggerFactory;
 public class AnthropicToolsHelper {
 
     private static final Logger log = LoggerFactory.getLogger(AnthropicToolsHelper.class);
+
+    /** Anthropic API minimum for enabled thinking; used when includeThoughts=true has no budget. */
+    private static final long DEFAULT_THINKING_BUDGET = 1024L;
 
     /**
      * Apply tools to the message create params builder.
@@ -275,6 +280,9 @@ public class AnthropicToolsHelper {
             builder.maxTokens(maxTokens);
         }
 
+        // Thinking
+        applyThinkingConfig(builder, options, defaultOptions);
+
         // Apply additional parameters (merge defaultOptions first, then options to override)
         // Apply additional headers
         applyAdditionalHeaders(builder, defaultOptions);
@@ -287,6 +295,29 @@ public class AnthropicToolsHelper {
         // Apply additional query params
         applyAdditionalQueryParams(builder, defaultOptions);
         applyAdditionalQueryParams(builder, options);
+    }
+
+    /**
+     * Maps thinking options to the Anthropic thinking config. Explicit disable wins over a budget;
+     * a budget enables thinking; includeThoughts=true without a budget enables the API minimum.
+     * Values pass through without local validation so the API stays the source of truth for model
+     * support. Runs before additional body params so users can override via additionalBodyParams.
+     */
+    private static void applyThinkingConfig(
+            MessageCreateParams.Builder builder,
+            GenerateOptions options,
+            GenerateOptions defaultOptions) {
+        Boolean includeThoughts =
+                getOption(options, defaultOptions, GenerateOptions::getIncludeThoughts);
+        Integer thinkingBudget =
+                getOption(options, defaultOptions, GenerateOptions::getThinkingBudget);
+        if (Boolean.FALSE.equals(includeThoughts)) {
+            builder.thinking(ThinkingConfigDisabled.builder().build());
+        } else if (thinkingBudget != null) {
+            builder.thinking(ThinkingConfigEnabled.of(thinkingBudget.longValue()));
+        } else if (Boolean.TRUE.equals(includeThoughts)) {
+            builder.thinking(ThinkingConfigEnabled.of(DEFAULT_THINKING_BUDGET));
+        }
     }
 
     private static void applyAdditionalHeaders(
