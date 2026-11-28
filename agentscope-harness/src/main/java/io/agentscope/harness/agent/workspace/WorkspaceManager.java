@@ -51,6 +51,7 @@ import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
@@ -1287,11 +1288,84 @@ public class WorkspaceManager implements AutoCloseable {
         List<FileInfo> out = new ArrayList<>();
         if (filesystem != null) {
             GlobResult glob = filesystem.glob(rc, "*.md", MEMORY_DIR);
-            if (glob.isSuccess() && glob.matches() != null) {
+            if (glob != null && glob.isSuccess() && glob.matches() != null) {
                 out.addAll(glob.matches());
             }
         }
         return out;
+    }
+
+    /**
+     * Moves a memory ledger within its authoritative backend. Sandbox-backed paths use the
+     * same host runtime-data namespace as memory reads, writes and listing; persistent
+     * filesystem routes retain their native move behavior. Moves between host and persistent
+     * backends are rejected rather than copying or deleting a potentially stale sandbox file.
+     */
+    public WriteResult moveMemoryFile(RuntimeContext rc, String fromRelative, String toRelative) {
+        String src = requireSafeRelativePath(fromRelative);
+        String dst = requireSafeRelativePath(toRelative);
+        if (!src.startsWith(MEMORY_DIR + "/") || !dst.startsWith(MEMORY_DIR + "/")) {
+            return WriteResult.fail("Memory moves require paths under memory/");
+        }
+        boolean hostSource = memoryFilesRouteToLiveSandbox(src);
+        boolean hostTarget = memoryFilesRouteToLiveSandbox(dst);
+        if (hostSource != hostTarget) {
+            return WriteResult.fail(
+                    "Cannot move memory files between host and filesystem backends");
+        }
+        if (!hostSource) {
+            return filesystem == null
+                    ? WriteResult.fail("No filesystem configured")
+                    : filesystem.move(rc, src, dst);
+        }
+        Path from = resolveRuntimeDataPath(rc, src);
+        Path to = resolveRuntimeDataPath(rc, dst);
+        if (!Files.exists(from)) {
+            return WriteResult.fail("Source does not exist: " + src);
+        }
+        try {
+            Files.createDirectories(to.getParent());
+            Files.move(from, to, StandardCopyOption.REPLACE_EXISTING);
+            return WriteResult.ok(dst);
+        } catch (IOException e) {
+            return WriteResult.fail(
+                    "Error moving '" + src + "' to '" + dst + "': " + e.getMessage());
+        }
+    }
+
+    /**
+     * After a failed daily archive move, checks whether another worker already moved the source.
+     * Both observations use the same runtime namespace and backend routing as the move.
+     */
+    public boolean isDailyMemoryFileArchived(RuntimeContext rc, LocalDate date) {
+        String name = date + ".md";
+        String src = MEMORY_DIR + "/" + name;
+        String archive = MEMORY_DIR + "/archive";
+        String dst = archive + "/" + name;
+        boolean host = memoryFilesRouteToLiveSandbox(src);
+        if (host != memoryFilesRouteToLiveSandbox(dst)) {
+            return false;
+        }
+        if (host) {
+            return Files.notExists(resolveRuntimeDataPath(rc, src))
+                    && Files.isRegularFile(resolveRuntimeDataPath(rc, dst));
+        }
+        if (filesystem == null || filesystem.exists(rc, src)) {
+            return false;
+        }
+        // exists() also returns true for directories; require the exact archived file instead.
+        GlobResult glob = filesystem.glob(rc, name, archive);
+        if (glob == null || !glob.isSuccess() || glob.matches() == null) {
+            return false;
+        }
+        String namespaced = toWorkspaceRelativeString(resolveRuntimeDataPath(rc, dst));
+        return glob.matches().stream()
+                .anyMatch(
+                        file -> {
+                            String path = normalizeRelativePath(file.path());
+                            return !file.isDirectory()
+                                    && (path.equals(dst) || path.equals(namespaced));
+                        });
     }
 
     /**
