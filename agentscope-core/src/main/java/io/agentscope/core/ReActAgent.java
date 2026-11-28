@@ -2735,6 +2735,21 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                 return resumeAgent();
             }
 
+            // Transcript-replaying clients resend results that were already consumed in an
+            // earlier round. Such a result belongs to no pending call, so it is dropped here —
+            // ahead of pending-tool recovery and of every "the caller provided results" decision
+            // below — and the rest proceeds exactly as if it had never been sent (#3043).
+            boolean hadInput = msgs != null && !msgs.isEmpty();
+            msgs = withoutStaleToolResults(msgs, pendingIds);
+
+            // The input consisted solely of replayed results: the caller said nothing about the
+            // pending calls, so nothing is resumed, patched or persisted — the calls keep
+            // waiting exactly as they were, and the agent reports that it is still waiting.
+            // Resuming here would dispatch the pending calls a second time.
+            if (hadInput && msgs.isEmpty()) {
+                return Mono.just(stillWaitingMsg(pendingIds));
+            }
+
             // Pending-tool-call recovery: auto-patch orphaned pending tool calls with synthetic
             // error results so the agent can continue instead of crashing. This must happen after
             // the permission HITL flow so ASKING tool calls are handled by confirmation first.
@@ -3155,6 +3170,92 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         }
 
         /**
+         * Removes every {@link ToolResultBlock} whose id is not in {@code pendingIds}, keeping all
+         * other content (current results, user text, other blocks) in place.
+         *
+         * <p>A result outside the pending set is a replay from an earlier round: no pending call is
+         * waiting for it, so it is neither a protocol error nor a statement about the calls that
+         * are still pending. Dropping only those blocks leaves the remaining input to the unchanged
+         * rules — a partial result still may not accompany text, and an input left with no results
+         * is handled as "no results supplied", so the pending calls stay pending unless pending-tool
+         * recovery (which is opt-in) cancels them.
+         *
+         * <p>Returns {@code msgs} itself when nothing is stale. A message left without content is
+         * omitted; the caller's {@link Msg} objects are never mutated.
+         *
+         * @param msgs the caller's input, may be null or empty
+         * @param pendingIds ids of the tool calls currently awaiting results
+         * @return the input without stale result blocks; empty, never null, for null input
+         */
+        private List<Msg> withoutStaleToolResults(List<Msg> msgs, Set<String> pendingIds) {
+            if (msgs == null || msgs.isEmpty()) {
+                return List.of();
+            }
+            List<Msg> kept = null;
+            int dropped = 0;
+            for (int i = 0; i < msgs.size(); i++) {
+                Msg msg = msgs.get(i);
+                boolean stale =
+                        msg.getContentBlocks(ToolResultBlock.class).stream()
+                                .anyMatch(block -> !pendingIds.contains(block.getId()));
+                if (!stale) {
+                    if (kept != null) {
+                        kept.add(msg);
+                    }
+                    continue;
+                }
+                if (kept == null) {
+                    kept = new ArrayList<>(msgs.subList(0, i));
+                }
+                List<ContentBlock> content = new ArrayList<>();
+                for (ContentBlock block : msg.getContent()) {
+                    if (block instanceof ToolResultBlock result
+                            && !pendingIds.contains(result.getId())) {
+                        dropped++;
+                        continue;
+                    }
+                    content.add(block);
+                }
+                if (!content.isEmpty()) {
+                    kept.add(msg.withContent(content));
+                }
+            }
+            if (dropped > 0) {
+                log.warn(
+                        "Ignored {} replayed tool result(s) that match no pending tool call;"
+                                + " pending: {}",
+                        dropped,
+                        pendingIds);
+            }
+            return kept != null ? kept : msgs;
+        }
+
+        /**
+         * Builds the "still waiting" reply for a call whose input carried only replayed results:
+         * the pending tool calls, each paired with its suspended marker, exactly as they were
+         * reported when the agent first paused. No state is read other than the pending calls and
+         * none is changed.
+         *
+         * @param pendingIds ids of the tool calls still awaiting results
+         * @return a {@link GenerateReason#TOOL_SUSPENDED} message
+         */
+        private Msg stillWaitingMsg(Set<String> pendingIds) {
+            List<ContentBlock> content = new ArrayList<>();
+            for (ToolUseBlock toolUse :
+                    MessageUtils.extractPendingToolCalls(state.contextMutable(), getName())) {
+                if (pendingIds.contains(toolUse.getId())) {
+                    content.add(toolUse);
+                    content.add(ToolResultBlock.suspended(toolUse));
+                }
+            }
+            return AssistantMessage.builder()
+                    .name(getName())
+                    .content(content)
+                    .generateReason(GenerateReason.TOOL_SUSPENDED)
+                    .build();
+        }
+
+        /**
          * Validate input messages when there are pending tool calls, then add to context.
          *
          * <p>Validation rules:
@@ -3181,7 +3282,6 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             if (msgs == null || msgs.isEmpty()) {
                 return;
             }
-
             List<ToolResultBlock> results =
                     msgs.stream()
                             .flatMap(m -> m.getContentBlocks(ToolResultBlock.class).stream())
