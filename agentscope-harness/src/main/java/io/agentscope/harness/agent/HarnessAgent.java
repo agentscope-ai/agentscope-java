@@ -1556,6 +1556,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
 
         boolean disableMemoryTools = false;
         boolean disableMemoryHooks = false;
+        boolean disableKnowledgeContext = false;
         boolean disableWorkspaceContext = false;
         boolean disableAtPathExpansion = false;
         boolean disableSubagents = false;
@@ -2736,6 +2737,19 @@ public class HarnessAgent implements Agent, AutoCloseable {
             return this;
         }
 
+        /**
+         * Disables knowledge-related system prompt injection: the
+         * {@code ## Domain Knowledge} guidance, the {@code knowledge/KNOWLEDGE.md}
+         * content, and the knowledge file catalog. Unlike {@code disableWorkspaceContext()} this
+         * leaves {@code AGENTS.md}, {@code MEMORY.md}, and memory tools intact. Use for agents
+         * that source knowledge from a custom enterprise tool instead of the local
+         * {@code knowledge/} directory.
+         */
+        public Builder disableKnowledgeContext() {
+            this.disableKnowledgeContext = true;
+            return this;
+        }
+
         /** @deprecated Transcript persistence is part of the native journal. */
         @Deprecated
         public Builder disableTranscript() {
@@ -3048,6 +3062,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
                                 effectiveDisableMemoryTools,
                                 effectiveDisableMemoryHooks);
                 markdownMw.setAdditionalContextFiles(additionalContextFiles);
+                markdownMw.setDisableKnowledgeContext(disableKnowledgeContext);
                 markdownMw.setArtifactDeliveryEnabled(artifactDeliveryEnabled);
                 inner.middleware(markdownMw);
             }

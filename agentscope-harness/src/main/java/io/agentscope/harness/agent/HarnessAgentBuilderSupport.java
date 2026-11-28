@@ -342,6 +342,7 @@ final class HarnessAgentBuilderSupport {
         final boolean capturedMemoryEnabled = b.enableLongTermMemory || b.memoryConfigured;
         final boolean capturedDisableMemoryTools = b.disableMemoryTools;
         final boolean capturedDisableMemoryHooks = b.disableMemoryHooks;
+        final boolean capturedDisableKnowledgeContext = b.disableKnowledgeContext;
         final var capturedWebHttpClient = b.webHttpClient;
         final boolean capturedDisableWorkspaceContext = b.disableWorkspaceContext;
         final boolean capturedPlanModeEnabled = b.planModeEnabled;
@@ -405,6 +406,7 @@ final class HarnessAgentBuilderSupport {
             // Thread tools are independent of long-term memory; inherit their disable flag too.
             if (capturedDisableMemoryTools) sub.disableMemoryTools();
             if (capturedDisableMemoryHooks) sub.disableMemoryHooks();
+            if (capturedDisableKnowledgeContext) sub.disableKnowledgeContext();
             if (capturedWebHttpClient != null) sub.webHttpClient(capturedWebHttpClient);
             if (capturedDisableWorkspaceContext) sub.disableWorkspaceContext();
             configurePlanMode(
@@ -475,6 +477,7 @@ final class HarnessAgentBuilderSupport {
         final boolean capturedMemoryEnabled = b.enableLongTermMemory || b.memoryConfigured;
         final boolean capturedDisableMemoryTools = b.disableMemoryTools;
         final boolean capturedDisableMemoryHooks = b.disableMemoryHooks;
+        final boolean capturedDisableKnowledgeContext = b.disableKnowledgeContext;
         final var capturedWebHttpClient = b.webHttpClient;
         final boolean capturedPlanModeEnabled = b.planModeEnabled;
         final boolean capturedPlanModeAllowShell = b.planModeAllowShell;
@@ -598,6 +601,7 @@ final class HarnessAgentBuilderSupport {
             if (capturedDisableRepeatedFailureGuard) sub.disableRepeatedFailureGuard();
             if (capturedDisableMemoryTools) sub.disableMemoryTools();
             if (capturedDisableMemoryHooks) sub.disableMemoryHooks();
+            if (capturedDisableKnowledgeContext) sub.disableKnowledgeContext();
             if (capturedWebHttpClient != null) sub.webHttpClient(capturedWebHttpClient);
             configurePlanMode(
                     sub, capturedPlanModeEnabled, capturedPlanModeAllowShell, capturedPlanFileDir);
