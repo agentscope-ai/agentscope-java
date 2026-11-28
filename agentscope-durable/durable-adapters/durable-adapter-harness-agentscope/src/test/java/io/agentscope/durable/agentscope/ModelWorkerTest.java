@@ -22,6 +22,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import com.sun.net.httpserver.HttpServer;
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.TextBlock;
@@ -50,6 +51,9 @@ import io.agentscope.durable.store.ObjectStore;
 import io.agentscope.durable.store.RecordObjectStore;
 import io.agentscope.extensions.durable.jdbc.FileObjectStore;
 import io.agentscope.extensions.durable.jdbc.JdbcRecordStore;
+import io.agentscope.extensions.model.openai.OpenAIChatModel;
+import java.io.IOException;
+import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.time.Duration;
@@ -303,6 +307,180 @@ class ModelWorkerTest {
                 assertEquals(TurnStatus.FAILED, turn.status().status());
             }
         }
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    @Timeout(20)
+    void cleanEofFromModelIsAFailedAttemptAndDurableCanRecover(boolean deliverPartial)
+            throws Exception {
+        var requests = new AtomicInteger();
+        var server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        server.createContext(
+                "/v1/chat/completions",
+                exchange -> {
+                    try (exchange) {
+                        exchange.getRequestBody().readAllBytes();
+                        int attempt = requests.incrementAndGet();
+                        String body =
+                                attempt == 1
+                                        ? (deliverPartial ? frame("partial", null) : "")
+                                        : frame("recovered", "stop") + "data: [DONE]\n\n";
+                        var bytes = body.getBytes(StandardCharsets.UTF_8);
+                        exchange.getResponseHeaders().set("Content-Type", "text/event-stream");
+                        exchange.sendResponseHeaders(200, bytes.length);
+                        exchange.getResponseBody().write(bytes);
+                    }
+                });
+        server.start();
+        try (var records = JdbcRecordStore.sqlite(directory.resolve("upstream-disconnect.db"))) {
+            var objects = new RecordObjectStore(records);
+            var ledger =
+                    new TransactionalModelExecutionStore(
+                            records, new ObjectModelOutputStore(objects), Wakeups.none());
+            var model = httpModel(server);
+            try (var runtime =
+                            runtime(
+                                    records,
+                                    objects,
+                                    ledger,
+                                    Wakeups.none(),
+                                    LiveEvents.none(),
+                                    new AgentScopeAdapterTest.ScriptedModel(false),
+                                    GenerateOptions.builder().build());
+                    var worker =
+                            new ModelWorker(ledger, ROUTE, ModelExecutor.using(name -> model))) {
+                var turn = runtime.createSession(SESSION, "agent").submit("upstream-eof", "hello");
+                runtime.tick(THREAD);
+                var failedCall = ledger.ready(ROUTE, 1).get(0);
+                worker.tick();
+                var failed = ledger.query(failedCall).outcome();
+                assertEquals(Status.FAILED, failed.status());
+                assertTrue(failed.retryable());
+                assertEquals(1, requests.get());
+                runtime.tick(THREAD);
+                long until = System.nanoTime() + TimeUnit.SECONDS.toNanos(8);
+                while (ledger.ready(ROUTE, 1).isEmpty() && System.nanoTime() < until) {
+                    runtime.tick(THREAD);
+                    Thread.sleep(25);
+                }
+                var recoveredCall = ledger.ready(ROUTE, 1).get(0);
+                assertEquals(failedCall.turnId(), recoveredCall.turnId());
+                assertTrue(!failedCall.callId().equals(recoveredCall.callId()));
+                worker.tick();
+                runtime.tick(THREAD);
+                assertEquals(
+                        TurnStatus.SUCCEEDED, turn.status().status(), turn.status().toString());
+                assertEquals(
+                        "recovered",
+                        turn.status().output().path("content").get(0).path("text").asText());
+                assertEquals(2, requests.get());
+            }
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    @Test
+    @Timeout(15)
+    void cancellingATurnReleasesTheUpstreamHttpStream() throws Exception {
+        var started = new CountDownLatch(1);
+        var disconnected = new CountDownLatch(1);
+        var server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        server.createContext(
+                "/v1/chat/completions",
+                exchange -> {
+                    try (exchange) {
+                        exchange.getRequestBody().readAllBytes();
+                        exchange.getResponseHeaders().set("Content-Type", "text/event-stream");
+                        exchange.sendResponseHeaders(200, 0);
+                        var body = exchange.getResponseBody();
+                        body.write(frame("partial", null).getBytes(StandardCharsets.UTF_8));
+                        body.flush();
+                        started.countDown();
+                        // Force a write after the client aborts the still-open response.
+                        long until = System.nanoTime() + TimeUnit.SECONDS.toNanos(8);
+                        while (System.nanoTime() < until) {
+                            body.write(": keepalive\n\n".getBytes(StandardCharsets.UTF_8));
+                            body.flush();
+                            TimeUnit.MILLISECONDS.sleep(30);
+                        }
+                    } catch (IOException disconnectedClient) {
+                        disconnected.countDown();
+                    } catch (InterruptedException interrupted) {
+                        Thread.currentThread().interrupt();
+                    }
+                });
+        server.start();
+        try (var records = JdbcRecordStore.sqlite(directory.resolve("upstream-cancel.db"))) {
+            var objects = new RecordObjectStore(records);
+            var ledger =
+                    new TransactionalModelExecutionStore(
+                            records, new ObjectModelOutputStore(objects), Wakeups.none());
+            var model = httpModel(server);
+            try (var runtime =
+                            runtime(
+                                    records,
+                                    objects,
+                                    ledger,
+                                    Wakeups.none(),
+                                    LiveEvents.none(),
+                                    new AgentScopeAdapterTest.ScriptedModel(false),
+                                    GenerateOptions.builder().build());
+                    var worker =
+                            new ModelWorker(
+                                    ledger,
+                                    ROUTE,
+                                    ModelExecutor.using(name -> model),
+                                    Duration.ofMillis(800),
+                                    Duration.ofMillis(20))) {
+                var turn =
+                        runtime.createSession(SESSION, "agent").submit("upstream-cancel", "hello");
+                runtime.tick(THREAD);
+                worker.start();
+                assertTrue(started.await(5, TimeUnit.SECONDS));
+                turn.cancel("cancel-model");
+                runtime.tick(THREAD);
+                assertTrue(disconnected.await(5, TimeUnit.SECONDS));
+                assertEquals(
+                        TurnStatus.CANCELLED, turn.status().status(), turn.status().toString());
+            }
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    private static OpenAIChatModel httpModel(HttpServer server) {
+        return OpenAIChatModel.builder()
+                .apiKey("local-test-key")
+                .baseUrl("http://127.0.0.1:" + server.getAddress().getPort() + "/v1")
+                .modelName("fixture")
+                .stream(true)
+                .build();
+    }
+
+    private static String frame(String content, String finishReason) {
+        return "data: "
+                + DurableJson.value(
+                        Map.of(
+                                "id",
+                                "local-model",
+                                "object",
+                                "chat.completion.chunk",
+                                "model",
+                                "fixture",
+                                "choices",
+                                List.of(
+                                        Map.of(
+                                                "index",
+                                                0,
+                                                "delta",
+                                                Map.of("role", "assistant", "content", content),
+                                                "finish_reason",
+                                                finishReason == null
+                                                        ? DurableJson.parse("null")
+                                                        : DurableJson.value(finishReason)))))
+                + "\n\n";
     }
 
     private static List<Boolean> journalChunkReferences(

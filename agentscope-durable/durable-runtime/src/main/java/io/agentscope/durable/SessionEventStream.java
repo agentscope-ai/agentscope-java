@@ -22,9 +22,7 @@ import io.agentscope.durable.DurableTypes.PublicEvent;
 import io.agentscope.durable.DurableTypes.Snapshot;
 import java.time.Duration;
 import java.util.Objects;
-import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Consumer;
 
@@ -58,9 +56,9 @@ public final class SessionEventStream implements AutoCloseable {
     private final DurableSession session;
     private final EventFilter filter;
     private final EventPage firstPage;
-    private final ConcurrentLinkedQueue<LiveEvent> live = new ConcurrentLinkedQueue<>();
-    private final Set<String> completedMessages = ConcurrentHashMap.newKeySet();
-    private final Set<String> completedToolCalls = ConcurrentHashMap.newKeySet();
+    private final ArrayBlockingQueue<LiveEvent> live =
+            new ArrayBlockingQueue<>(EventStreamOptions.LIVE_BUFFER_CAPACITY);
+    private final LivePreviewState previews = new LivePreviewState();
     private final AutoCloseable liveSubscription;
     private final AtomicBoolean started = new AtomicBoolean();
     private final AtomicBoolean closed = new AtomicBoolean();
@@ -82,8 +80,9 @@ public final class SessionEventStream implements AutoCloseable {
                                 .subscribe(
                                         event -> {
                                             if (!closed.get()
+                                                    && session.key().equals(event.session())
                                                     && filter.matches(event)
-                                                    && options.accepts(event)) live.add(event);
+                                                    && options.accepts(event)) live.offer(event);
                                         });
             } catch (RuntimeException error) {
                 logLiveFailure(error);
@@ -180,15 +179,17 @@ public final class SessionEventStream implements AutoCloseable {
                             },
                             event -> durable(sink, event));
             reader = current;
+            current.replayThrough(firstPage.highWatermarkSequence());
             if (closed.get()) return;
             while (!closed.get()) {
+                String before = current.cursor();
                 int delivered = current.poll();
+                if (reset.get()) return;
                 replayCaughtUp = replayCaughtUp || current.replayCaughtUp();
                 if (replayCaughtUp) delivered += drainLive(sink);
-                if (reset.get()) return;
                 if (filter.threadId() != null) sink.cursor(current.cursor());
                 if (expired(until)) return;
-                if (delivered == 0) {
+                if (delivered == 0 && Objects.equals(before, current.cursor())) {
                     sink.idle();
                     current.awaitChanges(waitTime(until, pollInterval));
                 }
@@ -202,24 +203,21 @@ public final class SessionEventStream implements AutoCloseable {
             if (current != null) current.close();
             close(liveSubscription);
             closed.set(true);
+            live.clear();
         }
     }
 
     private void durable(Sink sink, PublicEvent event) {
-        if ("message.completed".equals(event.type()))
-            completedMessages.add(event.data().path("messageId").asText());
-        if ("tool.call.updated".equals(event.type()))
-            completedToolCalls.add(event.data().path("callId").asText());
+        previews.committed(event);
         sink.accept(event);
     }
 
     private int drainLive(Sink sink) {
         int delivered = 0;
-        for (LiveEvent event; (event = live.poll()) != null; ) {
-            String messageId = event.data().path("messageId").asText(null);
-            if (messageId != null && completedMessages.contains(messageId)) continue;
-            String toolCallId = event.data().path("toolCallId").asText(null);
-            if (toolCallId != null && completedToolCalls.contains(toolCallId)) continue;
+        for (int i = 0; i < EventStreamOptions.LIVE_BUFFER_CAPACITY; i++) {
+            LiveEvent event = live.poll();
+            if (event == null || closed.get()) break;
+            if (!previews.accepts(event)) continue;
             sink.live(event);
             delivered++;
         }
@@ -245,6 +243,7 @@ public final class SessionEventStream implements AutoCloseable {
         var current = reader;
         if (current != null) current.close();
         close(liveSubscription);
+        live.clear();
     }
 
     private static void close(AutoCloseable resource) {

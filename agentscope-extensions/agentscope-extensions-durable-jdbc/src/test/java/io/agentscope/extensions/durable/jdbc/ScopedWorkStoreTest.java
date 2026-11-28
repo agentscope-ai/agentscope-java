@@ -84,6 +84,30 @@ class ScopedWorkStoreTest {
     }
 
     @Test
+    void prefixRangesAndPaginationUseTheSameByteOrder() {
+        var expected = List.of("signal:%", "signal:A", "signal:a", "signal:🚀");
+        for (var key : List.of("signal:a", "signal;after", "signal:🚀", "signal:A", "signal:%")) {
+            store.transaction(
+                    key,
+                    tx -> {
+                        tx.put("", DurableJson.value(true));
+                        return null;
+                    });
+        }
+        store.transaction(
+                "scope",
+                tx -> {
+                    for (var key : expected) tx.put(key, DurableJson.value(true));
+                    tx.put("signal;after", DurableJson.value(true));
+                    assertEquals(expected, tx.keys("signal:", null, 10));
+                    assertEquals(expected.subList(2, 4), tx.keys("signal:", "signal:A", 2));
+                    return null;
+                });
+        assertEquals(expected, store.keys("signal:", null, 10));
+        assertEquals(expected.subList(2, 4), store.keys("signal:", "signal:A", 2));
+    }
+
+    @Test
     void siblingsRetainIndependentPayloadsOrderingAndDeadlinesAfterReopen() {
         store.transaction(
                 "session",

@@ -30,15 +30,20 @@
 （默认 `localhost:8081`，不是 NameServer 地址）。从仓库根目录执行，按部署环境配置
 Broker ACL 与认证；这不是生产凭据配置。
 
-两个应用默认使用 `mq-namespace=durable-sandbox`，与 echo 工具场景隔离。按
-`RocketMqExecutionTopology`，路由 `hands` 需要预先创建以下普通 Topic：
+两个应用默认使用 `mq-namespace=durable-sandbox`，与 echo 工具场景隔离。
+可用 `durable.brain-hands-tool-in-sandbox.receive-wait` 配置 Brain 的 dispatch 长轮询
+等待时间，默认值为 `1s`。按
+[Durable LiteTopic 配置](../../../../docs/dev/zh/docs/harness/durable.md) 创建以下 LITE 父 Topic：
 
+- `durable-sandbox-turn-dispatch`
+- `durable-sandbox-turn-signal`
+- `durable-sandbox-turn-owner`
 - `durable-sandbox-hands-commands`
 - `durable-sandbox-hands-controls`
 - `durable-sandbox-hands-updates`
 
-消费组为 `durable-sandbox-hands-brain`、`durable-sandbox-hands-worker`、
-`durable-sandbox-hands-worker-controls`；需授予对应生产/消费权限。两个应用必须使用
+为每个父 Topic 配置 Shared 消费组及生产和消费权限。owner 组使用显式订阅，其余使用 wildcard。
+两个应用必须使用
 相同 MQ namespace、业务 namespace 和 session ID；不要让独立 Brain 数据库混用同一消费组。
 
 ```sh

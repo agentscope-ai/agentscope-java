@@ -21,6 +21,7 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import io.agentscope.durable.DurableTypes.EventFilter;
 import io.agentscope.durable.DurableTypes.EventInput;
 import io.agentscope.durable.DurableTypes.PublicEvent;
+import io.agentscope.durable.DurableTypes.RunStepRef;
 import io.agentscope.durable.DurableTypes.SessionKey;
 import io.agentscope.durable.DurableTypes.SessionView;
 import io.agentscope.durable.DurableTypes.Snapshot;
@@ -66,7 +67,7 @@ public final class EventProjection {
         if (!"1".equals(event.schemaVersion()))
             throw new DurableException(DurableException.Code.INCOMPATIBLE, "Unknown event schema");
         DurableProtocol.validate("event", event);
-        if (event.type().startsWith("session."))
+        if (sessionLifecycle(event.type()))
             requireSession(DurableJson.convert(event.data(), SessionView.class).key());
         if (event.type().startsWith("thread.")) {
             var key = DurableJson.convert(event.data(), ThreadView.class).definition().key();
@@ -90,7 +91,13 @@ public final class EventProjection {
                         event.eventId(), event.type(), event.data(), event.runId(), event.stepId()),
                 event.threadId(),
                 event.turnId(),
-                event.sequence());
+                event.sequence(),
+                event.occurredAt());
+        if ("turn.converted".equals(event.type())
+                && Objects.equals(filter.turnId(), event.turnId())) {
+            updated.withObject("/messages")
+                    .remove(event.data().path("message").path("messageId").asText());
+        }
         value = updated;
         sequence = next;
         cursor = event.cursor();
@@ -108,6 +115,10 @@ public final class EventProjection {
         if (!session.equals(key))
             throw new DurableException(
                     DurableException.Code.INVALID, "Projection belongs to another session");
+    }
+
+    private static boolean sessionLifecycle(String type) {
+        return "session.created".equals(type) || "session.closed".equals(type);
     }
 
     static ObjectNode empty() {
@@ -141,9 +152,23 @@ public final class EventProjection {
             EventInput event,
             String threadId,
             String turnId,
-            String sequence) {
+            String sequence,
+            long occurredAt) {
         JsonNode d = event.data();
-        if (event.type().startsWith("session.")) {
+        if ("turn.converted".equals(event.type())) {
+            JsonNode message = d.path("message");
+            if (turnId == null
+                    || !Objects.equals(threadId, message.path("threadId").asText(null))
+                    || Objects.equals(turnId, message.path("turnId").asText(null)))
+                throw new DurableException(
+                        DurableException.Code.INVALID,
+                        "Converted input has invalid Turn ownership");
+            projection
+                    .withObject("/messages")
+                    .set(message.path("messageId").asText(), message.deepCopy());
+            return;
+        }
+        if (sessionLifecycle(event.type())) {
             projection.set("session", d.deepCopy());
             return;
         }
@@ -185,7 +210,7 @@ public final class EventProjection {
             projection.withObject("/artifacts").set(d.path("artifactId").asText(), artifact);
         }
         if (event.type().startsWith("tool."))
-            applyTool(projection, event, threadId, turnId, sequence);
+            applyTool(projection, event, threadId, turnId, sequence, occurredAt);
         if (!event.type().equals("message.delta") && !event.type().equals("message.completed"))
             return;
         String id = DurableJson.text(d.path("messageId").asText(), "messageId");
@@ -231,7 +256,7 @@ public final class EventProjection {
                 previous != null && previous.has("sequence")
                         ? previous.path("sequence").asText()
                         : sequence);
-        for (String field : List.of("requestId", "inputKind", "interactionId")) {
+        for (String field : List.of("requestId", "inputKind", "interactionId", "toolError")) {
             if (d.has(field)) message.set(field, d.get(field).deepCopy());
             else if (previous != null && previous.has(field))
                 message.set(field, previous.get(field).deepCopy());
@@ -264,7 +289,8 @@ public final class EventProjection {
             EventInput event,
             String threadId,
             String turnId,
-            String sequence) {
+            String sequence,
+            long occurredAt) {
         var incoming = event.data();
         String id = toolId(threadId, turnId, incoming);
         var tools = projection.withObject("/tools");
@@ -292,8 +318,7 @@ public final class EventProjection {
         } else if (event.type().equals("tool.call.progress")) {
             if (terminalTool(oldStatus)) return;
             data.put("callId", incoming.path("callId").asText());
-            var progress = data.withArray("progress");
-            incoming.path("content").forEach(content -> progress.add(content.deepCopy()));
+            data.set("progress", incoming.path("content").deepCopy());
             data.put("status", "RUNNING");
         } else {
             var oldContent = data.get("content");
@@ -305,11 +330,21 @@ public final class EventProjection {
                 for (String field : List.of("callId", "name", "arguments", "origin"))
                     data.set(field, call.path(field).deepCopy());
                 data.put("status", "REQUESTED");
-            } else if (event.type().equals("tool.dispatching")) data.put("status", "RUNNING");
-            else if (event.type().equals("tool.progress")
-                    || event.type().equals("tool.result.accepted"))
+            } else if (event.type().equals("tool.dispatching")) data.put("status", "DISPATCHED");
+            else if (event.type().equals("tool.progress")) {
+                var result = incoming.path("result");
+                String state = result.path("state").asText();
+                data.put("status", "PENDING".equals(state) ? "DISPATCHED" : state);
+                if (result.hasNonNull("result"))
+                    data.set("providerProgress", result.path("result").deepCopy());
+            } else if (event.type().equals("tool.result.accepted"))
                 data.put("status", incoming.path("result").path("state").asText());
             else if (event.type().equals("tool.result.applied")) data.put("applied", true);
+            if (!data.has("origin")
+                    && "REQUESTED".equals(incoming.path("status").asText())
+                    && event.runId() != null)
+                data.set(
+                        "origin", DurableJson.value(new RunStepRef(event.runId(), event.stepId())));
             String status = data.path("status").asText();
             if (terminalTool(oldStatus) && !terminalTool(status)
                     || "REQUESTED".equals(status)
@@ -339,6 +374,9 @@ public final class EventProjection {
         value.put("threadId", threadId);
         value.put("turnId", turnId);
         value.put("sequence", previous == null ? sequence : previous.path("sequence").asText());
+        // Match the JSON storage reader's integer width so replay and snapshots compare exactly.
+        if (occurredAt <= Integer.MAX_VALUE) value.put("updatedAt", (int) occurredAt);
+        else value.put("updatedAt", occurredAt);
         tools.set(id, value);
     }
 

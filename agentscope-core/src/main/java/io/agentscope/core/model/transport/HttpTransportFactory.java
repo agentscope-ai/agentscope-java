@@ -15,8 +15,12 @@
  */
 package io.agentscope.core.model.transport;
 
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.Objects;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.function.Supplier;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -58,6 +62,9 @@ public final class HttpTransportFactory {
     /** The default transport instance (lazily initialized). */
     private static volatile HttpTransport defaultTransport;
 
+    private static boolean explicitDefault;
+    private static final Map<Class<?>, HttpTransport> scopedDefaults = new HashMap<>();
+
     /** List of all managed transports for cleanup. */
     private static final List<HttpTransport> managedTransports = new CopyOnWriteArrayList<>();
 
@@ -91,6 +98,26 @@ public final class HttpTransportFactory {
     }
 
     /**
+     * Return the application override, or lazily create a managed default for this scope.
+     * The scope-specific default shares the same shutdown lifecycle as the generic default.
+     */
+    public static HttpTransport getDefault(
+            Class<?> scope, Supplier<HttpTransport> createTransport) {
+        synchronized (lock) {
+            if (explicitDefault) {
+                return defaultTransport;
+            }
+            return scopedDefaults.computeIfAbsent(
+                    scope,
+                    ignored -> {
+                        var transport = Objects.requireNonNull(createTransport.get());
+                        register(transport);
+                        return transport;
+                    });
+        }
+    }
+
+    /**
      * Set the default HttpTransport instance.
      *
      * <p>The provided transport will be registered for automatic cleanup if not already
@@ -101,6 +128,7 @@ public final class HttpTransportFactory {
     public static void setDefault(HttpTransport transport) {
         synchronized (lock) {
             defaultTransport = transport;
+            explicitDefault = transport != null;
             if (transport != null && !managedTransports.contains(transport)) {
                 managedTransports.add(transport);
             }
@@ -163,6 +191,8 @@ public final class HttpTransportFactory {
                 }
             }
             managedTransports.clear();
+            scopedDefaults.clear();
+            explicitDefault = false;
             defaultTransport = null;
         }
     }

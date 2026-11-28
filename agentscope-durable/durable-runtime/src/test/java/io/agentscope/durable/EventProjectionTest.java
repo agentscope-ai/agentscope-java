@@ -89,6 +89,7 @@ class EventProjectionTest {
                         "s1",
                         "1",
                         "cursor1",
+                        1,
                         "interaction.requested",
                         data));
         assertEquals(
@@ -106,6 +107,7 @@ class EventProjectionTest {
                         null,
                         "2",
                         "cursor2",
+                        2,
                         "interaction.resolved",
                         resolved));
         assertEquals(
@@ -124,6 +126,7 @@ class EventProjectionTest {
                         null,
                         "3",
                         "cursor3",
+                        3,
                         "interaction.resolved",
                         resolved));
         assertEquals(
@@ -335,6 +338,7 @@ class EventProjectionTest {
                         null,
                         position,
                         "cursor-" + position,
+                        1,
                         type,
                         DurableJson.value(data));
         projection.accept(event);
@@ -356,6 +360,7 @@ class EventProjectionTest {
                         null,
                         "1",
                         "cursor",
+                        1,
                         "message.completed",
                         DurableJson.value(Map.of()));
         assertEquals(
@@ -372,6 +377,7 @@ class EventProjectionTest {
                         null,
                         "1",
                         "cursor",
+                        1,
                         "message.completed",
                         DurableJson.value(Map.of()));
         assertEquals(

@@ -18,12 +18,15 @@ package io.agentscope.durable;
 import com.fasterxml.jackson.databind.JsonNode;
 import io.agentscope.durable.DurableMessages.Input;
 import io.agentscope.durable.DurableTypes.CheckpointMetadata;
+import io.agentscope.durable.DurableTypes.CommandReceipt;
 import io.agentscope.durable.DurableTypes.CommitReceipt;
 import io.agentscope.durable.DurableTypes.EventFilter;
 import io.agentscope.durable.DurableTypes.EventPage;
 import io.agentscope.durable.DurableTypes.HistoryPage;
 import io.agentscope.durable.DurableTypes.LiveEvent;
 import io.agentscope.durable.DurableTypes.PublicEvent;
+import io.agentscope.durable.DurableTypes.SessionKey;
+import io.agentscope.durable.DurableTypes.SessionView;
 import io.agentscope.durable.DurableTypes.Snapshot;
 import io.agentscope.durable.DurableTypes.ThreadKey;
 import io.agentscope.durable.DurableTypes.ThreadView;
@@ -93,6 +96,43 @@ public final class DurableThread {
 
     public DurableTurn submit(String requestId, String text) {
         return submit(requestId, Input.text(text));
+    }
+
+    /** Updates an unstarted user input at its current revision. */
+    public CommandReceipt editQueuedInput(
+            String requestId, String turnId, long expectedInputRevision, Input input) {
+        return DurableJson.convert(
+                call(
+                        "editQueuedInput",
+                        "requestId",
+                        requestId,
+                        "turnId",
+                        turnId,
+                        "expectedInputRevision",
+                        expectedInputRevision,
+                        "input",
+                        input),
+                CommandReceipt.class);
+    }
+
+    /** Moves an unstarted user's current input to the active Turn on this Thread. */
+    public CommandReceipt convertQueuedToSteer(
+            String requestId,
+            String sourceTurnId,
+            String targetTurnId,
+            long expectedInputRevision) {
+        return DurableJson.convert(
+                call(
+                        "convertQueuedToSteer",
+                        "requestId",
+                        requestId,
+                        "sourceTurnId",
+                        sourceTurnId,
+                        "targetTurnId",
+                        targetTurnId,
+                        "expectedInputRevision",
+                        expectedInputRevision),
+                CommandReceipt.class);
     }
 
     public DurableTurn getTurn(String turnId) {
@@ -173,6 +213,22 @@ public final class DurableThread {
     public DurableThread fork(long position, ThreadKey target, String requestId) {
         call("fork", "position", position, "target", target, "requestId", requestId);
         return runtime.getSession(target.session()).getThread(target.threadId());
+    }
+
+    /** Atomically creates a separate Session with this checkpoint as its initial baseline. */
+    public DurableSession forkSession(long position, SessionKey target, String requestId) {
+        var created =
+                DurableJson.convert(
+                        call(
+                                "forkSession",
+                                "position",
+                                position,
+                                "target",
+                                target,
+                                "requestId",
+                                requestId),
+                        SessionView.class);
+        return new DurableSession(runtime, created.key());
     }
 
     public CompletionStage<TurnView> call(String requestId, Input input, Duration timeout) {

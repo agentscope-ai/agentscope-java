@@ -31,6 +31,9 @@ import io.agentscope.core.agent.ThreadKey;
 import io.agentscope.core.message.AssistantMessage;
 import io.agentscope.core.message.GenerateReason;
 import io.agentscope.core.message.ToolResultBlock;
+import io.agentscope.core.message.ToolResultMessage;
+import io.agentscope.core.message.ToolResultState;
+import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.message.UserMessage;
 import io.agentscope.core.state.AgentState;
 import java.util.ArrayList;
@@ -68,6 +71,29 @@ class InvocationRecorderAtomicFactTest {
     void nativeReconciliationPreservesSourceAndPositionWithoutInventingAnInvocation() {
         var log = new InMemoryThreadJournalStore().open(new ThreadKey("u", "a", "s", "main"), null);
         var state = AgentState.builder().sessionId("s").build();
+        var previous =
+                ToolResultMessage.builder()
+                        .result(
+                                ToolResultBlock.text("previous")
+                                        .withIdAndName("tool", "external")
+                                        .withState(ToolResultState.SUCCESS))
+                        .build();
+        var decision =
+                new AssistantMessage("current decision")
+                        .withContent(
+                                List.of(
+                                        ToolUseBlock.builder()
+                                                .id("tool")
+                                                .name("external")
+                                                .build()));
+        var incomplete =
+                ToolResultMessage.builder()
+                        .result(
+                                ToolResultBlock.text("incomplete")
+                                        .withIdAndName("tool", "external")
+                                        .withState(ToolResultState.INTERRUPTED))
+                        .build();
+        state.contextMutable().addAll(List.of(previous, decision, incomplete));
         var first = new InvocationRecorder(log, null, "first", null);
         first.start(List.of(), state).block();
         first.step(1);
@@ -81,7 +107,13 @@ class InvocationRecorderAtomicFactTest {
                 log,
                 Map.of("tool", ToolResultBlock.text("verified").withIdAndName("tool", "external")),
                 "operator verified");
-        assertEquals("first", JournalProjection.read(log).positionRunId());
+        var projection = JournalProjection.read(log);
+        assertEquals("first", projection.positionRunId());
+        var repaired = projection.restore().getContext();
+        assertEquals(3, repaired.size());
+        assertEquals(previous.getId(), repaired.get(0).getId());
+        assertEquals(decision.getId(), repaired.get(1).getId());
+        assertNotEquals(incomplete.getId(), repaired.get(2).getId());
         var resumed = new InvocationRecorder(log, null, "resumed", null);
         try {
             assertEquals(new AgentExecutionPosition(2, 1), resumed.executionPosition());

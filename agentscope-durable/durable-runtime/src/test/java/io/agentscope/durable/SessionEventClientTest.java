@@ -48,7 +48,7 @@ class SessionEventClientTest {
         var backend = mock(SessionBackend.class);
         when(backend.wakeups()).thenReturn(hints);
         when(backend.events(eq(session), any(), eq(100)))
-                .thenReturn(new EventPage(List.of(), "cursor", "0"));
+                .thenReturn(new EventPage(List.of(), "cursor", "0", "0", "0"));
         try (var first = new SessionEventClient(backend, session, null, s -> {}, e -> {});
                 var second = new SessionEventClient(backend, session, null, s -> {}, e -> {})) {
             first.poll();
@@ -97,7 +97,7 @@ class SessionEventClientTest {
         when(backend.wakeups()).thenReturn(hints);
         when(hints.subscribe(any())).thenThrow(new IllegalStateException("MQ unavailable"));
         when(backend.events(eq(session), any(), eq(100)))
-                .thenReturn(new EventPage(List.of(), "cursor", "0"));
+                .thenReturn(new EventPage(List.of(), "cursor", "0", "0", "0"));
         var worker = Executors.newSingleThreadExecutor();
         try (var reader = new SessionEventClient(backend, session, null, s -> {}, e -> {})) {
             assertEquals(0, reader.poll());
@@ -113,17 +113,17 @@ class SessionEventClientTest {
     }
 
     @Test
-    void replayBoundaryIsReachedEvenWhenTheNextPageAlsoContainsNewerEvents() {
+    void replayBoundaryIsReachedEvenWhenFilteringOmitsItsEvent() {
         var backend = mock(SessionBackend.class);
         when(backend.wakeups()).thenReturn(Wakeups.none());
         when(backend.events(eq(session), any(), eq(100)))
                 .thenReturn(
-                        new EventPage(List.of(event("1")), "1", "2"),
-                        new EventPage(List.of(event("2"), event("3")), "3", "3"));
+                        new EventPage(List.of(event("1")), "1", "2", "1", "2"),
+                        new EventPage(List.of(event("3")), "3", "4", "3", "4"));
         try (var reader = new SessionEventClient(backend, session, null, s -> {}, e -> {})) {
             assertEquals(1, reader.poll());
             assertFalse(reader.replayCaughtUp());
-            assertEquals(2, reader.poll());
+            assertEquals(1, reader.poll());
             assertTrue(reader.replayCaughtUp());
         }
     }
@@ -139,6 +139,7 @@ class SessionEventClientTest {
                 null,
                 cursor,
                 cursor,
+                1,
                 "x.test.event",
                 DurableJson.value(Map.of()));
     }

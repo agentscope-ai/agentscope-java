@@ -18,6 +18,7 @@ package io.agentscope.durable;
 import com.fasterxml.jackson.databind.JsonNode;
 import io.agentscope.durable.DurableTypes.CheckpointRestore;
 import io.agentscope.durable.DurableTypes.ControlCommand;
+import io.agentscope.durable.DurableTypes.ControlKind;
 import io.agentscope.durable.DurableTypes.EventFilter;
 import io.agentscope.durable.DurableTypes.SessionKey;
 import io.agentscope.durable.DurableTypes.SessionSpec;
@@ -41,7 +42,12 @@ final class DurableOperations {
                     "listTurns",
                     "history",
                     "submit",
+                    "getToolExecution",
+                    "toolOutput",
+                    "editQueuedInput",
+                    "convertQueuedToSteer",
                     "getTurn",
+                    "getTurnProgress",
                     "getRun",
                     "listRuns",
                     "getStep",
@@ -49,12 +55,15 @@ final class DurableOperations {
                     "getModelCall",
                     "listModelCalls",
                     "control",
+                    "cancelActiveTurns",
                     "interactions",
                     "snapshot",
                     "events",
+                    "eventsBefore",
                     "checkpoints",
                     "restore",
-                    "fork");
+                    "fork",
+                    "forkSession");
     private final DurableRuntime runtime;
     private final SessionBackend backend;
 
@@ -98,9 +107,42 @@ final class DurableOperations {
                             backend.turns(thread, text(p, "cursor"), p.path("limit").asInt());
                     case "history" ->
                             backend.history(thread, text(p, "cursor"), p.path("limit").asInt());
+                    case "toolOutput" ->
+                            backend.toolOutput(
+                                    thread,
+                                    text(p, "turnId"),
+                                    text(p, "executionId"),
+                                    p.path("offset").asLong());
+                    case "getToolExecution" ->
+                            backend.toolExecution(
+                                    thread,
+                                    text(p, "turnId"),
+                                    text(p, "callId"),
+                                    text(p, "executionId"));
                     case "submit" ->
                             backend.submit(thread, p.path("requestId").asText(), p.get("input"));
+                    case "editQueuedInput" ->
+                            backend.control(
+                                    thread,
+                                    new ControlCommand(
+                                            text(p, "turnId"),
+                                            text(p, "requestId"),
+                                            ControlKind.EDIT_QUEUED,
+                                            null,
+                                            p.get("input"),
+                                            p.path("expectedInputRevision").asLong()));
+                    case "convertQueuedToSteer" ->
+                            backend.control(
+                                    thread,
+                                    new ControlCommand(
+                                            text(p, "targetTurnId"),
+                                            text(p, "requestId"),
+                                            ControlKind.STEER_QUEUED,
+                                            text(p, "sourceTurnId"),
+                                            null,
+                                            p.path("expectedInputRevision").asLong()));
                     case "getTurn" -> backend.turn(thread, p.path("turnId").asText());
+                    case "getTurnProgress" -> backend.turnProgress(thread, text(p, "turnId"));
                     case "getRun" -> backend.run(thread, text(p, "turnId"), text(p, "runId"));
                     case "listRuns" ->
                             backend.runs(
@@ -136,6 +178,9 @@ final class DurableOperations {
                             backend.control(
                                     thread,
                                     DurableJson.convert(p.get("command"), ControlCommand.class));
+                    case "cancelActiveTurns" ->
+                            backend.cancelActiveTurns(
+                                    key, text(p, "requestId"), text(p, "threadId"));
                     case "interactions" -> backend.interactions(thread, p.path("turnId").asText());
                     case "snapshot" -> filter(key, p).select(backend.snapshot(key));
                     case "events" ->
@@ -145,6 +190,8 @@ final class DurableOperations {
                                                     key,
                                                     text(p, "cursor"),
                                                     p.path("limit").asInt()));
+                    case "eventsBefore" ->
+                            backend.eventsBefore(key, text(p, "cursor"), p.path("limit").asInt());
                     case "checkpoints" ->
                             backend.checkpoints(
                                     thread, p.path("after").asLong(), p.path("limit").asInt());
@@ -156,14 +203,22 @@ final class DurableOperations {
                                             backend.thread(thread).definition(),
                                             p.path("expectedPosition").asLong(),
                                             p.path("requestId").asText()));
-                    case "fork" -> {
+                    case "fork", "forkSession" -> {
                         var source = backend.thread(thread).definition();
-                        var targetKey = DurableJson.convert(p.get("target"), ThreadKey.class);
+                        boolean createSession = "forkSession".equals(request.operation());
+                        var targetKey =
+                                createSession
+                                        ? new ThreadKey(
+                                                DurableJson.convert(
+                                                        p.get("target"), SessionKey.class),
+                                                "main")
+                                        : DurableJson.convert(p.get("target"), ThreadKey.class);
                         if (!key.namespace().equals(targetKey.session().namespace())
-                                || thread.equals(targetKey))
+                                || thread.equals(targetKey)
+                                || (createSession && key.equals(targetKey.session())))
                             throw new DurableException(
                                     DurableException.Code.INVALID,
-                                    "Fork requires a distinct Thread in the same namespace");
+                                    "Fork requires a distinct destination in the same namespace");
                         var target = new ThreadSpec(targetKey, source.binding());
                         runtime.restore(
                                 new CheckpointRestore(
@@ -171,8 +226,11 @@ final class DurableOperations {
                                         p.path("position").asLong(),
                                         target,
                                         0,
-                                        p.path("requestId").asText()));
-                        yield backend.thread(targetKey);
+                                        p.path("requestId").asText(),
+                                        createSession));
+                        yield createSession
+                                ? backend.session(targetKey.session())
+                                : backend.thread(targetKey);
                     }
                     default ->
                             throw new DurableException(
