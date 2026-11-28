@@ -30,7 +30,9 @@
 （默认 `localhost:8081`，不是 NameServer 地址）。从仓库根目录执行，按部署环境配置
 Broker ACL 与认证；这不是生产凭据配置。
 
-两个应用默认使用 `mq-namespace=durable-sandbox`，与 echo 工具场景隔离。按
+两个应用默认使用 `mq-namespace=durable-sandbox`，与 echo 工具场景隔离。
+可用 `durable.brain-hands-tool-in-sandbox.receive-wait` 配置 Brain 的 dispatch 长轮询
+等待时间，默认值为 `1s`。按
 [Durable LiteTopic 配置](../../../../docs/dev/zh/docs/harness/durable.md) 创建以下 LITE 父 Topic：
 
 - `durable-sandbox-turn-dispatch`

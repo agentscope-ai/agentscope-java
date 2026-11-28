@@ -42,6 +42,7 @@ import io.agentscope.extensions.durable.rocketmq.RocketMqRemoteExecutor;
 import io.agentscope.extensions.durable.rocketmq.RocketMqTurnScheduler;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
@@ -76,7 +77,16 @@ public final class SandboxBrainExample implements ApplicationRunner {
                         .clientConfiguration(config)
                         .namespace(properties.getMqNamespace())
                         .build();
-        try (var scheduling = RocketMqTurnScheduler.create(config, properties.getMqNamespace());
+        var schedulingOptions =
+                new RocketMqTurnScheduler.Options(
+                        Duration.ofSeconds(2),
+                        Duration.ofSeconds(5),
+                        32,
+                        32,
+                        properties.getReceiveWait());
+        try (var scheduling =
+                        RocketMqTurnScheduler.create(
+                                config, properties.getMqNamespace(), schedulingOptions);
                 var backend = LocalBackend.open(directory).withWakeups(scheduling);
                 var runtime = runtime(backend, remote)) {
             var key = new SessionKey(properties.getNamespace(), properties.getSessionId());

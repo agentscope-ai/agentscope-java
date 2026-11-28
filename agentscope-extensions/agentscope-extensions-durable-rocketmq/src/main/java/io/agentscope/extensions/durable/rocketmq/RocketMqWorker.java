@@ -58,7 +58,7 @@ public final class RocketMqWorker implements AutoCloseable {
 
     private RocketMqWorker(Builder builder) {
         name = builder.name;
-        var topology = RocketMqExecutionTopology.route(builder.namespace, name);
+        var topology = RocketMqTopology.route(builder.namespace, name);
         updatesTopic = topology.updates();
         authorizer = builder.authorizer;
         interval = builder.publicationRepairInterval;
@@ -279,7 +279,7 @@ public final class RocketMqWorker implements AutoCloseable {
 
     public static final class Builder {
         private String name;
-        private String namespace = RocketMqExecutionTopology.DEFAULT_NAMESPACE;
+        private String namespace = RocketMqTopology.DEFAULT_NAMESPACE;
         private Function<ExecutionRequest, Executor> resolver;
         private RecordStore records;
         private ObjectStore objects;

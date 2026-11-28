@@ -18,10 +18,13 @@ package io.agentscope.extensions.durable.rocketmq;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.RETURNS_SELF;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.mockStatic;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.timeout;
 import static org.mockito.Mockito.verify;
@@ -44,6 +47,8 @@ import io.agentscope.durable.TurnDispatch;
 import io.agentscope.durable.TurnSchedulingStatistics.Source;
 import io.agentscope.durable.TurnSignal;
 import io.agentscope.extensions.durable.jdbc.LocalBackend;
+import io.agentscope.extensions.durable.rocketmq.RocketMqTopology.Subscription;
+import io.agentscope.extensions.durable.rocketmq.RocketMqTopology.SubscriptionMode;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.time.Duration;
@@ -55,13 +60,18 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import org.apache.rocketmq.client.apis.ClientConfiguration;
 import org.apache.rocketmq.client.apis.ClientServiceProvider;
 import org.apache.rocketmq.client.apis.consumer.ConsumeResult;
+import org.apache.rocketmq.client.apis.consumer.LitePushConsumer;
+import org.apache.rocketmq.client.apis.consumer.LitePushConsumerBuilder;
 import org.apache.rocketmq.client.apis.consumer.LiteSimpleConsumer;
+import org.apache.rocketmq.client.apis.consumer.LiteSimpleConsumerBuilder;
 import org.apache.rocketmq.client.apis.consumer.MessageListener;
 import org.apache.rocketmq.client.apis.message.Message;
 import org.apache.rocketmq.client.apis.message.MessageView;
 import org.apache.rocketmq.client.apis.producer.Producer;
+import org.apache.rocketmq.client.apis.producer.ProducerBuilder;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -69,8 +79,84 @@ class RocketMqTurnSchedulerTest {
     @TempDir Path directory;
 
     @Test
+    void deploymentTopologyAndSdkUseTheSameGroupsAndConfiguredDispatchWait() throws Exception {
+        var topology = RocketMqTopology.turns("app");
+        assertEquals(
+                List.of(
+                        new Subscription(
+                                "app-turn-dispatch", "app-turn-runner", SubscriptionMode.WILDCARD),
+                        new Subscription(
+                                "app-turn-signal", "app-turn-signal", SubscriptionMode.WILDCARD),
+                        new Subscription(
+                                "app-turn-owner", "app-turn-owner", SubscriptionMode.EXPLICIT)),
+                topology.subscriptions());
+        assertEquals(
+                List.of(
+                        new Subscription(
+                                "app-echo-commands", "app-echo-worker", SubscriptionMode.WILDCARD),
+                        new Subscription(
+                                "app-echo-controls",
+                                "app-echo-worker-controls",
+                                SubscriptionMode.WILDCARD),
+                        new Subscription(
+                                "app-echo-updates", "app-echo-brain", SubscriptionMode.WILDCARD)),
+                RocketMqTopology.route("app", "echo").subscriptions());
+        var config = ClientConfiguration.newBuilder().setEndpoints("localhost:8081").build();
+        var interval = Duration.ofSeconds(2);
+        var wait = Duration.ofSeconds(4);
+        assertEquals(
+                new RocketMqTurnScheduler.Options(interval, Duration.ofSeconds(5), 32, 32, wait),
+                new RocketMqTurnScheduler.Options(wait));
+        var options = new RocketMqTurnScheduler.Options(interval, interval, 1, 1, wait);
+        assertEquals(
+                Duration.ofSeconds(1),
+                new RocketMqTurnScheduler.Options(interval, interval, 1, 1).receiveWait());
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> new RocketMqTurnScheduler.Options(interval, interval, 1, 1, Duration.ZERO));
+        var provider = mock(ClientServiceProvider.class);
+        var pulls = mock(LiteSimpleConsumerBuilder.class, RETURNS_SELF);
+        var push = mock(LitePushConsumerBuilder.class, RETURNS_SELF);
+        var producer = mock(ProducerBuilder.class, RETURNS_SELF);
+        var publisher = mock(Producer.class);
+        var dispatch = mock(LiteSimpleConsumer.class);
+        var signals = mock(LitePushConsumer.class);
+        when(provider.newLiteSimpleConsumerBuilder()).thenReturn(pulls);
+        when(provider.newLitePushConsumerBuilder()).thenReturn(push);
+        when(provider.newProducerBuilder()).thenReturn(producer);
+        when(pulls.build()).thenReturn(dispatch);
+        when(push.build()).thenReturn(signals);
+        when(producer.build()).thenReturn(publisher);
+        when(dispatch.receive(eq(1), any()))
+                .thenAnswer(
+                        call -> {
+                            Thread.sleep(20);
+                            return List.of();
+                        });
+        try (var service = mockStatic(ClientServiceProvider.class);
+                var backend = LocalBackend.open(directory)) {
+            service.when(ClientServiceProvider::loadService).thenReturn(provider);
+            try (var scheduler = RocketMqTurnScheduler.create(config, "app", options)) {
+                scheduler.start(
+                        backend,
+                        "runner",
+                        ignored -> CompletableFuture.completedFuture(false),
+                        ignored -> {});
+                verify(pulls).bindTopic(topology.dispatch());
+                verify(pulls).setConsumerGroup(topology.runnerGroup());
+                verify(pulls).setAwaitDuration(wait);
+                verify(push).bindTopic(topology.signal());
+                verify(push).setConsumerGroup(topology.signalGroup());
+                verify(push).bindTopic(topology.ownerSignal());
+                verify(push).setConsumerGroup(topology.ownerGroup());
+                verify(signals).subscribeLite(RocketMqLiteRouting.owner("runner"));
+            }
+        }
+    }
+
+    @Test
     void ownerSignalInterruptsADirectExecutorAndPreventsSiblingDispatch() throws Exception {
-        var topology = RocketMqTurnTopology.namespace("durable");
+        var topology = RocketMqTopology.turns("durable");
         var sent = new LinkedBlockingQueue<Message>();
         var listeners = new ConcurrentHashMap<String, MessageListener>();
         var started = new CountDownLatch(1);
@@ -218,7 +304,7 @@ class RocketMqTurnSchedulerTest {
 
     @Test
     void signalsAndDispatchesUseThreadLiteTopicAndPersistUntilClaim() throws Exception {
-        var topology = RocketMqTurnTopology.namespace("durable");
+        var topology = RocketMqTopology.turns("durable");
         var sent = new LinkedBlockingQueue<Message>();
         var dispatched = new LinkedBlockingQueue<TurnDispatch>();
         try (var scheduler = transport(topology, sent);
@@ -259,7 +345,7 @@ class RocketMqTurnSchedulerTest {
 
     @Test
     void apiOnlyRuntimePublishesDispatchWithoutAConsumerOrSignalRoundTrip() throws Exception {
-        var topology = RocketMqTurnTopology.namespace("durable");
+        var topology = RocketMqTopology.turns("durable");
         var sent = new LinkedBlockingQueue<Message>();
         try (var scheduler = transport(topology, sent);
                 var backend = LocalBackend.open(directory).withWakeups(scheduler);
@@ -286,7 +372,7 @@ class RocketMqTurnSchedulerTest {
 
     @Test
     void runtimeExecutesQueuedTurnsThroughLiteTopicBeforeItsRepairScan() throws Exception {
-        var topology = RocketMqTurnTopology.namespace("durable");
+        var topology = RocketMqTopology.turns("durable");
         var sent = new LinkedBlockingQueue<Message>();
         var listeners = new ConcurrentHashMap<String, MessageListener>();
         var started = new CountDownLatch(1);
@@ -385,7 +471,7 @@ class RocketMqTurnSchedulerTest {
 
     @Test
     void retryPublishesWhenDueWithRepairScanAsleep() throws Exception {
-        var topology = RocketMqTurnTopology.namespace("durable");
+        var topology = RocketMqTopology.turns("durable");
         var sent = new LinkedBlockingQueue<Message>();
         var dispatched = new LinkedBlockingQueue<TurnDispatch>();
         var options =
@@ -421,7 +507,7 @@ class RocketMqTurnSchedulerTest {
 
     @Test
     void apiHostRoutesCancellationToTheOwnerBeforeItsHeartbeat() throws Exception {
-        var topology = RocketMqTurnTopology.namespace("durable");
+        var topology = RocketMqTopology.turns("durable");
         var sent = new LinkedBlockingQueue<Message>();
         var listeners = new ConcurrentHashMap<String, MessageListener>();
         var invoking = new CountDownLatch(1);
@@ -495,7 +581,7 @@ class RocketMqTurnSchedulerTest {
 
     @Test
     void repairCountsConfirmedDispatchForWorkWithoutWakeups() throws Exception {
-        var topology = RocketMqTurnTopology.namespace("durable");
+        var topology = RocketMqTopology.turns("durable");
         var sent = new LinkedBlockingQueue<Message>();
         try (var scheduler = transport(topology, sent);
                 var backend = LocalBackend.open(directory);
@@ -526,12 +612,12 @@ class RocketMqTurnSchedulerTest {
     }
 
     private static RocketMqTurnScheduler transport(
-            RocketMqTurnTopology topology, LinkedBlockingQueue<Message> sent) throws Exception {
+            RocketMqTopology.Turn topology, LinkedBlockingQueue<Message> sent) throws Exception {
         return transport(topology, sent, new ConcurrentHashMap<>());
     }
 
     private static RocketMqTurnScheduler transport(
-            RocketMqTurnTopology topology,
+            RocketMqTopology.Turn topology,
             LinkedBlockingQueue<Message> sent,
             Map<String, MessageListener> listeners)
             throws Exception {
@@ -544,7 +630,7 @@ class RocketMqTurnSchedulerTest {
     }
 
     private static RocketMqTurnScheduler transport(
-            RocketMqTurnTopology topology,
+            RocketMqTopology.Turn topology,
             LinkedBlockingQueue<Message> sent,
             Map<String, MessageListener> listeners,
             RocketMqTurnScheduler.Options options)

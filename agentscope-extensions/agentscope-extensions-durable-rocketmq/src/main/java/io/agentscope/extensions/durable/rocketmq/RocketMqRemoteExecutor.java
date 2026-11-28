@@ -63,7 +63,7 @@ public final class RocketMqRemoteExecutor implements ManagedExecutor, BatchDispa
                                                 DurableException.Code.INCOMPATIBLE,
                                                 "RocketMQ execution requires local durable"
                                                         + " storage"));
-        var topology = RocketMqExecutionTopology.route(configuration.namespace, route);
+        var topology = RocketMqTopology.route(configuration.namespace, route);
         ClientServiceProvider provider = configuration.provider;
         if (configuration.producer == null) {
             ownsClients = true;
@@ -219,7 +219,7 @@ public final class RocketMqRemoteExecutor implements ManagedExecutor, BatchDispa
     }
 
     public static final class Builder {
-        private String namespace = RocketMqExecutionTopology.DEFAULT_NAMESPACE;
+        private String namespace = RocketMqTopology.DEFAULT_NAMESPACE;
         private ClientServiceProvider provider = ClientServiceProvider.loadService();
         private ClientConfiguration clientConfiguration;
         private Producer producer;

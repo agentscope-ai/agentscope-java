@@ -146,8 +146,8 @@ class RocketMqExecutionTest {
     static final long AWAIT_DEADLINE_SECONDS = 30;
 
     static final ClientServiceProvider FACTORY = ClientServiceProvider.loadService();
-    static final RocketMqExecutionTopology.Route TOPOLOGY =
-            RocketMqExecutionTopology.route(RocketMqExecutionTopology.DEFAULT_NAMESPACE, "hands");
+    static final RocketMqTopology.Route TOPOLOGY =
+            RocketMqTopology.route(RocketMqTopology.DEFAULT_NAMESPACE, "hands");
     final ExecutionRequest request =
             new ExecutionRequest(
                     "execution",
@@ -212,7 +212,7 @@ class RocketMqExecutionTest {
 
     @Test
     void derivesTransportTopologyFromNamespaceAndExecutorRoute() {
-        var topology = RocketMqExecutionTopology.route("production", "hands");
+        var topology = RocketMqTopology.route("production", "hands");
 
         assertEquals("production-hands-commands", topology.commands());
         assertEquals("production-hands-controls", topology.controls());
@@ -222,7 +222,7 @@ class RocketMqExecutionTest {
         assertEquals("production-hands-worker-controls", topology.controlConsumerGroup());
         assertThrows(
                 IllegalArgumentException.class,
-                () -> RocketMqExecutionTopology.route("production", "bad route"));
+                () -> RocketMqTopology.route("production", "bad route"));
     }
 
     static class Broker implements AutoCloseable {

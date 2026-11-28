@@ -49,14 +49,15 @@ final class RocketMqStageConsumer implements AutoCloseable {
             ClientConfiguration configuration,
             String topic,
             String group,
-            int capacity) {
+            int capacity,
+            Duration receiveWait) {
         return listener ->
                 new RocketMqStageConsumer(
                         provider.newLiteSimpleConsumerBuilder()
                                 .setClientConfiguration(configuration)
                                 .bindTopic(topic)
                                 .setConsumerGroup(group)
-                                .setAwaitDuration(Duration.ofSeconds(1))
+                                .setAwaitDuration(receiveWait)
                                 .build(),
                         listener,
                         capacity);

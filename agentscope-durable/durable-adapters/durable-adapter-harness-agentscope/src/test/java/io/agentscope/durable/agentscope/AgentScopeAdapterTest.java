@@ -1013,8 +1013,9 @@ class AgentScopeAdapterTest {
         }
     }
 
-    @Test
-    void settledCheckpointForkPreservesHistoryAndRewritesNativeIdentity() {
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void settledCheckpointForkPreservesHistoryAndRewritesNativeIdentity(boolean newSession) {
         var model = new ScriptedModel(false);
         try (var backend = LocalBackend.open(directory.resolve("fork"));
                 var runtime =
@@ -1029,22 +1030,25 @@ class AgentScopeAdapterTest {
             var checkpoints = backend.checkpoints(new ThreadKey(key, "main"), 0, 1000);
             long position = Long.parseLong(checkpoints.get(checkpoints.size() - 1).position());
             var child = new SessionKey(key.namespace(), "fork");
-            runtime.createSession(child, "agent");
+            if (!newSession) runtime.createSession(child, "agent");
             var definition =
                     new ThreadSpec(
                             new ThreadKey(child, "main"),
                             new ThreadBinding(
                                     "agent", "v1", AgentScopeCheckpointCodec.STATE_VERSION));
+            var source = runtime.getSession(key).mainThread();
             var forked =
-                    runtime.getSession(key)
-                            .mainThread()
-                            .fork(position, new ThreadKey(child, "main"), "fork-command");
+                    newSession
+                            ? source.forkSession(position, child, "fork-command").mainThread()
+                            : source.fork(position, new ThreadKey(child, "main"), "fork-command");
             assertEquals(definition, forked.view().definition());
             assertEquals(
                     forked.key(),
-                    runtime.getSession(key)
-                            .mainThread()
-                            .fork(position, new ThreadKey(child, "main"), "fork-command")
+                    (newSession
+                                    ? source.forkSession(position, child, "fork-command")
+                                            .mainThread()
+                                    : source.fork(
+                                            position, new ThreadKey(child, "main"), "fork-command"))
                             .key());
             var second =
                     runtime.getSession(child).submit("second", "what did I ask you to remember?");
@@ -1057,6 +1061,27 @@ class AgentScopeAdapterTest {
                     model.inputs.get(1).stream()
                             .anyMatch(
                                     message -> message.getTextContent().contains("blue notebook")));
+            if (newSession) {
+                var beforeRetry = backend.snapshot(child);
+                assertEquals(child, source.forkSession(position, child, "fork-command").key());
+                assertEquals(beforeRetry, backend.snapshot(child));
+                assertEquals(
+                        DurableException.Code.CONFLICT,
+                        assertThrows(
+                                        DurableException.class,
+                                        () -> source.forkSession(position, child, "other-fork"))
+                                .code());
+                var alreadyCreated = new SessionKey(key.namespace(), "existing");
+                runtime.createSession(alreadyCreated, "agent");
+                assertEquals(
+                        DurableException.Code.CONFLICT,
+                        assertThrows(
+                                        DurableException.class,
+                                        () ->
+                                                source.forkSession(
+                                                        position, alreadyCreated, "fork-command"))
+                                .code());
+            }
             assertEquals(
                     Long.toString(position),
                     backend.checkpoints(new ThreadKey(key, "main"), 0, 1000)

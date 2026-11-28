@@ -508,7 +508,17 @@ public final class DurableTypes {
             long position,
             ThreadSpec target,
             long expectedPosition,
-            String requestId) {}
+            String requestId,
+            boolean createSession) {
+        public CheckpointRestore(
+                ThreadKey source,
+                long position,
+                ThreadSpec target,
+                long expectedPosition,
+                String requestId) {
+            this(source, position, target, expectedPosition, requestId, false);
+        }
+    }
 
     public record Lease(ThreadKey thread, String turnId, String owner, long epoch, long expiresAt) {
         public SessionKey session() {
@@ -1081,14 +1091,25 @@ public final class DurableTypes {
             long journalPosition,
             boolean settled) {}
 
-    /** A native adapter prepares a settled baseline; installation requires an idle target. */
+    /** A settled native baseline installed in an idle Thread or a new Session's main Thread. */
     public record Restoration(
             String requestId,
             long expectedPosition,
             ThreadSpec target,
             JsonNode checkpoint,
             List<JsonNode> journal,
-            List<SessionResources.Value> resources) {
+            List<SessionResources.Value> resources,
+            @JsonInclude(JsonInclude.Include.NON_DEFAULT) boolean createSession) {
+        public Restoration(
+                String requestId,
+                long expectedPosition,
+                ThreadSpec target,
+                JsonNode checkpoint,
+                List<JsonNode> journal,
+                List<SessionResources.Value> resources) {
+            this(requestId, expectedPosition, target, checkpoint, journal, resources, false);
+        }
+
         public Restoration(
                 String requestId,
                 long expectedPosition,
@@ -1106,6 +1127,9 @@ public final class DurableTypes {
             journal = journal.stream().map(DurableJson::copy).toList();
             if (expectedPosition < 0 || checkpoint.isNull())
                 throw new IllegalArgumentException("Invalid restoration baseline");
+            if (createSession && (expectedPosition != 0 || !"main".equals(target.key().threadId())))
+                throw new IllegalArgumentException(
+                        "A new Session requires its main Thread at position zero");
         }
     }
 

@@ -25,6 +25,8 @@ import io.agentscope.durable.DurableTypes.EventPage;
 import io.agentscope.durable.DurableTypes.HistoryPage;
 import io.agentscope.durable.DurableTypes.LiveEvent;
 import io.agentscope.durable.DurableTypes.PublicEvent;
+import io.agentscope.durable.DurableTypes.SessionKey;
+import io.agentscope.durable.DurableTypes.SessionView;
 import io.agentscope.durable.DurableTypes.Snapshot;
 import io.agentscope.durable.DurableTypes.ThreadKey;
 import io.agentscope.durable.DurableTypes.ThreadView;
@@ -211,6 +213,22 @@ public final class DurableThread {
     public DurableThread fork(long position, ThreadKey target, String requestId) {
         call("fork", "position", position, "target", target, "requestId", requestId);
         return runtime.getSession(target.session()).getThread(target.threadId());
+    }
+
+    /** Atomically creates a separate Session with this checkpoint as its initial baseline. */
+    public DurableSession forkSession(long position, SessionKey target, String requestId) {
+        var created =
+                DurableJson.convert(
+                        call(
+                                "forkSession",
+                                "position",
+                                position,
+                                "target",
+                                target,
+                                "requestId",
+                                requestId),
+                        SessionView.class);
+        return new DurableSession(runtime, created.key());
     }
 
     public CompletionStage<TurnView> call(String requestId, Input input, Duration timeout) {

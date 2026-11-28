@@ -24,6 +24,7 @@ import io.agentscope.durable.DurableException;
 import io.agentscope.durable.DurableJson;
 import io.agentscope.durable.DurableProtocol;
 import io.agentscope.durable.DurableRuntime;
+import io.agentscope.durable.DurableTypes.Restoration;
 import io.agentscope.durable.DurableTypes.SessionKey;
 import io.agentscope.durable.DurableTypes.ThreadKey;
 import io.agentscope.extensions.durable.jdbc.LocalBackend;
@@ -48,6 +49,18 @@ class PublicHttpBoundaryTest {
                         DurableRuntime.builder()
                                 .backend(backend)
                                 .definition("agent", "v1", "1")
+                                .checkpoints(
+                                        "agent",
+                                        (storage, request) ->
+                                                storage.restore(
+                                                        new Restoration(
+                                                                request.requestId(),
+                                                                request.expectedPosition(),
+                                                                request.target(),
+                                                                DurableJson.value("baseline"),
+                                                                List.of(),
+                                                                List.of(),
+                                                                request.createSession())))
                                 .build()) {
             var server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
             var threads = Executors.newCachedThreadPool();
@@ -65,7 +78,10 @@ class PublicHttpBoundaryTest {
                                                 + (key == null ? "" : key.sessionId()));
                                 if (namespace != null && !namespace.equals("allowed"))
                                     throw new SecurityException();
-                                if ("forkTarget".equals(op)) throw new SecurityException();
+                                if ("forkTarget".equals(op)
+                                        || ("createSession".equals(op)
+                                                && "sealed".equals(key.sessionId())))
+                                    throw new SecurityException();
                             }));
             server.setExecutor(threads);
             server.start();
@@ -94,6 +110,21 @@ class PublicHttpBoundaryTest {
                 assertTrue(checked.contains("listSessions:denied:"));
                 assertTrue(checked.contains("fork:allowed:source"));
                 assertTrue(checked.contains("forkTarget:allowed:target"));
+                var sealed = new SessionKey("allowed", "sealed");
+                assertThrows(
+                        DurableException.class,
+                        () -> session.mainThread().forkSession(1, sealed, "sealed"));
+                assertTrue(checked.contains("forkSession:allowed:source"));
+                assertTrue(checked.contains("createSession:allowed:sealed"));
+                assertEquals(
+                        DurableException.Code.NOT_FOUND,
+                        assertThrows(DurableException.class, () -> backend.session(sealed)).code());
+                var newKey = new SessionKey("allowed", "independent");
+                assertEquals(newKey, session.mainThread().forkSession(1, newKey, "create").key());
+                assertTrue(checked.contains("createSession:allowed:independent"));
+                assertEquals(
+                        DurableJson.value("baseline"),
+                        backend.checkpoint(new ThreadKey(newKey, "main"), 1).checkpoint());
                 assertEquals(
                         DurableException.Code.NOT_FOUND,
                         assertThrows(

@@ -68,6 +68,7 @@ Java 是它的绑定；其他语言可使用自己的 Future/Promise、回调或
 | checkpoints | session、threadId、after、limit | CheckpointMetadata 列表；after 是 Thread checkpoint 位置，非事件游标 |
 | restore | session、threadId、position、expectedPosition、requestId | CommitReceipt |
 | fork | session、threadId、position、target（ThreadKey）、requestId | ThreadView；目标为同 namespace 的其他 Thread，继承源冻结绑定 |
+| forkSession | session、threadId、position、target（SessionKey）、requestId | SessionView；同 namespace 内的新 Session，主 Thread 继承源绑定和所选 checkpoint |
 
 创建同身份/同参数幂等，改变定义或会话 metadata 冲突；关闭后重试原创建请求不会重新打开对象。
 提交和控制共用 Session + requestId 去重范围，摘要包括目标 Thread/Turn、操作和内容；改变任一项 CONFLICT。
@@ -76,7 +77,8 @@ Session 的 submit/call/stream 是主 Thread 的快捷入口，归一为同一 T
 Session 的 getTurn/listTurns/history 也默认作用于主 Thread；指定其他 Thread 时必须先取得
 对应 Thread 句柄。协议请求始终携带显式 threadId，Session 快捷入口不会改变存储作用域。
 创建 Session/Thread 需要 Runtime 的 definition/definitionResolver；查询已有对象不需要本地 Agent。
-fork 可在已有 Session 中创建目标 Thread，不隐式创建目标 Session；跨 Session fork 须先显式创建目标会话。
+fork 可在已有 Session 中创建目标 Thread。用 forkSession 创建新目标，Session 和基线一起提交。
+响应丢失后可对同一目标重试原请求。
 列表按 namespace 授权，所有 Session 操作按身份授权，fork 分别授权源与目标；游标不代替授权。
 
 模型调用是 Run/Step 下的诊断记录，不增加调度或控制对象。`model.call.started/ended` 记录逻辑调用，
@@ -145,7 +147,7 @@ Hands sequence 均不能代替它。用户公开视图不包含私有 checkpoint
 | Session 运行状态 | session.activity_changed 记录运行、空闲、恢复耗尽或尚待应答的手动交互 ID |
 | pause / resume | turn.pause_requested、turn.paused、turn.resumed；不生成用户聊天内容 |
 | 扩展 signal | signal.accepted；等待条件满足后才可推进 |
-| restore / fork | 校验 settled、目标空闲、版本和 expectedPosition 后提交 checkpoint.restored |
+| restore / fork / forkSession | 校验 checkpoint 已结束、版本和目标条件后提交 checkpoint.restored |
 
 公开输入消息 ID 为 `input:` + hash([turnId, requestId, inputKind])，hash 使用当前 DurableJson
 规范摘要。inputKind 为 submit/steer/inject/respond，伴随 requestId 和结构化 Message；respond

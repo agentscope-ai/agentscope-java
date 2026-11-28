@@ -57,13 +57,18 @@ public final class DurableRuntimeHandler implements HttpHandler {
                                 ? p.has("namespace") ? p.path("namespace").asText() : null
                                 : key.namespace();
                 authorizer.authorize(exchange, request.operation(), namespace, key);
-                if ("fork".equals(request.operation()))
+                if ("fork".equals(request.operation())
+                        || "forkSession".equals(request.operation())) {
+                    boolean createSession = "forkSession".equals(request.operation());
+                    var target =
+                            createSession ? p.path("target") : p.path("target").path("session");
+                    var destination = DurableJson.convert(target, SessionKey.class);
                     authorizer.authorize(
                             exchange,
-                            "forkTarget",
-                            namespace,
-                            DurableJson.convert(
-                                    p.path("target").path("session"), SessionKey.class));
+                            createSession ? "createSession" : "forkTarget",
+                            destination.namespace(),
+                            destination);
+                }
                 DurableHttp.result(exchange, runtime.invoke(request));
             } catch (RuntimeException error) {
                 DurableHttp.error(exchange, error);
