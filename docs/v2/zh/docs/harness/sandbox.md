@@ -119,6 +119,8 @@ HarnessAgent.builder()
 
 执行锁的 key 与持久化 slot 同粒度：`USER` 作用域下是 `{agentId}/{userId}`。所以沙箱中 spawn 的子 agent 会用自己的锁，不会和父 call 持有的锁冲突；`GLOBAL` 作用域只有一个 slot，父与子共用——call 内 spawn 的子 agent 会一直阻塞在父持有的租约上，不要把 `GLOBAL` 与子 agent 一起用。
 
+滚动升级的一个后果需要规划：升级期间旧节点仍锁 `user:<uid>`，新节点锁 `user:<agent>/<uid>`——两者永不相遇，不同版本的节点之间不互斥，可能并发写同一个 slot（后写覆盖）。请尽快完成整体升级，再依赖执行锁。
+
 **推荐方式**：使用 `distributedStore(...)`，快照和执行锁都会自动注入：
 
 ```java

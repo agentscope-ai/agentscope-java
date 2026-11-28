@@ -119,6 +119,8 @@ In `USER` / `AGENT` / `GLOBAL` modes across replicas, two replicas serving the s
 
 The guard key mirrors the persisted slot's granularity: for `USER` scope it is `{agentId}/{userId}`. A subagent spawned inside a sandboxed call therefore takes its own lock instead of colliding with the one its parent holds for the whole call. `GLOBAL` scope has a single slot shared by parent and child: a subagent spawned inside a call blocks on the lease the parent holds until that call ends, so do not combine `GLOBAL` with subagents.
 
+One upgrade consequence to plan for: during a rolling upgrade old nodes keep locking `user:<uid>` while new ones take `user:<agent>/<uid>` — the names never meet, so peers of different versions don't serialise and can write the same slot concurrently (last write wins). Complete the rollout before relying on the guard.
+
 **Recommended**: use `distributedStore(...)` — snapshot and execution guard are auto-injected:
 
 ```java

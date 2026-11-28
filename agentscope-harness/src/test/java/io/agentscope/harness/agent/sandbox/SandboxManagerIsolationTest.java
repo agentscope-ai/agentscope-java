@@ -61,6 +61,8 @@ class SandboxManagerIsolationTest {
 
     @BeforeEach
     void setUp() {
+        // Faithful wiring: the store's agent id matches the manager's, as HarnessAgent.build does.
+        when(stateStore.getAgentId()).thenReturn(AGENT_ID);
         manager = new SandboxManager(client, stateStore, AGENT_ID);
     }
 

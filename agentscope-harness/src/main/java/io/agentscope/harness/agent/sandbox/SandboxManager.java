@@ -93,9 +93,9 @@ public class SandboxManager {
                             + " than failing here");
         }
         String storeAgentId = stateStore.getAgentId();
-        // SessionSandboxStateStore's constructor guarantees a non-null agent id for real
-        // instances, so a null here can only come from a test mock — skip the comparison then.
-        if (storeAgentId != null && !agentId.equals(storeAgentId)) {
+        // getAgentId() returns a final field the store's constructor requires to be non-null,
+        // so the equality check below holds unconditionally.
+        if (!agentId.equals(storeAgentId)) {
             throw new IllegalArgumentException(
                     "agentId '"
                             + agentId

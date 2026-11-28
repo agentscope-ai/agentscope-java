@@ -193,14 +193,20 @@ class SandboxIsolationKeyTest {
         SandboxIsolationKey sessionKey =
                 SandboxIsolationKey.resolve(IsolationScope.SESSION, session, "agent").orElseThrow();
         assertSame(sessionKey, sessionKey.forExecutionGuard("agent"));
+        // Non-USER scopes never throw, whatever the agent id — a future refactor that hoists the
+        // blank-agentId check above the scope switch would break this path.
+        assertSame(sessionKey, sessionKey.forExecutionGuard(null));
+        assertSame(sessionKey, sessionKey.forExecutionGuard("  "));
 
         SandboxIsolationKey agentKey =
                 SandboxIsolationKey.resolve(IsolationScope.AGENT, null, "agent").orElseThrow();
         assertSame(agentKey, agentKey.forExecutionGuard("agent"));
+        assertSame(agentKey, agentKey.forExecutionGuard(null));
 
         SandboxIsolationKey globalKey =
                 SandboxIsolationKey.resolve(IsolationScope.GLOBAL, null, "agent").orElseThrow();
         assertSame(globalKey, globalKey.forExecutionGuard("agent"));
+        assertSame(globalKey, globalKey.forExecutionGuard(null));
     }
 
     @Test
