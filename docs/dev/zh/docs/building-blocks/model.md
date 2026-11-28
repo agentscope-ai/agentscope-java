@@ -152,6 +152,10 @@ transport，在所有使用者停止后再释放自定义调度器。`HttpTransp
 生效。调度队列饱和时会返回错误，不会无限创建线程。这些 transport 配置适用于使用 JDK/OkHttp
 transport 的提供商；基于其他 SDK 的模型扩展使用共享 AgentScope 调度器。
 
+### 取消 WebSocket 握手
+
+使用 `JdkWebSocketTransport` 和 `OkHttpWebSocketTransport` 时，取消 `connect(...)` 的订阅会释放仍在等待握手的连接。JDK 握手 future 无法取消、但连接在取消后才返回时，也会中止这个迟到的连接。连接成功交付后由调用方管理，应显式关闭；释放已完成的连接 publisher 不会关闭已交付的连接。本地连接清理并不代表远端模型服务中的工作已被取消。
+
 ### Spring Boot 应用
 
 Spring Boot 场景下，优先使用特定模型提供商的 starter，例如 `agentscope-openai-spring-boot-starter`、`agentscope-openai-official-spring-boot-starter`、`agentscope-dashscope-spring-boot-starter`、`agentscope-gemini-spring-boot-starter`、`agentscope-anthropic-spring-boot-starter`、`agentscope-ollama-spring-boot-starter`。这些 starter 直接依赖对应模型扩展模块，创建 Spring 管理的 `Model` bean，通用的 `agentscope-spring-boot-starter` 继续负责 AgentScope 的公共基础设施。它们不会通过静态 `ModelRegistry` 创建模型；高级用户始终可以自定义 `Model` bean。

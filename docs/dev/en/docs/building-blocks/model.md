@@ -159,6 +159,10 @@ queue saturation is reported as an error rather than creating unlimited worker t
 These transport overrides apply to providers using the JDK/OkHttp transport; SDK-based model
 extensions use the shared AgentScope schedulers instead.
 
+### Cancelling a WebSocket handshake
+
+For `JdkWebSocketTransport` and `OkHttpWebSocketTransport`, cancelling the subscription to `connect(...)` releases a pending handshake connection. The JDK transport also aborts a connection returned after cancellation when the handshake future could not be cancelled. Once a connection has been delivered successfully, the caller owns its lifecycle and should close it explicitly; disposing the completed connection publisher does not close that delivered connection. This local cleanup does not confirm cancellation of work at a remote model provider.
+
 ### Spring Boot applications
 
 For Spring Boot, prefer provider-specific starters such as `agentscope-openai-spring-boot-starter`, `agentscope-openai-official-spring-boot-starter`, `agentscope-dashscope-spring-boot-starter`, `agentscope-gemini-spring-boot-starter`, `agentscope-anthropic-spring-boot-starter`, and `agentscope-ollama-spring-boot-starter`. These starters directly depend on the matching model extension, create Spring-managed `Model` beans, and leave the generic starter focused on common AgentScope infrastructure. They do not create models through the static `ModelRegistry`; advanced users can always provide their own `Model` bean.

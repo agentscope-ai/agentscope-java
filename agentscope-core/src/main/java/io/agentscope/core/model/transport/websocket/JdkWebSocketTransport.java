@@ -35,6 +35,8 @@ import java.security.cert.X509Certificate;
 import java.time.Duration;
 import java.util.Collections;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 import javax.net.ssl.SSLContext;
 import javax.net.ssl.TrustManager;
 import javax.net.ssl.X509TrustManager;
@@ -213,29 +215,50 @@ public class JdkWebSocketTransport implements WebSocketTransport {
                     JdkWebSocketConnection<T> connection =
                             new JdkWebSocketConnection<>(request.getUrl(), messageType);
 
-                    builder.buildAsync(URI.create(request.getUrl()), connection.getListener())
-                            .whenComplete(
-                                    (webSocket, error) -> {
-                                        if (error != null) {
-                                            log.error(
-                                                    "Failed to connect to WebSocket: {}",
+                    AtomicReference<WebSocket> openedSocket = new AtomicReference<>();
+                    AtomicBoolean cancelled = new AtomicBoolean();
+                    var handshake =
+                            builder.buildAsync(
+                                    URI.create(request.getUrl()), connection.getListener());
+                    sink.onCancel(
+                            () -> {
+                                cancelled.set(true);
+                                handshake.cancel(true);
+                                WebSocket socket = openedSocket.get();
+                                if (socket != null) {
+                                    socket.abort();
+                                }
+                            });
+                    handshake.whenComplete(
+                            (webSocket, error) -> {
+                                if (error != null) {
+                                    if (cancelled.get()) {
+                                        return;
+                                    }
+                                    log.error(
+                                            "Failed to connect to WebSocket: {}",
+                                            request.getUrl(),
+                                            error);
+                                    sink.error(
+                                            new WebSocketTransportException(
+                                                    "Failed to connect",
+                                                    error,
                                                     request.getUrl(),
-                                                    error);
-                                            sink.error(
-                                                    new WebSocketTransportException(
-                                                            "Failed to connect",
-                                                            error,
-                                                            request.getUrl(),
-                                                            "CONNECTING",
-                                                            request.getHeaders()));
-                                        } else {
-                                            log.info(
-                                                    "WebSocket connected successfully: {}",
-                                                    request.getUrl());
-                                            connection.setWebSocket(webSocket);
-                                            sink.success(connection);
-                                        }
-                                    });
+                                                    "CONNECTING",
+                                                    request.getHeaders()));
+                                } else {
+                                    openedSocket.set(webSocket);
+                                    if (cancelled.get()) {
+                                        webSocket.abort();
+                                        return;
+                                    }
+                                    log.info(
+                                            "WebSocket connected successfully: {}",
+                                            request.getUrl());
+                                    connection.setWebSocket(webSocket);
+                                    sink.success(connection);
+                                }
+                            });
                 });
     }
 
