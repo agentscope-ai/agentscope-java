@@ -1331,6 +1331,28 @@ and `make -C agentscope-durable independent` for isolated dependency checking, w
 requires Python 3. Real queued execution needs RocketMQ 5 services and configured topics/groups;
 `--compile-only` packages the applications without connecting to a broker or running tools.
 
+## Run the Durable acceptance tests
+
+Run the functional baseline from the repository root after changing Durable.
+
+```sh
+make -C agentscope-durable acceptance
+```
+
+The baseline exercises the Java and HTTP user APIs, session and thread isolation, turn queues,
+steering and cancellation, approvals, checkpoint forks, SSE reconnect and replay, and Brain and
+Hands recovery. It includes an API restart during an active tool call and transport failures such
+as lost replies and duplicate deliveries. The default run uses temporary SQLite databases,
+scripted models and tools, and a RocketMQ client test fixture, so no model keys or broker are needed.
+
+Set `DURABLE_TEST_JDBC_URL` to run the JDBC-backed acceptance cases that support PostgreSQL against
+a test database. The test account needs permission to create and drop schemas.
+
+```sh
+DURABLE_TEST_JDBC_URL='jdbc:postgresql://localhost:5432/durable_test?user=durable_test' \
+  make -C agentscope-durable acceptance
+```
+
 ## Durable child delegation
 
 Use delegation for child work that must survive restarts, be observed independently
