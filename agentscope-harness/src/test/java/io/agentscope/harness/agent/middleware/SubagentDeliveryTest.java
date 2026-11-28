@@ -16,6 +16,7 @@
 package io.agentscope.harness.agent.middleware;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -150,7 +151,7 @@ class SubagentDeliveryTest {
     // ---- buildDeliveryReminder static formatting ---------------------------------------------
 
     @Test
-    void deliveryPreservesLargeResultsAndErrorsWithTaskOutputAvailable() {
+    void deliveryPreservesLargeResultsAndDefersErrorsToTaskOutput() {
         var repo = new StubRepo();
         String payload = "status: max_iterations\n" + "evidence ".repeat(5000) + "REQUIRED_TAIL";
         String failure = "details ".repeat(5000) + "FAILURE_TAIL";
@@ -180,7 +181,10 @@ class SubagentDeliveryTest {
                             .findFirst()
                             .orElseThrow();
             assertTrue(notification.contains(payload));
-            assertTrue(notification.contains(failure));
+            // Raw errors never enter the conversation; task_output serves the full record.
+            assertFalse(notification.contains(failure));
+            assertTrue(notification.contains("<task_error>"), notification);
+            assertTrue(notification.contains("task_output"), notification);
             assertEquals(List.of("full", "failed"), repo.markCalls);
         }
     }
@@ -200,14 +204,22 @@ class SubagentDeliveryTest {
     }
 
     @Test
-    void reminder_failedRendersTaskErrorBlock() {
+    void reminder_failedRendersFixedCategoryTaskErrorBlock() {
         Msg msg =
                 SubagentsMiddleware.buildDeliveryReminder(
-                        List.of(delivery("tx", TaskStatus.FAILED, null, "boom")));
+                        List.of(
+                                delivery(
+                                        "tx",
+                                        TaskStatus.FAILED,
+                                        null,
+                                        "auth failed: token=sk-live-secret-1234567890")));
         String text = textOf(msg);
         assertTrue(text.contains("state=\"error\""));
         assertTrue(text.contains("<task_error>"));
-        assertTrue(text.contains("boom"));
+        assertTrue(text.contains("execution failure"), text);
+        assertTrue(text.contains("task_output"), text);
+        assertFalse(text.contains("boom"));
+        assertFalse(text.contains("sk-live-secret"), text);
     }
 
     @Test

@@ -308,16 +308,32 @@ public class WorkspaceTaskRepository implements TaskRepository {
             future.whenComplete(
                     (result, err) -> {
                         if (adopted.future().isCancelled()) {
-                            markCancelled(capturedRc, sid, taskId);
-                            fireCompletionCallback(capturedRc, taskId, subAgentId, sid, null);
+                            settleAndNotify(
+                                    capturedRc,
+                                    sid,
+                                    taskId,
+                                    subAgentId,
+                                    TaskStatus.CANCELLED,
+                                    null,
+                                    null);
                         } else if (err != null) {
-                            String errMsg = failureMessage(err);
-                            updateStatus(capturedRc, sid, taskId, TaskStatus.FAILED, null, errMsg);
-                            fireCompletionCallback(capturedRc, taskId, subAgentId, sid, null);
+                            settleAndNotify(
+                                    capturedRc,
+                                    sid,
+                                    taskId,
+                                    subAgentId,
+                                    TaskStatus.FAILED,
+                                    null,
+                                    failureMessage(err));
                         } else {
-                            updateStatus(
-                                    capturedRc, sid, taskId, TaskStatus.COMPLETED, result, null);
-                            fireCompletionCallback(capturedRc, taskId, subAgentId, sid, result);
+                            settleAndNotify(
+                                    capturedRc,
+                                    sid,
+                                    taskId,
+                                    subAgentId,
+                                    TaskStatus.COMPLETED,
+                                    result,
+                                    null);
                         }
                     });
         } else if (spec instanceof TaskRunSpec.LocalTaskRunSpec local) {
@@ -387,15 +403,19 @@ public class WorkspaceTaskRepository implements TaskRepository {
                 markCancelled(rc, sessionId, taskId);
                 return null;
             }
-            updateStatus(rc, sessionId, taskId, TaskStatus.COMPLETED, result, null);
-            fireCompletionCallback(rc, taskId, subAgentId, sessionId, result);
+            settleAndNotify(rc, sessionId, taskId, subAgentId, TaskStatus.COMPLETED, result, null);
             return result;
         } catch (Exception e) {
             RuntimeException failure =
                     e instanceof RuntimeException re ? re : new RuntimeException(e);
-            String errMsg = failureMessage(failure);
-            updateStatus(rc, sessionId, taskId, TaskStatus.FAILED, null, errMsg);
-            fireCompletionCallback(rc, taskId, subAgentId, sessionId, null);
+            settleAndNotify(
+                    rc,
+                    sessionId,
+                    taskId,
+                    subAgentId,
+                    TaskStatus.FAILED,
+                    null,
+                    failureMessage(failure));
             throw failure;
         }
     }
@@ -423,15 +443,21 @@ public class WorkspaceTaskRepository implements TaskRepository {
             }
             String result = pollRemoteUntilDone(rc, sessionId, taskId, target);
             if (result != null) {
-                fireCompletionCallback(rc, taskId, subAgentId, sessionId, result);
+                settleAndNotify(
+                        rc, sessionId, taskId, subAgentId, TaskStatus.COMPLETED, result, null);
             }
             return result;
         } catch (Exception e) {
             RuntimeException failure =
                     e instanceof RuntimeException re ? re : new RuntimeException(e);
-            String errMsg = failureMessage(failure);
-            updateStatus(rc, sessionId, taskId, TaskStatus.FAILED, null, errMsg);
-            fireCompletionCallback(rc, taskId, subAgentId, sessionId, null);
+            settleAndNotify(
+                    rc,
+                    sessionId,
+                    taskId,
+                    subAgentId,
+                    TaskStatus.FAILED,
+                    null,
+                    failureMessage(failure));
             throw failure;
         }
     }
@@ -864,7 +890,12 @@ public class WorkspaceTaskRepository implements TaskRepository {
         return existing;
     }
 
-    private synchronized void updateStatus(
+    /**
+     * Returns the status on record after the call: the existing status when a guard applies or
+     * {@link WorkspaceManager#writeTaskRecord} fails, {@code status} once the write lands, or
+     * {@code null} when no record is readable.
+     */
+    private synchronized TaskStatus updateStatus(
             RuntimeContext rc,
             String sessionId,
             String taskId,
@@ -879,14 +910,14 @@ public class WorkspaceTaskRepository implements TaskRepository {
         if (existing.isPresent()
                 && existing.get().getStatus() != null
                 && existing.get().getStatus().isTerminal()) {
-            return;
+            return existing.get().getStatus();
         }
         // Guard 2: if cancellation has been requested but the workspace record has not yet reached
         // a terminal state (e.g. heartbeat races cancelTask()), refuse to persist non-terminal
         // updates. This stops the heartbeat from writing RUNNING back over a record whose
         // cancelRequested flag was just set by cancelTask().
         if (!status.isTerminal() && existing.isPresent() && existing.get().isCancelRequested()) {
-            return;
+            return existing.get().getStatus();
         }
         TaskRecord record =
                 existing.orElseGet(
@@ -905,6 +936,61 @@ public class WorkspaceTaskRepository implements TaskRepository {
             record.setErrorMessage(error);
         }
         persistRecord(rc, sessionId, record);
+        // writeTaskRecord is best-effort: storage failures are logged and swallowed, so only a
+        // read-back proves which status the task now exposes.
+        return workspaceManager
+                .readTaskRecord(rc, parentAgentId, sessionId, taskId)
+                .map(TaskRecord::getStatus)
+                .orElse(null);
+    }
+
+    /**
+     * Persists a terminal state and reports the status that is actually on record. When
+     * cancellation races a settlement, {@link #updateStatus} keeps the record's CANCELLED status,
+     * so the callback must also report CANCELLED — announcing FAILED for a task the user just
+     * cancelled would invite the parent agent to retry it. When the terminal write does not land,
+     * no terminal status is announced: the result of a completed task exists only in memory and is
+     * handed over with the on-record status, while an unrecorded failure or cancellation has
+     * nothing to deliver and stays silent.
+     */
+    private void settleAndNotify(
+            RuntimeContext rc,
+            String sessionId,
+            String taskId,
+            String subAgentId,
+            TaskStatus status,
+            String result,
+            String errorMessage) {
+        TaskStatus effective = updateStatus(rc, sessionId, taskId, status, result, errorMessage);
+        if (effective == null) {
+            log.warn(
+                    "Task {} settlement notification withheld for session {}: no record is"
+                            + " readable",
+                    taskId,
+                    sessionId);
+            return;
+        }
+        if (!effective.isTerminal()) {
+            log.warn(
+                    "Task {} status {} was not persisted for session {} (on record: {})",
+                    taskId,
+                    status,
+                    sessionId,
+                    effective);
+            if (status == TaskStatus.COMPLETED) {
+                fireCompletionCallback(rc, taskId, subAgentId, sessionId, effective, result, null);
+            }
+            return;
+        }
+        boolean asPersisted = effective == status;
+        fireCompletionCallback(
+                rc,
+                taskId,
+                subAgentId,
+                sessionId,
+                effective,
+                asPersisted ? result : null,
+                asPersisted ? errorMessage : null);
     }
 
     private void markCancelled(RuntimeContext rc, String sessionId, String taskId) {
@@ -984,14 +1070,20 @@ public class WorkspaceTaskRepository implements TaskRepository {
     }
 
     private void fireCompletionCallback(
-            RuntimeContext rc, String taskId, String subAgentId, String sessionId, String result) {
+            RuntimeContext rc,
+            String taskId,
+            String subAgentId,
+            String sessionId,
+            TaskStatus status,
+            String result,
+            String errorMessage) {
         TaskCompletionCallback cb = this.completionCallback;
         if (cb == null
                 || (rc != null && Boolean.TRUE.equals(rc.get(SUPPRESS_COMPLETION_CALLBACK)))) {
             return;
         }
         try {
-            cb.onCompleted(rc, taskId, subAgentId, sessionId, result);
+            cb.onSettled(rc, taskId, subAgentId, sessionId, status, result, errorMessage);
         } catch (Exception e) {
             log.warn("TaskCompletionCallback failed for task {}: {}", taskId, e.getMessage(), e);
         }

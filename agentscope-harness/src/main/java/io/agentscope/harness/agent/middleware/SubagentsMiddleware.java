@@ -255,6 +255,56 @@ public class SubagentsMiddleware implements HarnessRuntimeMiddleware {
     }
 
     /**
+     * Formats the inbox hint pushed when a background subagent task settles.
+     *
+     * <p>Failed tasks must not be announced with completion wording: the parent model would treat
+     * the run as a delivered (empty) business result instead of an infrastructure failure to retry
+     * or escalate. Mirrors the task-delivery reminder's {@code <task_error>} semantics.</p>
+     *
+     * <p>Automatic notifications identify the task and its terminal state with a fixed error
+     * category — they never embed the raw exception message, which can leak internals (paths,
+     * endpoints, credentials) into the conversation. The full message stays in the durable task
+     * record, reachable via {@code task_output}.</p>
+     *
+     * <p>A non-terminal {@code status} means the task finished but its terminal state could not be
+     * persisted; the in-memory result is delivered once so it is not lost.</p>
+     */
+    public static String taskSettledHintContent(
+            String taskId, String subAgentId, TaskStatus status, String result) {
+        if (!status.isTerminal()) {
+            return String.format(
+                    "<system-reminder>Background subagent task '%s' (agent=%s) finished and"
+                            + " produced a result, but its terminal state could not be persisted,"
+                            + " so task queries may still report it as running. Do not start it"
+                            + " again.\n\nResult:\n\n%s</system-reminder>",
+                    taskId, subAgentId, result != null ? result : "(no output)");
+        }
+        if (status == TaskStatus.FAILED) {
+            return String.format(
+                    "<system-reminder>Background subagent task '%s' (agent=%s) FAILED and"
+                            + " produced no result. Error category: execution failure. This is an"
+                            + " execution failure, not a business conclusion; error details are"
+                            + " omitted from notifications because they may contain sensitive"
+                            + " data. Use task_output(task_id=..., block=false) or task_list() to"
+                            + " retrieve the full task record and error"
+                            + " details.</system-reminder>",
+                    taskId, subAgentId);
+        }
+        if (status == TaskStatus.CANCELLED) {
+            return String.format(
+                    "<system-reminder>Background subagent task '%s' (agent=%s) was CANCELLED and"
+                            + " produced no result. Use task_output(task_id=..., block=false) or"
+                            + " task_list() if you need the task"
+                            + " record.</system-reminder>",
+                    taskId, subAgentId);
+        }
+        return String.format(
+                "<system-reminder>Background subagent task '%s' (agent=%s) has completed."
+                        + "\n\nResult:\n\n%s</system-reminder>",
+                taskId, subAgentId, result != null ? result : "(no output)");
+    }
+
+    /**
      * Wires a {@link MessageBus} so that background task completions signal the session inbox and
      * enqueue a wakeup. This enables the {@link
      * io.agentscope.harness.agent.gateway.WakeupDispatcher} to re-trigger idle sessions when
@@ -276,49 +326,51 @@ public class SubagentsMiddleware implements HarnessRuntimeMiddleware {
     public static void wireMessageBus(TaskRepository repository, MessageBus bus, String agentId) {
         if (bus == null) return;
         repository.setCompletionCallback(
-                (rc, taskId, subAgentId, sessionId, result) -> {
-                    String userId = rc != null ? rc.getUserId() : null;
-                    Map<String, Object> payload =
-                            Map.of(
-                                    "type",
-                                    "hint",
-                                    "id",
-                                    UUID.randomUUID().toString().replace("-", ""),
-                                    "source",
-                                    TASK_HINT_SOURCE,
-                                    "taskId",
-                                    taskId != null ? taskId : "",
-                                    "hint",
-                                    TASK_HINT_HEADER
-                                            + taskId
-                                            + TASK_HINT_AGENT
-                                            + subAgentId
-                                            + ") has completed.\n\nResult:\n\n"
-                                            + (result != null ? result : "(no output)")
-                                            + "</system-reminder>");
-                    bus.inboxPush(sessionId, payload)
-                            .onErrorResume(
-                                    error -> {
-                                        log.warn(
-                                                "Failed to signal task {} in the inbox",
-                                                taskId,
-                                                error);
-                                        return Mono.empty();
-                                    })
-                            .then(
-                                    bus.enqueueWakeup(
-                                            userId != null ? userId : "",
-                                            sessionId,
-                                            agentId != null ? agentId : ""))
-                            .subscribe(
-                                    unused -> {},
-                                    err ->
-                                            log.warn(
-                                                    "Failed to enqueue wakeup after task {}"
-                                                            + " completion: {}",
-                                                    taskId,
-                                                    err.getMessage()));
-                });
+                (TaskRepository.TaskSettledCallback)
+                        (rc, taskId, subAgentId, sessionId, status, result, errorMessage) -> {
+                            String userId = rc != null ? rc.getUserId() : null;
+                            Map<String, Object> payload =
+                                    Map.of(
+                                            "type",
+                                            "hint",
+                                            "id",
+                                            UUID.randomUUID().toString().replace("-", ""),
+                                            "source",
+                                            TASK_HINT_SOURCE,
+                                            "taskId",
+                                            taskId != null ? taskId : "",
+                                            "hint",
+                                            taskSettledHintContent(
+                                                    taskId, subAgentId, status, result));
+                            bus.inboxPush(sessionId, payload)
+                                    .onErrorResume(
+                                            error -> {
+                                                log.warn(
+                                                        "Failed to signal task {} in the inbox",
+                                                        taskId,
+                                                        error);
+                                                return Mono.empty();
+                                            })
+                                    .then(
+                                            bus.enqueueWakeup(
+                                                    userId != null ? userId : "",
+                                                    sessionId,
+                                                    agentId != null ? agentId : ""))
+                                    .subscribe(
+                                            unused -> {},
+                                            err ->
+                                                    log.warn(
+                                                            "Failed to enqueue wakeup after task {}"
+                                                                    + " completion: {}",
+                                                            taskId,
+                                                            err.getMessage()));
+                            log.info(
+                                    "Subagent task {} settled (status={}), pushed to inbox and"
+                                            + " enqueued wakeup: session={}",
+                                    taskId,
+                                    status,
+                                    sessionId);
+                        });
     }
 
     /**
@@ -569,7 +621,10 @@ public class SubagentsMiddleware implements HarnessRuntimeMiddleware {
                 }
                 case FAILED -> {
                     sb.append("<task_error>\n");
-                    sb.append(d.errorMessage() != null ? d.errorMessage() : "(no error message)");
+                    sb.append(
+                            "execution failure; error details are omitted from notifications"
+                                    + " because they may contain sensitive data — call"
+                                    + " task_output for the full record");
                     sb.append("\n</task_error>\n");
                 }
                 case CANCELLED -> sb.append("Task was cancelled before producing a result.\n");
