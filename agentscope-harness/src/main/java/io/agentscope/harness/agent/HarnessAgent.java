@@ -59,6 +59,7 @@ import io.agentscope.core.tool.ToolExecutionContext;
 import io.agentscope.core.tool.Toolkit;
 import io.agentscope.core.tool.builtin.RequirementTools;
 import io.agentscope.harness.agent.artifact.ArtifactDeliveryTarget;
+import io.agentscope.harness.agent.context.CalibratedTokenEstimator;
 import io.agentscope.harness.agent.context.ContextPolicy;
 import io.agentscope.harness.agent.context.ContextSelectionPolicy;
 import io.agentscope.harness.agent.context.ContextSource;
@@ -3127,9 +3128,22 @@ public class HarnessAgent implements Agent, AutoCloseable {
                 inner.middleware(new io.agentscope.harness.agent.middleware.RepeatedFailureGuard());
             }
             inner.enableTaskRequirements(contextSources.taskContext().requirementProposals());
+            ContextPolicy effectiveContextPolicy = contextPolicy;
+            if (!(contextPolicy.estimator() instanceof CalibratedTokenEstimator)) {
+                // Calibrate every context-size decision with the provider-reported input size of
+                // the most recent request; the estimator degrades to plain estimates whenever no
+                // verified anchor exists. Auxiliary calls use their own defaults policy.
+                effectiveContextPolicy =
+                        new ContextPolicy(
+                                contextPolicy.maxInputTokens(),
+                                contextPolicy.reservedOutputTokens(),
+                                contextPolicy.safetyMarginTokens(),
+                                new CalibratedTokenEstimator(contextPolicy.estimator()),
+                                contextPolicy.observer());
+            }
             inner.modelRequestPreparer(
                     new HarnessContextBuilder(
-                            contextPolicy,
+                            effectiveContextPolicy,
                             compactionHook,
                             contextEviction,
                             contextSources,

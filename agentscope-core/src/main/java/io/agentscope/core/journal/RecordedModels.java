@@ -39,7 +39,12 @@ import reactor.core.publisher.Mono;
 public final class RecordedModels {
     private RecordedModels() {}
 
-    public interface ManagedModel extends Model {}
+    public interface ManagedModel extends Model {
+        /** Returns the underlying model used for stable identity comparisons. */
+        default Model modelIdentity() {
+            return this;
+        }
+    }
 
     public static Model wrap(Model model, RuntimeContext context, String purpose) {
         if (model instanceof ManagedModel || InvocationRecorder.from(context) == null) return model;
@@ -48,6 +53,11 @@ public final class RecordedModels {
 
     private record Recorded(Model delegate, RuntimeContext context, String purpose)
             implements ManagedModel {
+        @Override
+        public Model modelIdentity() {
+            return delegate;
+        }
+
         public String getModelName() {
             return delegate.getModelName();
         }
