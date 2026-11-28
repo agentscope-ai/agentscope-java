@@ -309,9 +309,11 @@ class ModelWorkerTest {
         }
     }
 
-    @Test
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
     @Timeout(20)
-    void cleanEofFromModelIsAFailedAttemptAndDurableCanRecover() throws Exception {
+    void cleanEofFromModelIsAFailedAttemptAndDurableCanRecover(boolean deliverPartial)
+            throws Exception {
         var requests = new AtomicInteger();
         var server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
         server.createContext(
@@ -322,7 +324,7 @@ class ModelWorkerTest {
                         int attempt = requests.incrementAndGet();
                         String body =
                                 attempt == 1
-                                        ? frame("partial", null)
+                                        ? (deliverPartial ? frame("partial", null) : "")
                                         : frame("recovered", "stop") + "data: [DONE]\n\n";
                         var bytes = body.getBytes(StandardCharsets.UTF_8);
                         exchange.getResponseHeaders().set("Content-Type", "text/event-stream");

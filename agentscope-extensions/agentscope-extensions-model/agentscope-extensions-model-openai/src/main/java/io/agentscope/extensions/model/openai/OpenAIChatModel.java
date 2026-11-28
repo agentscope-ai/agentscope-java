@@ -21,9 +21,11 @@ import io.agentscope.core.formatter.ResponseFormat;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.model.ChatModelBase;
 import io.agentscope.core.model.ChatResponse;
+import io.agentscope.core.model.ExecutionConfig;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.ModelContextWindows;
 import io.agentscope.core.model.ModelException;
+import io.agentscope.core.model.ModelHttpException;
 import io.agentscope.core.model.ModelSchedulers;
 import io.agentscope.core.model.ModelUtils;
 import io.agentscope.core.model.ToolSchema;
@@ -37,6 +39,7 @@ import io.agentscope.extensions.model.openai.dto.OpenAIRequest;
 import io.agentscope.extensions.model.openai.dto.OpenAIResponse;
 import io.agentscope.extensions.model.openai.dto.OpenAIStreamOptions;
 import io.agentscope.extensions.model.openai.formatter.OpenAIChatFormatter;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.Objects;
@@ -71,6 +74,13 @@ import reactor.core.publisher.Flux;
 public class OpenAIChatModel extends ChatModelBase {
 
     private static final Logger log = LoggerFactory.getLogger(OpenAIChatModel.class);
+    private static final GenerateOptions DEFAULT_EXECUTION_OPTIONS =
+            GenerateOptions.builder()
+                    .executionConfig(
+                            ExecutionConfig.mergeConfigs(
+                                    ExecutionConfig.builder().maxAttempts(1).build(),
+                                    ExecutionConfig.MODEL_DEFAULTS))
+                    .build();
 
     private final OpenAIClient client;
     private final Formatter<OpenAIMessage, OpenAIResponse, OpenAIRequest> formatter;
@@ -98,12 +108,40 @@ public class OpenAIChatModel extends ChatModelBase {
     @Override
     protected Flux<ChatResponse> doStream(
             List<Msg> messages, List<ToolSchema> tools, GenerateOptions options) {
+        var effective = GenerateOptions.mergeOptions(options, configuredOptions);
+        var retryOn = effective.getExecutionConfig().getRetryOn();
+        var retryGuard =
+                GenerateOptions.builder()
+                        .executionConfig(
+                                ExecutionConfig.builder()
+                                        .retryOn(
+                                                error ->
+                                                        isRateLimited(error) && retryOn.test(error))
+                                        .build())
+                        .build();
         return ModelUtils.applyTimeoutAndRetry(
                 doStream0(messages, tools, options),
-                options,
-                configuredOptions,
+                retryGuard,
+                effective,
                 configuredOptions.getModelName(),
                 "openai");
+    }
+
+    // A connection error or 5xx can occur after the provider has accepted the POST.
+    private static boolean isRateLimited(Throwable error) {
+        for (Throwable cause = error; cause != null; cause = cause.getCause()) {
+            if (cause instanceof ModelHttpException http && http.getStatusCode() != null) {
+                return http.getStatusCode() == 429;
+            }
+        }
+        return false;
+    }
+
+    /** Defaults for the managed OpenAI HTTP transport. */
+    public static HttpTransportConfig.Builder httpTransportDefaults() {
+        return HttpTransportConfig.builder()
+                .http2PingInterval(Duration.ofSeconds(10))
+                .retryOnConnectionFailure(false);
     }
 
     protected Flux<ChatResponse> doStream0(
@@ -262,6 +300,7 @@ public class OpenAIChatModel extends ChatModelBase {
         private String endpointPath;
         private Formatter<OpenAIMessage, OpenAIResponse, OpenAIRequest> formatter;
         private HttpTransport httpTransport;
+        private HttpTransportConfig httpTransportConfig;
         private ProxyConfig proxyConfig;
         private int contextWindowSize = -1;
         private Boolean nativeStructuredOutput;
@@ -387,6 +426,16 @@ public class OpenAIChatModel extends ChatModelBase {
         }
 
         /**
+         * Configure the managed OkHttp transport for this model. Start with
+         * {@link OpenAIChatModel#httpTransportDefaults()} to customize selected settings.
+         * An explicit {@link #httpTransport(HttpTransport)} takes precedence.
+         */
+        public Builder httpTransportConfig(HttpTransportConfig config) {
+            this.httpTransportConfig = config;
+            return this;
+        }
+
+        /**
          * Sets the proxy configuration for HTTP traffic.
          *
          * <p><b>Interaction with {@link #httpTransport(HttpTransport)}:</b>
@@ -404,8 +453,7 @@ public class OpenAIChatModel extends ChatModelBase {
          *       The {@code proxy()} setting is <b>ignored</b> and a warning is logged.
          *       To configure proxy with a custom transport, set it within the transport's
          *       {@link HttpTransportConfig} directly.
-         *   <li>If neither is called: the default transport from {@link HttpTransportFactory}
-         *       is used (no proxy).
+         *   <li>If neither is called: use the shared OpenAI transport or the application override.
          * </ul>
          *
          * @param proxyConfig the proxy configuration (see {@link ProxyConfig})
@@ -516,7 +564,7 @@ public class OpenAIChatModel extends ChatModelBase {
 
             // Ensure execution config has defaults
             GenerateOptions effectiveOptions =
-                    ModelUtils.ensureDefaultExecutionConfig(mergedOptions);
+                    GenerateOptions.mergeOptions(mergedOptions, DEFAULT_EXECUTION_OPTIONS);
 
             // Resolve transport
             HttpTransport transport = resolveTransport();
@@ -547,7 +595,7 @@ public class OpenAIChatModel extends ChatModelBase {
          * <p>If {@code httpTransport()} is set, it takes full precedence and
          * {@code proxyConfig} is ignored (with a warning logged). Otherwise,
          * if {@code proxy()} is set, a default transport with the proxy applied
-         * is created. If neither is set, the factory default is used.
+         * is created. Otherwise, the factory manages the default OpenAI transport.
          *
          * @return the resolved HttpTransport
          */
@@ -565,15 +613,19 @@ public class OpenAIChatModel extends ChatModelBase {
                 return httpTransport;
             }
 
-            if (proxyConfig != null) {
-                // Only proxy() called → use default transport with proxy
-                return OkHttpTransport.builder()
-                        .config(HttpTransportConfig.builder().proxy(proxyConfig).build())
-                        .build();
+            if (httpTransportConfig != null || proxyConfig != null) {
+                var config =
+                        httpTransportConfig != null
+                                ? httpTransportConfig
+                                : httpTransportDefaults().proxy(proxyConfig).build();
+                var transport = new OkHttpTransport(config);
+                HttpTransportFactory.register(transport);
+                return transport;
             }
 
-            // Neither called → use factory default
-            return HttpTransportFactory.getDefault();
+            return HttpTransportFactory.getDefault(
+                    OpenAIChatModel.class,
+                    () -> new OkHttpTransport(httpTransportDefaults().build()));
         }
     }
 }

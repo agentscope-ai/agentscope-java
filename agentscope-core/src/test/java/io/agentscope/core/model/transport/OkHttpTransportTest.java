@@ -70,6 +70,31 @@ class OkHttpTransportTest {
     }
 
     @Test
+    void doesNotFollowUpOnPostWhenConnectionRetryIsDisabled() {
+        mockServer.enqueue(new MockResponse().setResponseCode(503).setHeader("Retry-After", "0"));
+        mockServer.enqueue(new MockResponse().setBody("next"));
+
+        transport.close();
+        transport =
+                new OkHttpTransport(
+                        HttpTransportConfig.builder()
+                                .retryOnConnectionFailure(false)
+                                .http2PingInterval(Duration.ofSeconds(7))
+                                .build());
+        assertEquals(7000, transport.getClient().pingIntervalMillis());
+        var request =
+                HttpRequest.builder()
+                        .url(mockServer.url("/").toString())
+                        .method("POST")
+                        .body("{}")
+                        .build();
+        assertEquals(503, transport.execute(request).getStatusCode());
+        assertEquals(1, mockServer.getRequestCount());
+        assertEquals("next", transport.execute(request).getBody());
+        assertEquals(2, mockServer.getRequestCount());
+    }
+
+    @Test
     void testExecuteSuccessfulRequest() throws Exception {
         String responseBody = "{\"message\": \"hello\"}";
         mockServer.enqueue(
