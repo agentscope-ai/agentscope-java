@@ -2970,15 +2970,16 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
          *   <li>{@code confirmed == true}: replace the ASKING ToolUseBlock with the (possibly
          *       modified) one from the result, set state to {@link ToolCallState#ALLOWED}, and
          *       register any attached {@link PermissionRule}s with the engine.</li>
-         *   <li>{@code confirmed == false}: write a DENIED {@link ToolResultBlock} to context so
-         *       the tool will no longer be pending on resume, using the user-supplied
-         *       {@link ConfirmResult#getReason() reason} when present, and publish the complete
-         *       tool-result event lifecycle.</li>
+         *   <li>{@code confirmed == false}: set state to {@link ToolCallState#FINISHED}, write a
+         *       DENIED {@link ToolResultBlock} to context so the tool will no longer be pending on
+         *       resume, using the user-supplied {@link ConfirmResult#getReason() reason} when
+         *       present, and publish the complete tool-result event lifecycle.</li>
          * </ul>
          */
         private void applyConfirmResults(List<ConfirmResult> results, String replyId) {
             // Replace ASKING ToolUseBlocks with possibly-modified ones from the user, and
-            // promote them to ALLOWED. Collect denied ones for separate handling.
+            // promote them to ALLOWED (or mark FINISHED on denial). Collect denied ones for
+            // separate handling.
             List<Map.Entry<ToolUseBlock, String>> deniedToolCalls = new ArrayList<>();
             Map<String, ToolUseBlock> replacements = new HashMap<>();
             for (ConfirmResult r : results) {
@@ -3007,6 +3008,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                         }
                     }
                 } else {
+                    replacements.put(target.getId(), target.withState(ToolCallState.FINISHED));
                     String reason = r.getReason();
                     deniedToolCalls.add(
                             Map.entry(
