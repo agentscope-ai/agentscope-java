@@ -653,6 +653,22 @@ public final class TransactionalSessionBackend implements SessionBackend {
                 });
     }
 
+    private static State createState(
+            SessionSpec specification, String digest, RecordStore.Transaction tx) {
+        State state = attach(new State(), tx);
+        state.session =
+                new SessionView(
+                        specification.key(),
+                        "main",
+                        Lifecycle.OPEN,
+                        DurableJson.copy(specification.metadata()));
+        state.creationDigest = digest;
+        appendSessionLifecycle(state, "created");
+        var primary = new ThreadKey(specification.key(), "main");
+        selectThread(state, primary, new ThreadSpec(primary, specification.primaryBinding()));
+        return state;
+    }
+
     @Override
     public ThreadView createThread(ThreadSpec specification) {
         Objects.requireNonNull(specification);
@@ -670,22 +686,6 @@ public final class TransactionalSessionBackend implements SessionBackend {
         return change(
                 key,
                 (s, n) -> {
-    private static State createState(
-            SessionSpec specification, String digest, RecordStore.Transaction tx) {
-        State state = attach(new State(), tx);
-        state.session =
-                new SessionView(
-                        specification.key(),
-                        "main",
-                        Lifecycle.OPEN,
-                        DurableJson.copy(specification.metadata()));
-        state.creationDigest = digest;
-        appendSessionLifecycle(state, "created");
-        var primary = new ThreadKey(specification.key(), "main");
-        selectThread(state, primary, new ThreadSpec(primary, specification.primaryBinding()));
-        return state;
-    }
-
                     String scope = key.storageKey() + ":threads";
                     var keys = s.tx.keys("thread:", pagePosition(after, scope), count);
                     return new ThreadPage(
@@ -3487,6 +3487,7 @@ public final class TransactionalSessionBackend implements SessionBackend {
                                     s.thread.checkpointPosition,
                                     cursor(s, s.sequence));
                     s.threadTx.put(receiptKey, DurableJson.value(receipt));
+                    save(s);
                     return receipt;
                 });
     }
@@ -3510,7 +3511,6 @@ public final class TransactionalSessionBackend implements SessionBackend {
         append(
                 state,
                 null,
-                    save(s);
                 new EventInput(
                         type + ":" + DurableJson.hash(state.thread.definition.key()),
                         type,
