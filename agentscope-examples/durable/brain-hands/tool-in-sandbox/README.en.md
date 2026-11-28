@@ -33,6 +33,8 @@ Requirements: Java 17+, Maven, POSIX `sh`, Python 3, and an already running Rock
 Broker ACLs and authentication for your deployment; this is not a production credential configuration.
 
 Both applications default to `mq-namespace=durable-sandbox`, separate from the echo tool scenario.
+Set `durable.brain-hands-tool-in-sandbox.receive-wait` to tune Brain's dispatch long poll
+for the Proxy. The default is `1s`.
 Provision these LITE parents using the [Durable LiteTopic setup](../../../../docs/dev/en/docs/harness/durable.md):
 
 - `durable-sandbox-turn-dispatch`

@@ -68,7 +68,8 @@ Brain loop. Closing a Runtime, subscription, or Future does not cancel durable w
 
 Public handlers must not expose Backend claim/commit operations, private Frames,
 native checkpoints, or result-write APIs. Hosts authorize namespace and Session
-access; fork requires authorization for both source and target. A cursor or
+access; fork operations authorize both source and target. For `forkSession` the
+target requires Session creation authorization. A cursor or
 execution identity is not an access credential.
 
 ## Resource and execution model
@@ -222,6 +223,7 @@ common envelope; consult `userRequest` and the operation-specific definitions in
 | `checkpoints` | `session, threadId, after, limit`; lists checkpoint metadata |
 | `restore` | `session, threadId, position, expectedPosition, requestId`; returns CommitReceipt |
 | `fork` | `session, threadId, position, target, requestId`; returns the target ThreadView |
+| `forkSession` | `session, threadId, position, target (SessionKey), requestId`; atomically creates the destination and returns its SessionView |
 
 Public list limits are 1–1000. Cursors bind their query scope; pagination is not a
 cross-page snapshot. Public requests always identify the target Thread explicitly.
@@ -237,7 +239,9 @@ for state preconditions and race semantics.
 
 Restore and fork require valid, settled checkpoints and compatible bindings.
 Fork inherits the source binding and stays within the same namespace. A
-cross-Session fork requires the target Session to exist first.
+cross-Session `fork` requires an existing target Session. Use `forkSession` for
+a fresh destination in the same namespace. Retrying the original request preserves
+the installed baseline and admission history.
 
 ## Backend operations
 

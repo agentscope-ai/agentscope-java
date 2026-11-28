@@ -62,7 +62,8 @@ final class DurableOperations {
                     "eventsBefore",
                     "checkpoints",
                     "restore",
-                    "fork");
+                    "fork",
+                    "forkSession");
     private final DurableRuntime runtime;
     private final SessionBackend backend;
 
@@ -202,14 +203,22 @@ final class DurableOperations {
                                             backend.thread(thread).definition(),
                                             p.path("expectedPosition").asLong(),
                                             p.path("requestId").asText()));
-                    case "fork" -> {
+                    case "fork", "forkSession" -> {
                         var source = backend.thread(thread).definition();
-                        var targetKey = DurableJson.convert(p.get("target"), ThreadKey.class);
+                        boolean createSession = "forkSession".equals(request.operation());
+                        var targetKey =
+                                createSession
+                                        ? new ThreadKey(
+                                                DurableJson.convert(
+                                                        p.get("target"), SessionKey.class),
+                                                "main")
+                                        : DurableJson.convert(p.get("target"), ThreadKey.class);
                         if (!key.namespace().equals(targetKey.session().namespace())
-                                || thread.equals(targetKey))
+                                || thread.equals(targetKey)
+                                || (createSession && key.equals(targetKey.session())))
                             throw new DurableException(
                                     DurableException.Code.INVALID,
-                                    "Fork requires a distinct Thread in the same namespace");
+                                    "Fork requires a distinct destination in the same namespace");
                         var target = new ThreadSpec(targetKey, source.binding());
                         runtime.restore(
                                 new CheckpointRestore(
@@ -217,8 +226,11 @@ final class DurableOperations {
                                         p.path("position").asLong(),
                                         target,
                                         0,
-                                        p.path("requestId").asText()));
-                        yield backend.thread(targetKey);
+                                        p.path("requestId").asText(),
+                                        createSession));
+                        yield createSession
+                                ? backend.session(targetKey.session())
+                                : backend.thread(targetKey);
                     }
                     default ->
                             throw new DurableException(

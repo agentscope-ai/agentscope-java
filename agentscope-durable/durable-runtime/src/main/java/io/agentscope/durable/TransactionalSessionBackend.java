@@ -647,27 +647,26 @@ public final class TransactionalSessionBackend implements SessionBackend {
                                 "Session creation specification changed");
                         return existing.session;
                     }
-                    State state = attach(new State(), tx);
-                    state.session =
-                            new SessionView(
-                                    specification.key(),
-                                    "main",
-                                    Lifecycle.OPEN,
-                                    DurableJson.copy(specification.metadata()));
-                    state.creationDigest = digest;
-                    ThreadData primary = new ThreadData();
-                    primary.definition =
-                            new ThreadSpec(
-                                    new ThreadKey(specification.key(), "main"),
-                                    specification.primaryBinding());
-                    state.threads.put("main", primary);
-                    appendSessionLifecycle(state, "created");
-                    state.thread = primary;
-                    state.threadTx = threadTransaction(tx, primary.definition.key());
-                    appendThreadLifecycle(state, "created");
+                    State state = createState(specification, digest, tx);
                     save(state);
                     return state.session;
                 });
+    }
+
+    private static State createState(
+            SessionSpec specification, String digest, RecordStore.Transaction tx) {
+        State state = attach(new State(), tx);
+        state.session =
+                new SessionView(
+                        specification.key(),
+                        "main",
+                        Lifecycle.OPEN,
+                        DurableJson.copy(specification.metadata()));
+        state.creationDigest = digest;
+        appendSessionLifecycle(state, "created");
+        var primary = new ThreadKey(specification.key(), "main");
+        selectThread(state, primary, new ThreadSpec(primary, specification.primaryBinding()));
+        return state;
     }
 
     @Override
@@ -3371,11 +3370,29 @@ public final class TransactionalSessionBackend implements SessionBackend {
                                                 storeContent(session, value.value()),
                                                 value.version()))
                         .toList();
-        return change(
-                thread,
-                restore.target(),
-                (s, n) -> {
-                    String receiptKey = "restore:" + DurableJson.hash(restore.requestId());
+        String receiptKey = "restore:" + DurableJson.hash(restore.requestId());
+        return store.transaction(
+                session.storageKey(),
+                tx -> {
+                    State existing = decode(tx.get(""));
+                    State s;
+                    if (existing == null) {
+                        if (!restore.createSession())
+                            throw error(DurableException.Code.NOT_FOUND, "Session not found");
+                        var specification =
+                                new SessionSpec(session, restore.target().binding(), null);
+                        s = createState(specification, DurableJson.hash(specification), tx);
+                    } else {
+                        s = attach(existing, tx);
+                        if (!session.equals(s.session.key()))
+                            throw error(DurableException.Code.CONFLICT, "Session key mismatch");
+                        if (restore.createSession()
+                                && threadTransaction(tx, thread).get(receiptKey) == null)
+                            throw error(
+                                    DurableException.Code.CONFLICT,
+                                    "Fork destination Session already exists");
+                        selectThread(s, thread, restore.target());
+                    }
                     var old = s.threadTx.get(receiptKey);
                     if (old != null) {
                         var receipt = DurableJson.convert(old, CommitReceipt.class);
@@ -3470,6 +3487,7 @@ public final class TransactionalSessionBackend implements SessionBackend {
                                     s.thread.checkpointPosition,
                                     cursor(s, s.sequence));
                     s.threadTx.put(receiptKey, DurableJson.value(receipt));
+                    save(s);
                     return receipt;
                 });
     }

@@ -73,6 +73,7 @@ entries can appear on subsequent pages.
 | checkpoints | session, threadId, after, limit | CheckpointMetadata list; after is a Thread checkpoint position, not event cursor |
 | restore | session, threadId, position, expectedPosition, requestId | CommitReceipt |
 | fork | session, threadId, position, target (ThreadKey), requestId | ThreadView; another Thread in the same namespace, inheriting the source binding |
+| forkSession | session, threadId, position, target (SessionKey), requestId | SessionView; a new Session in the same namespace whose main Thread inherits the source binding and selected checkpoint |
 
 Creation with identical identity/parameters is idempotent; changed definitions or Session metadata conflict.
 Retrying creation after closure does not reopen the object. Admission and controls share Session + requestId
@@ -84,7 +85,8 @@ specific Thread handle before addressing any other Thread. Protocol requests alw
 explicit threadId; Session conveniences do not change the storage scope.
 Session/Thread creation needs registered definition/definitionResolver; existing lookup needs no local Agent.
 Fork can create a target Thread in an existing Session, but never implicitly creates a Session;
-create the target Session explicitly before a cross-Session fork.
+use `forkSession` for a new destination. It commits the Session and its baseline together.
+The original request can be retried against that destination after a lost response.
 Authorize namespace listings and every Session operation; fork
 checks source and target separately. Cursors do not replace authorization.
 
@@ -165,7 +167,7 @@ sequences are separate. Public views never expose native checkpoints or reasonin
 | Session activity | session.activity_changed records running, idle, exhausted recovery, or the outstanding manual interaction IDs |
 | pause / resume | turn.pause_requested, turn.paused, turn.resumed; no user chat message |
 | extension signal | signal.accepted; execution advances only after its waiting condition is satisfied |
-| restore / fork | checkpoint.restored after settled/idle/version/expectedPosition validation |
+| restore / fork / forkSession | checkpoint.restored after settled/version validation and target checks |
 
 Public input message ID is `input:` + hash([turnId, requestId, inputKind]) using the current
 DurableJson canonical digest. inputKind is submit/steer/inject/respond and requires requestId

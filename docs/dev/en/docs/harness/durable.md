@@ -320,7 +320,22 @@ instance. The backend holds authoritative state; queries never start an Agent.
 | Thread | `submit(requestId, Input)`, `getTurn(turnId)`, `listTurns(cursor, limit)`, `history(cursor, limit)`, `view()`, `close()` |
 | Turn | `status()`, `result()`, `await(timeout)`, `steer`, `inject`, `withdraw`, `cancel`, `pendingInteractions`, `respond`, `pause`, `resume` |
 | Session / Thread / Turn | `listEvents(cursor, limit)`, `streamEvents(options)`, `subscribeEvents(options, listener)`; filtering retains the Session sequence |
-| Thread | `checkpoints(after, limit)`, `restore(position, expectedPosition, requestId)`, `fork(position, targetThreadKey, requestId)` |
+| Thread | `checkpoints(after, limit)`, `restore(position, expectedPosition, requestId)`, `fork(position, targetThreadKey, requestId)`, `forkSession(position, targetSessionKey, requestId)` |
+
+To branch from a retained, settled checkpoint into an independent Session, use the
+source Thread and a new Session key in the same namespace.
+
+```java
+var branch = conversation.mainThread().forkSession(
+        checkpointPosition, new SessionKey("demo", "alternate"), "fork-alternate");
+branch.submit("alternate-1", "Explore another approach.");
+```
+
+The new Session, its main Thread and the restored baseline become visible together.
+The main Thread inherits the source binding and checkpointed private resources.
+Retry with the same source checkpoint, target key and request ID after a lost reply.
+A destination created by another request causes a conflict. Use `fork` for a Thread
+in an existing Session. External files and Sandbox lifetimes follow their configured stores.
 
 DurableTurn represents a persistent logical task. Native AgentRun is one in-process
 invocation sharing runId with Durable's RunView; StepView records its steps. Recovery
@@ -686,12 +701,17 @@ and Cluster Proxy. The default MQ namespace is `durable`.
 
 Replace `durable` with your deployment namespace and `hands` with the execution route.
 For each parent and group, set these attributes with the deployment's NameServer and cluster.
-Use `WILDCARD=false` for the owner group and `WILDCARD=true` for all other groups.
+Use `SUBSCRIPTION_MODE=EXPLICIT` for the owner group and `WILDCARD` for the others.
+In RocketMQ 5.5.1, omit `lite.sub.wildcard` entirely for explicit subscriptions.
 
 ```sh
 mqadmin updateTopic -n "$NAMESRV" -c "$CLUSTER" -t "$PARENT" -a '+message.type=LITE'
+attributes="+lite.bind.topic=$PARENT,+lite.sub.model=Shared"
+if [ "$SUBSCRIPTION_MODE" = WILDCARD ]; then
+  attributes="$attributes,+lite.sub.wildcard=true"
+fi
 mqadmin updateSubGroup -n "$NAMESRV" -c "$CLUSTER" -g "$GROUP" -o true -m true \
-  --attributes "+lite.bind.topic=$PARENT,+lite.sub.model=Shared,+lite.sub.wildcard=$WILDCARD"
+  --attributes "$attributes"
 ```
 
 Configure ACLs, authentication, TLS, and retention for those resources. Replicas of a
@@ -749,9 +769,16 @@ Session hints scope discovery to the changed Session. `releaseDelay` controls ho
 unsettled work waits after its lease is released. The scheduler arms a local timer for
 known deadlines and rereads the database when the timer fires. The durable index covers
 outstanding deadlines after outages and restarts.
+Use `RocketMqTopology.turns(namespace).subscriptions()` and
+`RocketMqTopology.route(namespace, executor).subscriptions()` to read the LITE parent topics,
+bound consumer groups and subscription modes used by the runtime. Provision those resources
+with your deployment tooling.
+
 Pass `RocketMqTurnScheduler.Options` to `create` to configure the Outbox repair interval,
 the wait before republishing an unclaimed dispatch, and separate dispatch and signal cache
-sizes. The defaults are 2 seconds, 5 seconds, and 32 messages per consumer. Hands can set
+sizes. The defaults are 2 seconds, 5 seconds, and 32 messages per consumer. The fifth
+argument, `receiveWait`, sets the dispatch consumer's long-poll wait and defaults to
+1 second. Choose a value compatible with the Proxy's polling limits. Hands can set
 `RocketMqWorker.Builder.controlCacheSize` independently of its command consumer cache.
 
 During a rolling restart, take the host out of service, then call `runtime.drain(timeout)`

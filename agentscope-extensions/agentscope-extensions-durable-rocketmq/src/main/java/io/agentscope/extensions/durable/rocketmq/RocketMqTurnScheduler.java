@@ -49,9 +49,8 @@ import org.apache.rocketmq.client.apis.producer.Producer;
 /** Thread-scoped notifications, owner signals and replayable dispatch over RocketMQ LiteTopics. */
 public final class RocketMqTurnScheduler implements TurnScheduler, AutoCloseable {
     private static final int MAX_DEADLINES = 4096;
-    private static final Options DEFAULT_OPTIONS =
-            new Options(Duration.ofSeconds(2), Duration.ofSeconds(5), 32, 32);
-    private final RocketMqTurnTopology topology;
+    private static final Options DEFAULT_OPTIONS = new Options(Duration.ofSeconds(1));
+    private final RocketMqTopology.Turn topology;
     private final ClientServiceProvider provider;
     private final ClientConfiguration configuration;
     private final Subscription dispatchSubscription;
@@ -133,12 +132,31 @@ public final class RocketMqTurnScheduler implements TurnScheduler, AutoCloseable
                 failedPublications.sum());
     }
 
-    /** Dispatch Outbox intervals and per-consumer pending-message limits. */
+    /** Dispatch outbox intervals, consumer limits and the dispatch long-poll wait. */
     public record Options(
             Duration publicationRepairInterval,
             Duration republishAfter,
             int dispatchCacheSize,
-            int signalCacheSize) {
+            int signalCacheSize,
+            Duration receiveWait) {
+        /** Uses the default publication intervals and consumer limits with a custom receive wait. */
+        public Options(Duration receiveWait) {
+            this(Duration.ofSeconds(2), Duration.ofSeconds(5), 32, 32, receiveWait);
+        }
+
+        public Options(
+                Duration publicationRepairInterval,
+                Duration republishAfter,
+                int dispatchCacheSize,
+                int signalCacheSize) {
+            this(
+                    publicationRepairInterval,
+                    republishAfter,
+                    dispatchCacheSize,
+                    signalCacheSize,
+                    Duration.ofSeconds(1));
+        }
+
         public Options {
             if (publicationRepairInterval.toMillis() < 1 || republishAfter.toMillis() < 1)
                 throw new IllegalArgumentException("Turn publication intervals must be positive");
@@ -147,6 +165,8 @@ public final class RocketMqTurnScheduler implements TurnScheduler, AutoCloseable
                     || signalCacheSize < 1
                     || signalCacheSize > 1024)
                 throw new IllegalArgumentException("Consumer cache size must be 1..1024");
+            if (receiveWait == null || receiveWait.compareTo(Duration.ofMillis(1)) < 0)
+                throw new IllegalArgumentException("Dispatch receive wait must be at least 1 ms");
         }
     }
 
@@ -158,7 +178,7 @@ public final class RocketMqTurnScheduler implements TurnScheduler, AutoCloseable
     public static RocketMqTurnScheduler create(
             ClientConfiguration configuration, String namespace, Options options) {
         var provider = ClientServiceProvider.loadService();
-        var topology = RocketMqTurnTopology.namespace(namespace);
+        var topology = RocketMqTopology.turns(namespace);
         return new RocketMqTurnScheduler(
                 provider,
                 configuration,
@@ -169,7 +189,8 @@ public final class RocketMqTurnScheduler implements TurnScheduler, AutoCloseable
                         configuration,
                         topology.dispatch(),
                         topology.runnerGroup(),
-                        options.dispatchCacheSize()),
+                        options.dispatchCacheSize(),
+                        options.receiveWait()),
                 RocketMqLoop.subscription(
                         provider,
                         configuration,
@@ -190,7 +211,7 @@ public final class RocketMqTurnScheduler implements TurnScheduler, AutoCloseable
     RocketMqTurnScheduler(
             ClientServiceProvider provider,
             ClientConfiguration configuration,
-            RocketMqTurnTopology topology,
+            RocketMqTopology.Turn topology,
             Producer producer,
             Subscription dispatchSubscription,
             Subscription signalSubscription,

@@ -300,41 +300,8 @@ public abstract class SessionBackendContract {
     void resourceLifecycleCommitsRollBackTogetherAndLostRepliesAreIdempotent() {
         var rollback = new AtomicBoolean();
         var lostReply = new AtomicBoolean();
-        var faulty =
-                wrap(
-                        new TransactionalSessionBackend(
-                                new RecordStore() {
-                                    public <T> T transaction(
-                                            String scope, Function<Transaction, T> action) {
-                                        T result =
-                                                store.transaction(
-                                                        scope,
-                                                        tx -> {
-                                                            T value = action.apply(tx);
-                                                            if (rollback.getAndSet(false))
-                                                                throw new DurableException(
-                                                                        DurableException.Code
-                                                                                .UNAVAILABLE,
-                                                                        "before commit");
-                                                            return value;
-                                                        });
-                                        if (lostReply.getAndSet(false))
-                                            throw new DurableException(
-                                                    DurableException.Code.UNAVAILABLE,
-                                                    "reply lost after commit");
-                                        return result;
-                                    }
-
-                                    public List<Work> ready(String queue, int limit) {
-                                        return store.ready(queue, limit);
-                                    }
-
-                                    public List<String> keys(
-                                            String prefix, String after, int limit) {
-                                        return store.keys(prefix, after, limit);
-                                    }
-                                }));
         var target = new SessionKey("tenant", "lifecycle");
+        var faulty = faultingBackend(target, rollback, lostReply);
         var specification =
                 new SessionSpec(
                         target, new ThreadBinding("test", "v1", "1"), DurableJson.value(null));
@@ -379,6 +346,156 @@ public abstract class SessionBackendContract {
         var replay = new EventProjection(target);
         backend.events(target, null, 100).events().forEach(replay::accept);
         assertEquals(backend.snapshot(target).projection(), replay.value());
+    }
+
+    @Test
+    void forkSessionRollsBackTheDestinationAndRecoversAfterLostReply() {
+        var rollback = new AtomicBoolean();
+        var lostReply = new AtomicBoolean();
+        var target = new SessionKey("tenant", "fork-recovery");
+        var thread = new ThreadKey(target, "main");
+        var definition = new ThreadSpec(thread, new ThreadBinding("test", "v1", "1"));
+        var checkpoint = DurableJson.value(Map.of("state", "at-source-checkpoint"));
+        var resource =
+                new SessionResources.Value(
+                        List.of("workspace"), "note", DurableJson.value(Map.of("text", "copy")), 1);
+        var fork =
+                new Restoration(
+                        "fork", 0, definition, checkpoint, List.of(), List.of(resource), true);
+        var faulty = faultingBackend(target, rollback, lostReply);
+
+        rollback.set(true);
+        code(DurableException.Code.UNAVAILABLE, () -> faulty.restore(fork));
+        code(DurableException.Code.NOT_FOUND, () -> backend.session(target));
+        assertTrue(store.transaction(target.storageKey(), tx -> tx.keys("", null, 100)).isEmpty());
+
+        lostReply.set(true);
+        code(DurableException.Code.UNAVAILABLE, () -> faulty.restore(fork));
+        var committed = backend.snapshot(target);
+        assertEquals("3", committed.sequence());
+        assertEquals(definition, backend.thread(thread).definition());
+        assertEquals(checkpoint, backend.checkpoint(thread, 1).checkpoint());
+        assertEquals(List.of(resource), backend.checkpointResources(thread, 1));
+
+        try (var reopened = wrap(new TransactionalSessionBackend(openStore()))) {
+            var receipt = reopened.restore(fork);
+            assertEquals(1, receipt.revision());
+            assertEquals(receipt, reopened.restore(fork));
+            assertEquals(committed, reopened.snapshot(target));
+            var changed =
+                    new Restoration(
+                            "fork",
+                            0,
+                            definition,
+                            DurableJson.value("changed"),
+                            List.of(),
+                            List.of(resource),
+                            true);
+            code(DurableException.Code.CONFLICT, () -> reopened.restore(changed));
+            var another =
+                    new Restoration(
+                            "another",
+                            0,
+                            definition,
+                            checkpoint,
+                            List.of(),
+                            List.of(resource),
+                            true);
+            code(DurableException.Code.CONFLICT, () -> reopened.restore(another));
+            assertEquals(committed, reopened.snapshot(target));
+        }
+    }
+
+    @Test
+    void concurrentForksIntoTheSameSessionHaveOnlyOneWinner() throws Exception {
+        var target = new SessionKey("tenant", "fork-race");
+        var thread = new ThreadKey(target, "main");
+        var definition = new ThreadSpec(thread, new ThreadBinding("test", "v1", "1"));
+        var left =
+                new Restoration(
+                        "left",
+                        0,
+                        definition,
+                        DurableJson.value("left"),
+                        List.of(),
+                        List.of(),
+                        true);
+        var right =
+                new Restoration(
+                        "right",
+                        0,
+                        definition,
+                        DurableJson.value("right"),
+                        List.of(),
+                        List.of(),
+                        true);
+        var pool = Executors.newFixedThreadPool(2);
+        var start = new CountDownLatch(1);
+        try {
+            var attempts =
+                    List.of(left, right).stream()
+                            .map(
+                                    fork ->
+                                            pool.submit(
+                                                    () -> {
+                                                        start.await();
+                                                        try {
+                                                            backend.restore(fork);
+                                                            return fork;
+                                                        } catch (DurableException conflict) {
+                                                            assertEquals(
+                                                                    DurableException.Code.CONFLICT,
+                                                                    conflict.code());
+                                                            return null;
+                                                        }
+                                                    }))
+                            .toList();
+            start.countDown();
+            var first = attempts.get(0).get(10, TimeUnit.SECONDS);
+            var second = attempts.get(1).get(10, TimeUnit.SECONDS);
+            assertTrue((first == null) != (second == null));
+            var winner = first == null ? second : first;
+            assertEquals(winner.checkpoint(), backend.checkpoint(thread, 1).checkpoint());
+            assertEquals("3", backend.snapshot(target).sequence());
+        } finally {
+            pool.shutdownNow();
+        }
+    }
+
+    private SessionBackend faultingBackend(
+            SessionKey target, AtomicBoolean rollback, AtomicBoolean lostReply) {
+        return wrap(
+                new TransactionalSessionBackend(
+                        new RecordStore() {
+                            public <T> T transaction(
+                                    String scope, Function<Transaction, T> action) {
+                                boolean destination = scope.equals(target.storageKey());
+                                T result =
+                                        store.transaction(
+                                                scope,
+                                                tx -> {
+                                                    T value = action.apply(tx);
+                                                    if (destination && rollback.getAndSet(false))
+                                                        throw new DurableException(
+                                                                DurableException.Code.UNAVAILABLE,
+                                                                "before commit");
+                                                    return value;
+                                                });
+                                if (destination && lostReply.getAndSet(false))
+                                    throw new DurableException(
+                                            DurableException.Code.UNAVAILABLE,
+                                            "reply lost after commit");
+                                return result;
+                            }
+
+                            public List<Work> ready(String queue, int limit) {
+                                return store.ready(queue, limit);
+                            }
+
+                            public List<String> keys(String prefix, String after, int limit) {
+                                return store.keys(prefix, after, limit);
+                            }
+                        }));
     }
 
     @Test

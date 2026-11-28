@@ -268,7 +268,21 @@ conversation.getThread("research").submit("research-2", "比较这些案例的�
 | Thread | `submit(requestId, Input)`、`getTurn(turnId)`、`listTurns(cursor, limit)`、`history(cursor, limit)`、`view()`、`close()` |
 | Turn | `status()`、`result()`、`await(timeout)`、`steer`、`inject`、`withdraw`、`cancel`、`pendingInteractions`、`respond`、`pause`、`resume` |
 | Session / Thread / Turn | `listEvents(cursor, limit)`、`streamEvents(options)`、`subscribeEvents(options, listener)`；过滤不创建新事件序号 |
-| Thread | `checkpoints(after, limit)`、`restore(position, expectedPosition, requestId)`、`fork(position, targetThreadKey, requestId)` |
+| Thread | `checkpoints(after, limit)`、`restore(position, expectedPosition, requestId)`、`fork(position, targetThreadKey, requestId)`、`forkSession(position, targetSessionKey, requestId)` |
+
+从保留的已结束 checkpoint 分支到独立 Session 时，在源 Thread 上指定同一
+namespace 内的新 Session key。
+
+```java
+var branch = conversation.mainThread().forkSession(
+        checkpointPosition, new SessionKey("demo", "alternate"), "fork-alternate");
+branch.submit("alternate-1", "探索另一种方案。");
+```
+
+新 Session、主 Thread 和恢复基线一起可见。主 Thread 继承源绑定和 checkpoint 中的
+私有资源。响应丢失后，可用同一源 checkpoint、目标 key 和请求 ID 重试。
+已由其他请求创建的目标会返回冲突。对已有 Session 中的 Thread 使用 `fork`。
+外部文件和 Sandbox 生命周期遵循其配置的存储契约。
 
 一个 DurableTurn 对应一次持久逻辑任务。原生 AgentRun 是一次进程内调用，与 Durable 的
 RunView 使用同一个 runId；StepView 记录该 Run 内的步骤。恢复保留 turnId，创建新 Run/Step。
@@ -600,13 +614,17 @@ Shared 消费组。默认 MQ namespace 是 `durable`。
 | `durable-hands-updates` | `durable-hands-brain` | Session + execution |
 
 将 `durable` 替换为部署 namespace，将 `hands` 替换为执行 route。
-对每一组父 Topic 和消费组执行以下配置。owner 组使用 `WILDCARD=false`，其他组使用
-`WILDCARD=true`。
+对每一组父 Topic 和消费组执行以下配置。owner 组使用 `SUBSCRIPTION_MODE=EXPLICIT`，
+其他组使用 `WILDCARD`。RocketMQ 5.5.1 的显式订阅组省略 `lite.sub.wildcard` 属性。
 
 ```sh
 mqadmin updateTopic -n "$NAMESRV" -c "$CLUSTER" -t "$PARENT" -a '+message.type=LITE'
+attributes="+lite.bind.topic=$PARENT,+lite.sub.model=Shared"
+if [ "$SUBSCRIPTION_MODE" = WILDCARD ]; then
+  attributes="$attributes,+lite.sub.wildcard=true"
+fi
 mqadmin updateSubGroup -n "$NAMESRV" -c "$CLUSTER" -g "$GROUP" -o true -m true \
-  --attributes "+lite.bind.topic=$PARENT,+lite.sub.model=Shared,+lite.sub.wildcard=$WILDCARD"
+  --attributes "$attributes"
 ```
 
 每个 Worker 池使用独立命令路由及消费组；同池副本共用该组与执行账本。
@@ -654,9 +672,14 @@ Brain 显式订阅自己的 owner LiteTopic，处理控制提示前核对当前 
 其他宿主通过 `pollInterval` 配置数据库发现。收到 Session 提示时，只查询该 Session
 的待运行工作。`releaseDelay` 控制未完成工作释放租约后的重新调度间隔。调度器为已知
 期限设置本地定时器，到期时重读数据库。持久索引负责故障和重启后的补漏。
+使用 `RocketMqTopology.turns(namespace).subscriptions()` 和
+`RocketMqTopology.route(namespace, executor).subscriptions()` 读取运行时使用的
+LITE 父 Topic、绑定的消费组和订阅模式，再由部署工具创建资源。
+
 创建调度器时传入 `RocketMqTurnScheduler.Options`，可以配置 Outbox 补漏间隔、
 未领取 dispatch 的重发间隔，以及 dispatch 和 signal 各自的消费缓存大小。
-默认值分别为 2 秒、5 秒和每个消费者 32 条。Hands 可用
+默认值分别为 2 秒、5 秒和每个消费者 32 条。第五个参数 `receiveWait`
+设置 dispatch 消费者的长轮询等待时间，默认 1 秒。取值需符合 Proxy 的轮询限制。Hands 可用
 `RocketMqWorker.Builder.controlCacheSize` 独立设置控制通道缓存。
 
 滚动发布时先将宿主摘流，Brain 调用 `runtime.drain(timeout)`，Hands 调用
