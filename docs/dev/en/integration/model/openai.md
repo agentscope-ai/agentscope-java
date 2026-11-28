@@ -40,6 +40,8 @@ OpenAIChatModel model = OpenAIChatModel.builder()
     .build();
 ```
 
+Streaming completes after a `[DONE]` frame or when the HTTP body ends after every requested choice has a terminal finish reason. An earlier EOF is reported as a failed model call so a durable run can apply its recovery policy.
+
 ## Spring Boot
 
 Spring Boot applications can use the OpenAI starter:

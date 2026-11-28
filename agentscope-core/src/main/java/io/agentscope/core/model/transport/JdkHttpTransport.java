@@ -344,20 +344,23 @@ public class JdkHttpTransport implements HttpTransport {
                                     new BufferedReader(
                                             new InputStreamReader(
                                                     inputStream, StandardCharsets.UTF_8));
-                            return isNdjson ? readNdJsonLines(reader) : readSseLines(reader);
+                            return isNdjson
+                                    ? readNdJsonLines(reader)
+                                    : readSseLines(reader, request.includesSseDoneMarker());
                         })
                 // reader.lines() uses blocking I/O internally
                 .subscribeOn(streamScheduler);
     }
 
     /**
-     * Extract non-empty SSE data payloads and stop before the terminal marker.
+     * Extract non-empty SSE data payloads and stop at the terminal marker.
      */
-    private Flux<String> readSseLines(BufferedReader reader) {
+    private Flux<String> readSseLines(BufferedReader reader, boolean includeDone) {
         return Flux.fromStream(reader.lines())
                 .filter(line -> line.startsWith(SSE_DATA_PREFIX))
                 .map(line -> line.substring(SSE_DATA_PREFIX.length()).trim())
-                .takeWhile(data -> !SSE_DONE_MARKER.equals(data))
+                .takeUntil(SSE_DONE_MARKER::equals)
+                .filter(data -> includeDone || !SSE_DONE_MARKER.equals(data))
                 .doOnNext(data -> log.debug("Received SSE data chunk"))
                 .filter(data -> !data.isEmpty());
     }

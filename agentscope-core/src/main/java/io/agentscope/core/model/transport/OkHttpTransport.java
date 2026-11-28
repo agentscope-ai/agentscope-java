@@ -275,10 +275,14 @@ public class OkHttpTransport implements HttpTransport {
                                                                                         SSE_DATA_PREFIX
                                                                                                 .length())
                                                                                 .trim())
-                                                        .takeWhile(
+                                                        .takeUntil(SSE_DONE_MARKER::equals)
+                                                        .filter(
                                                                 data ->
-                                                                        !SSE_DONE_MARKER.equals(
-                                                                                data))
+                                                                        request
+                                                                                        .includesSseDoneMarker()
+                                                                                || !SSE_DONE_MARKER
+                                                                                        .equals(
+                                                                                                data))
                                                         .filter(data -> !data.isEmpty());
                                             },
                                             this::closeQuietly)

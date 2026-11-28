@@ -19,6 +19,7 @@ package io.agentscope.extensions.durable.http;
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -580,6 +581,49 @@ class DurableHttpTest {
         assertThrows(
                 DurableException.class,
                 () -> remote.snapshot(new SessionKey("another", "session")));
+    }
+
+    @Test
+    void disconnectingTheObserverKeepsTheTurnRunningAndReplaysAfterItsCursor() throws Exception {
+        var thread = new ThreadKey(key, "main");
+        var first = remote.submit(thread, "observed", DurableJson.value("first"));
+        var lease = remote.claim(thread, "brain", Duration.ofSeconds(15)).orElseThrow();
+        remote.prepareRun(lease, "call");
+        var http = HttpClient.newHttpClient();
+        URI events = base.resolve("/events?namespace=tenant&sessionId=session");
+        var stream =
+                http.send(
+                        HttpRequest.newBuilder(events).GET().build(),
+                        HttpResponse.BodyHandlers.ofInputStream());
+        assertEquals(200, stream.statusCode());
+        String cursor;
+        try (var reader =
+                new BufferedReader(new InputStreamReader(stream.body(), StandardCharsets.UTF_8))) {
+            String line;
+            do {
+                line = reader.readLine();
+                assertNotNull(line);
+            } while (!line.startsWith("id: "));
+            cursor = line.substring("id: ".length());
+            while (!"".equals(line)) {
+                line = reader.readLine();
+                assertNotNull(line);
+            }
+        }
+
+        assertEquals(TurnStatus.RUNNING, remote.turn(thread, first.turnId()).status());
+        var next = remote.submit(thread, "after-disconnect", DurableJson.value("next"));
+        var reconnected =
+                http.send(
+                        HttpRequest.newBuilder(events)
+                                .header("Last-Event-ID", cursor)
+                                .GET()
+                                .build(),
+                        HttpResponse.BodyHandlers.ofString());
+        assertEquals(200, reconnected.statusCode());
+        assertTrue(reconnected.body().contains(next.turnId()));
+        assertFalse(reconnected.body().contains("id: " + cursor + "\n"));
+        assertEquals(TurnStatus.RUNNING, remote.turn(thread, first.turnId()).status());
     }
 
     @Test
