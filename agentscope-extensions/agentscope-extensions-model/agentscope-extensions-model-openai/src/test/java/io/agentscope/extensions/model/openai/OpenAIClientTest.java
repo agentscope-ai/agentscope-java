@@ -25,6 +25,7 @@ import io.agentscope.extensions.model.openai.dto.OpenAIMessage;
 import io.agentscope.extensions.model.openai.dto.OpenAIRequest;
 import io.agentscope.extensions.model.openai.dto.OpenAIResponse;
 import io.agentscope.extensions.model.openai.exception.OpenAIException;
+import java.io.EOFException;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -886,6 +887,40 @@ class OpenAIClientTest {
         assertTrue(
                 recordedRequest.getPath().contains("/v4/chat/completions"),
                 "Stream path should contain custom endpoint path: " + recordedRequest.getPath());
+    }
+
+    @Test
+    @DisplayName("Should reject EOF when a requested choice has not arrived")
+    void testStreamEofBeforeAllRequestedChoices() {
+        String response =
+                """
+                data: {"id":"chatcmpl-1","object":"chat.completion.chunk","choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}
+
+                """;
+        mockServer.enqueue(
+                new MockResponse()
+                        .setBody(response)
+                        .setHeader("Content-Type", "text/event-stream"));
+        OpenAIRequest request =
+                OpenAIRequest.builder()
+                        .model("gpt-4")
+                        .n(2)
+                        .messages(
+                                List.of(
+                                        OpenAIMessage.builder()
+                                                .role("user")
+                                                .content("Hello")
+                                                .build()))
+                        .build();
+
+        var error =
+                assertThrows(
+                        OpenAIException.class,
+                        () ->
+                                client.stream(TEST_API_KEY, baseUrl, request, null)
+                                        .collectList()
+                                        .block());
+        assertTrue(error.getCause() instanceof EOFException);
     }
 
     @Test

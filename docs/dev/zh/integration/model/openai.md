@@ -40,6 +40,8 @@ OpenAIChatModel model = OpenAIChatModel.builder()
     .build();
 ```
 
+收到 `[DONE]` 帧，或所有请求的候选项都有结束原因且 HTTP 响应体结束时，流式调用才成功完成。提前结束会报告模型调用失败，Durable 可按已有策略恢复。
+
 ## Spring Boot
 
 Spring Boot 应用可以使用 OpenAI starter：
