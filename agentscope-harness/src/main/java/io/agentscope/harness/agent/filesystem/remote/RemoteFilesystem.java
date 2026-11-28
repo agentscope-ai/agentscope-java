@@ -243,16 +243,20 @@ public class RemoteFilesystem implements AbstractFilesystem {
 
         // Fast path: index has entries for this prefix
         if (index != null && index.hasPrefix(normalizedPath)) {
-            List<String> indexPaths = index.listByPrefix(normalizedPath);
+            List<WorkspaceIndex.FileEntry> indexEntries =
+                    index.listFileEntriesByPrefix(normalizedPath);
             List<FileInfo> infos = new ArrayList<>();
             Set<String> subdirs = new LinkedHashSet<>();
-            for (String p : indexPaths) {
+            for (WorkspaceIndex.FileEntry entry : indexEntries) {
+                String p = entry.path();
                 String relative = p.substring(normalizedPath.length());
                 if (relative.contains("/")) {
                     String subdirName = relative.substring(0, relative.indexOf('/'));
                     subdirs.add(normalizedPath + subdirName + "/");
                 } else {
-                    infos.add(FileInfo.ofFile(p, 0, ""));
+                    infos.add(
+                            FileInfo.ofFile(
+                                    p, Math.max(0L, entry.sizeBytes()), entry.modifiedAt()));
                 }
             }
             for (String subdir : subdirs) {
@@ -528,9 +532,11 @@ public class RemoteFilesystem implements AbstractFilesystem {
 
         // Fast path: index has entries for this prefix
         if (index != null && index.hasPrefix(normalizedPath)) {
-            List<String> candidates = index.listByPrefix(normalizedPath);
+            List<WorkspaceIndex.FileEntry> candidates =
+                    index.listFileEntriesByPrefix(normalizedPath);
             List<FileInfo> results = new ArrayList<>();
-            for (String key : candidates) {
+            for (WorkspaceIndex.FileEntry entry : candidates) {
+                String key = entry.path();
                 if (!matchesPathPrefix(key, normalizedPath)) {
                     continue;
                 }
@@ -542,7 +548,9 @@ public class RemoteFilesystem implements AbstractFilesystem {
                 }
                 if (matcher.matches(Path.of(relativePath))
                         || directMatcher.matches(Path.of(relativePath))) {
-                    results.add(FileInfo.ofFile(key, 0, ""));
+                    results.add(
+                            FileInfo.ofFile(
+                                    key, Math.max(0L, entry.sizeBytes()), entry.modifiedAt()));
                 }
             }
             results.sort(Comparator.comparing(FileInfo::path));
