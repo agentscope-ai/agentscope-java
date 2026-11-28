@@ -115,9 +115,27 @@ CompactionConfig.builder()
 
 ## Customizing the memory pipeline: `MemoryConfig`
 
-`MemoryConfig` is the single place to configure flush / consolidation prompts, throttling, retention, and the per-call flush trigger. Every field has a default; not calling `.memory(...)` reproduces the historical behaviour bit-for-bit.
+`MemoryConfig` configures workspace-memory recall guidance, flush / consolidation prompts, throttling, retention, and the per-call flush trigger. Every field has a default; not calling `.memory(...)` reproduces the historical behaviour bit-for-bit.
 
 Per-call flush and background consolidation have independent throttle windows. In both cases, the first eligible `call()` runs the work immediately; a minimum gap limits only subsequent runs and is not an initial delay.
+
+### Configure recall guidance independently of memory tools
+
+When memory tools are enabled, Harness normally asks the answering model to search memory before answering questions about prior work, decisions, dates, people or preferences. Set `recallInstructions` to replace only the body of that Memory Recall section, for example when your application supplies all necessary facts in the current request:
+
+```java
+MemoryConfig memory = MemoryConfig.builder()
+    .recallInstructions("""
+        Use the supplied context when it is sufficient. Search workspace memory
+        only when the answer depends on facts from prior interactions that are missing.
+        """)
+    .build();
+// Supply this config with HarnessAgent.builder().memory(memory).
+```
+
+Passing this configuration to `.memory(...)` opts in to long-term memory, just like any other `MemoryConfig`. A `null` recall instruction keeps the existing guidance. An empty or whitespace-only string omits only the Memory Recall section; it does not opt out of long-term memory. Nonblank text is used without placeholder substitution; supply the body without a heading. Explicitly disabling memory tools suppresses the section even when custom instructions are configured, regardless of whether `.disableMemoryTools()` comes before or after `.memory(...)`.
+
+This setting leaves memory tools, `MEMORY.md` reference loading, persistence guidance, flush and background consolidation under their existing controls. It does not perform retrieval automatically, enforce tool choices, or guarantee fewer model calls or lower token usage. For pre-retrieval, your application must still fetch and supply the relevant context itself.
 
 ### Example 1: throttle per-call flush to save tokens
 
@@ -211,6 +229,7 @@ HarnessAgent.builder()
 |------|------|------|
 | `model` | `null` (uses the agent's primary model) | Dedicated model for flush / consolidation; accepts a `Model` instance or a `"provider:model"` string |
 | `flushPrompt` | `null` (uses `DEFAULT_FLUSH_PROMPT`) | SYSTEM prompt for path 1 |
+| `recallInstructions` | `null` (keeps existing guidance) | Answering-model Memory Recall body; blank omits only that section |
 | `consolidationPrompt` | `null` (uses `DEFAULT_CONSOLIDATION_PROMPT`) | Template for path 2 (must contain two `%d`) |
 | `consolidationMaxTokens` | `4_000` | Token cap for `MEMORY.md` |
 | `consolidationMinGap` | `30 min` | Gap between background maintenance runs; the first eligible call runs immediately |

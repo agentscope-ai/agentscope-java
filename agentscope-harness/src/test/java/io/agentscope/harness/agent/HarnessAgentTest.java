@@ -339,6 +339,76 @@ class HarnessAgentTest {
         }
     }
 
+    @ParameterizedTest
+    @CsvSource({
+        "false,false,false",
+        "false,true,false",
+        "true,false,false",
+        "true,true,false",
+        "false,false,true",
+        "false,true,true",
+        "true,false,true",
+        "true,true,true"
+    })
+    void recallInstructionsChangeOnlyRecallGuidanceInModelRequests(
+            boolean disableTools, boolean disableHooks, boolean disableBeforeConfig)
+            throws Exception {
+        String custom = "Search only for missing prior facts; keep %d and {userId} literal.";
+        String[] instructions = {null, "", " \n\t", custom};
+        for (int i = 0; i < instructions.length; i++) {
+            Path root = workspace.resolve("recall-" + i);
+            Files.createDirectories(root);
+            Files.writeString(root.resolve("MEMORY.md"), "recall-reference-marker");
+            Model model = stubModel("done");
+            HarnessAgent.Builder builder =
+                    HarnessAgent.builder()
+                            .model(model)
+                            .workspace(root)
+                            .abstractFilesystem(new LocalFilesystem(root))
+                            .journalEnabled(false);
+            if (disableBeforeConfig) {
+                if (disableTools) builder.disableMemoryTools();
+                if (disableHooks) builder.disableMemoryHooks();
+            }
+            builder.memory(
+                    MemoryConfig.builder()
+                            .recallInstructions(instructions[i])
+                            .flushTrigger(MemoryConfig.FlushTrigger.never())
+                            .build());
+            if (!disableBeforeConfig) {
+                if (disableTools) builder.disableMemoryTools();
+                if (disableHooks) builder.disableMemoryHooks();
+            }
+            try (HarnessAgent agent = builder.build()) {
+                agent.call(
+                                userText("Answer using the supplied facts."),
+                                RuntimeContext.builder().sessionId("recall").build())
+                        .block(Duration.ofSeconds(10));
+                String prompt = capturedPrompt(model);
+                boolean defaultRecall = !disableTools && instructions[i] == null;
+                boolean customRecall = !disableTools && custom.equals(instructions[i]);
+                assertEquals(defaultRecall || customRecall, prompt.contains("## Memory Recall"));
+                assertEquals(
+                        defaultRecall,
+                        prompt.contains("Before answering questions about prior work"));
+                assertEquals(customRecall, prompt.contains(custom));
+                assertEquals(
+                        !(disableTools && disableHooks),
+                        prompt.contains("recall-reference-marker"));
+                assertEquals(
+                        !(disableTools && disableHooks), prompt.contains("## Memory Persistence"));
+                assertEquals(!disableHooks, prompt.contains("automatically extracted"));
+                List<String> names =
+                        agent.getDelegate().getToolkit().getToolSchemas().stream()
+                                .map(ToolSchema::getName)
+                                .toList();
+                assertEquals(!disableTools, names.contains("memory_search"));
+                assertEquals(!disableTools, names.contains("memory_get"));
+                assertEquals(!disableTools, names.contains("memory_save"));
+            }
+        }
+    }
+
     @Test
     void replacePermissionContext_delegatesTargetedSessionToReActAgent() throws Exception {
         Files.createDirectories(workspace);
@@ -2253,7 +2323,10 @@ class HarnessAgentTest {
         Files.createDirectories(workspace);
         Model model = stubModel("done");
         MemoryConfig memoryConfig =
-                MemoryConfig.builder().flushTrigger(MemoryConfig.FlushTrigger.never()).build();
+                MemoryConfig.builder()
+                        .recallInstructions("Recall only missing prior facts for this workspace.")
+                        .flushTrigger(MemoryConfig.FlushTrigger.never())
+                        .build();
         SubagentDeclaration declaration =
                 SubagentDeclaration.builder()
                         .name("memory-worker")
@@ -2285,6 +2358,8 @@ class HarnessAgentTest {
                 .block();
 
         verify(model, times(1)).stream(anyList(), any(), any());
+        assertTrue(capturedPrompt(model).contains(memoryConfig.recallInstructions()));
+        assertFalse(capturedPrompt(model).contains("Before answering questions about prior work"));
     }
 
     // =========================================================================
@@ -2400,7 +2475,10 @@ class HarnessAgentTest {
         Files.createDirectories(workspace);
         Model model = stubModel("done");
         MemoryConfig memoryConfig =
-                MemoryConfig.builder().flushTrigger(MemoryConfig.FlushTrigger.never()).build();
+                MemoryConfig.builder()
+                        .recallInstructions("Recall only missing prior facts for this workspace.")
+                        .flushTrigger(MemoryConfig.FlushTrigger.never())
+                        .build();
 
         List<SubagentEntry> entries =
                 HarnessAgent.builder()
@@ -2424,6 +2502,8 @@ class HarnessAgentTest {
                 .block();
 
         verify(model, times(1)).stream(anyList(), any(), any());
+        assertTrue(capturedPrompt(model).contains(memoryConfig.recallInstructions()));
+        assertFalse(capturedPrompt(model).contains("Before answering questions about prior work"));
     }
 
     // =========================================================================

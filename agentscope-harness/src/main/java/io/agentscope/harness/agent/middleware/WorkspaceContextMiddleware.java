@@ -152,6 +152,7 @@ public class WorkspaceContextMiddleware implements HarnessRuntimeMiddleware {
     private final boolean disableMemoryHooks;
     private List<String> additionalContextFiles = List.of();
     private boolean artifactDeliveryEnabled = false;
+    private String memoryRecallInstructions;
 
     public WorkspaceContextMiddleware(WorkspaceManager workspaceManager) {
         this(workspaceManager, "HarnessAgent", null, DEFAULT_MAX_CONTEXT_TOKENS, false, false);
@@ -192,6 +193,14 @@ public class WorkspaceContextMiddleware implements HarnessRuntimeMiddleware {
 
     public void setAdditionalContextFiles(List<String> files) {
         this.additionalContextFiles = files != null ? files : List.of();
+    }
+
+    /**
+     * Overrides only the Memory Recall body. {@code null} restores default guidance;
+     * blank text omits the section. Memory-tool disable flags still take precedence.
+     */
+    public void setMemoryRecallInstructions(String instructions) {
+        this.memoryRecallInstructions = instructions;
     }
 
     /**
@@ -340,7 +349,11 @@ public class WorkspaceContextMiddleware implements HarnessRuntimeMiddleware {
             }
         }
         if (!disableMemoryTools) {
-            sb.append(MEMORY_RECALL_GUIDANCE.strip()).append("\n\n");
+            if (memoryRecallInstructions == null) {
+                sb.append(MEMORY_RECALL_GUIDANCE.strip()).append("\n\n");
+            } else if (!memoryRecallInstructions.isBlank()) {
+                sb.append("## Memory Recall\n").append(memoryRecallInstructions).append("\n\n");
+            }
         }
         String persistence = buildMemoryPersistenceGuidance();
         if (!persistence.isBlank()) {
