@@ -16,8 +16,14 @@
 package io.agentscope.core.permission;
 
 import io.agentscope.core.tool.ToolBase;
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Deque;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
@@ -175,20 +181,43 @@ public final class PermissionEngine {
                                         toolDecision.withSuggestedRules(
                                                 tool.generateSuggestions(input)));
                             }
-                            return continueAfterToolCheck(tool, input);
+                            // A tool that asks is never answered by the ACCEPT_EDITS
+                            // working-directory auto-allow: the engine cannot tell which ASK
+                            // is safety-relevant. Explicit allow rules still apply, and the
+                            // tool's own reason for asking is what the user gets to see
+                            // (#3716).
+                            if (context.getMode() == PermissionMode.ACCEPT_EDITS) {
+                                return continueAfterToolCheck(tool, input, toolDecision);
+                            }
+                            return continueAfterToolCheck(tool, input, null);
                         })
-                .switchIfEmpty(Mono.defer(() -> continueAfterToolCheck(tool, input)));
+                .switchIfEmpty(Mono.defer(() -> continueAfterToolCheck(tool, input, null)));
     }
 
+    /**
+     * @param toolAsk the tool's own ASK decision under ACCEPT_EDITS, or {@code null}. When
+     *     present the working-directory auto-allow is skipped and, if no explicit rule decides,
+     *     this decision — carrying the tool's reason — is returned instead of the generic
+     *     default.
+     */
     private Mono<PermissionDecision> continueAfterToolCheck(
-            ToolBase tool, Map<String, Object> input) {
+            ToolBase tool, Map<String, Object> input, PermissionDecision toolAsk) {
         // 4. Allow rules
         PermissionDecision allowDecision = checkAllowRules(tool, input);
         if (allowDecision != null) {
             return Mono.just(allowDecision);
         }
 
-        // 5. BYPASS fallback
+        // 5. Mode fallbacks. ACCEPT_EDITS: a write inside a configured working directory is
+        // approved without asking — but never over a tool that asked. Placed after explicit
+        // rules and the tool's own decision so neither is overridden (#3716).
+        PermissionDecision inWorkingDirectory =
+                toolAsk == null ? acceptEditsInWorkingDirectory(tool, input) : null;
+        if (inWorkingDirectory != null) {
+            return Mono.just(inWorkingDirectory);
+        }
+
+        // 6. BYPASS fallback
         if (context.getMode() == PermissionMode.BYPASS) {
             return Mono.just(
                     PermissionDecision.builder()
@@ -198,7 +227,10 @@ public final class PermissionEngine {
                             .build());
         }
 
-        // 6. Default (ASK, or DENY under DONT_ASK)
+        // 7. Default (ASK, or DENY under DONT_ASK)
+        if (toolAsk != null) {
+            return Mono.just(toolAsk.withSuggestedRules(tool.generateSuggestions(input)));
+        }
         return Mono.just(
                 defaultDecisionAsk(tool.getName())
                         .withSuggestedRules(tool.generateSuggestions(input)));
@@ -260,6 +292,113 @@ public final class PermissionEngine {
                                         + " (accept edits mode - read-only tool)")
                         .decisionReason("Accept edits mode allows read-only operations")
                         .build();
+            }
+        }
+        return null;
+    }
+
+    /**
+     * ACCEPT_EDITS fallback for a tool that did not decide for itself: a write whose target
+     * provably lives inside a configured working directory is auto-allowed (#2870).
+     *
+     * <p>This runs only after explicit rules and the tool's own {@code checkPermissions} — so
+     * a tool's DENY, ALLOW or ASK always wins over the mode, and a path-shaped argument can
+     * never turn a tool's refusal into an approval. The engine also cannot tell an edit tool
+     * from any other tool taking a path, and cannot resolve a relative path the way the
+     * executing tool will (its working root, or a remote/sandbox backend, is unknown here).
+     * Both limits are handled by declining to decide: only an <em>absolute</em> target whose
+     * <em>real</em> location — symlinks resolved on the nearest existing ancestor, so a link
+     * cannot lead outside, and a not-yet-created file is judged by its existing parent — is
+     * inside a working directory is auto-allowed. Anything else falls through to the default.
+     *
+     * @return the ALLOW decision, or {@code null} when the engine should keep going
+     */
+    private PermissionDecision acceptEditsInWorkingDirectory(
+            ToolBase tool, Map<String, Object> input) {
+        if (context.getMode() != PermissionMode.ACCEPT_EDITS) {
+            return null;
+        }
+        String target = extractTargetPath(input);
+        if (target == null || !Paths.get(target).isAbsolute()) {
+            return null;
+        }
+        for (AdditionalWorkingDirectory wd : context.getWorkingDirectories().values()) {
+            if (wd == null || wd.path() == null || wd.path().isBlank()) {
+                continue;
+            }
+            if (isContainedByWorkingDirectory(wd.path(), target)) {
+                return PermissionDecision.builder()
+                        .behavior(PermissionBehavior.ALLOW)
+                        .message(
+                                "Permission granted for "
+                                        + tool.getName()
+                                        + " (accept edits mode - target inside working"
+                                        + " directory)")
+                        .decisionReason(
+                                "Accept edits mode auto-allows edits inside working directory: "
+                                        + wd.path())
+                        .build();
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Whether {@code target} is really inside {@code directory}, following symbolic links.
+     *
+     * <p>Both sides are resolved to their real path through the nearest existing ancestor, so
+     * a lexical prefix alone is not enough: {@code /allowed/link/new.txt} with {@code link}
+     * pointing outside the directory is rejected, while a link that stays inside is accepted.
+     * When either real location cannot be established (unreadable path, IO error) this fails
+     * closed and returns {@code false}.
+     */
+    private static boolean isContainedByWorkingDirectory(String directory, String target) {
+        try {
+            Path base = realPathOfExistingAncestor(Paths.get(directory));
+            Path candidate = realPathOfExistingAncestor(Paths.get(target));
+            return base != null && candidate != null && candidate.startsWith(base);
+        } catch (IOException | RuntimeException unresolvable) {
+            return false;
+        }
+    }
+
+    /**
+     * Returns the real (symlink-resolved) location of {@code path}, or of its nearest
+     * existing ancestor when {@code path} itself does not exist yet, joined with the remaining
+     * non-existing suffix. {@code null} when no ancestor exists.
+     */
+    private static Path realPathOfExistingAncestor(Path path) throws IOException {
+        Path absolute = path.toAbsolutePath().normalize();
+        Path existing = absolute;
+        Deque<Path> missing = new ArrayDeque<>();
+        while (existing != null && !Files.exists(existing)) {
+            missing.addFirst(existing.getFileName());
+            existing = existing.getParent();
+        }
+        if (existing == null) {
+            return null;
+        }
+        Path real = existing.toRealPath();
+        for (Path segment : missing) {
+            real = real.resolve(segment);
+        }
+        return real.normalize();
+    }
+
+    /**
+     * Extracts the file target a tool operates on, from the parameter names the file tools
+     * use ({@code path} / {@code file_path} / {@code filePath}); other shapes return {@code
+     * null}. This only identifies <em>where</em> the tool writes, never <em>what kind</em> of
+     * tool it is — the tool's own decision is consulted first for that.
+     */
+    private static String extractTargetPath(Map<String, Object> input) {
+        if (input == null) {
+            return null;
+        }
+        for (String key : new String[] {"path", "file_path", "filePath"}) {
+            Object value = input.get(key);
+            if (value instanceof String s && !s.isBlank()) {
+                return s;
             }
         }
         return null;

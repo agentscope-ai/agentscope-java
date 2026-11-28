@@ -19,15 +19,19 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.tool.ToolBase;
 import io.agentscope.core.tool.ToolCallParam;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 import reactor.core.publisher.Mono;
 import reactor.test.StepVerifier;
 
@@ -104,6 +108,344 @@ class PermissionEngineTest {
 
     private static PermissionContextState contextWithMode(PermissionMode mode) {
         return PermissionContextState.builder().mode(mode).build();
+    }
+
+    private static PermissionContextState contextWithWorkingDir(PermissionMode mode, String path) {
+        return PermissionContextState.builder()
+                .mode(mode)
+                .addWorkingDirectory(path, new AdditionalWorkingDirectory(path, "userSettings"))
+                .build();
+    }
+
+    // ==================== ACCEPT_EDITS working-directory consumption (#2870) ====================
+    // Real temporary directories rather than a hard-coded path, so containment is checked
+    // against a directory that actually exists (and whose real location may differ from the
+    // lexical one, e.g. a symlinked temp root).
+
+    @Test
+    void acceptEdits_autoAllowsEditInsideWorkingDirectory(@TempDir Path root) throws Exception {
+        Path wd = Files.createDirectories(root.resolve("workspace"));
+        PermissionEngine engine =
+                new PermissionEngine(
+                        contextWithWorkingDir(PermissionMode.ACCEPT_EDITS, wd.toString()));
+        FakePermissionTool tool = new FakePermissionTool("write_file", false);
+
+        PermissionDecision decision =
+                engine.checkPermission(tool, Map.of("path", wd.resolve("notes.md").toString()))
+                        .block();
+
+        assertEquals(PermissionBehavior.ALLOW, decision.getBehavior());
+    }
+
+    @Test
+    void acceptEdits_editOutsideWorkingDirectory_stillAsks(@TempDir Path root) throws Exception {
+        Path wd = Files.createDirectories(root.resolve("workspace"));
+        Path elsewhere = Files.createDirectories(root.resolve("elsewhere"));
+        PermissionEngine engine =
+                new PermissionEngine(
+                        contextWithWorkingDir(PermissionMode.ACCEPT_EDITS, wd.toString()));
+        FakePermissionTool tool = new FakePermissionTool("write_file", false);
+
+        PermissionDecision decision =
+                engine.checkPermission(
+                                tool, Map.of("path", elsewhere.resolve("secret.md").toString()))
+                        .block();
+
+        assertEquals(PermissionBehavior.ASK, decision.getBehavior());
+    }
+
+    @Test
+    void acceptEdits_traversalOutOfWorkingDirectory_stillAsks(@TempDir Path root) throws Exception {
+        Path wd = Files.createDirectories(root.resolve("workspace"));
+        Path sibling = Files.createDirectories(root.resolve("escape"));
+        PermissionEngine engine =
+                new PermissionEngine(
+                        contextWithWorkingDir(PermissionMode.ACCEPT_EDITS, wd.toString()));
+        FakePermissionTool tool = new FakePermissionTool("write_file", false);
+
+        PermissionDecision decision =
+                engine.checkPermission(
+                                tool, Map.of("path", wd.resolve("../escape/secret.md").toString()))
+                        .block();
+
+        assertEquals(PermissionBehavior.ASK, decision.getBehavior());
+        assertEquals(sibling, root.resolve("escape"));
+    }
+
+    @Test
+    void acceptEdits_readOnlyInsideWorkingDirectory_stillAutoAllows(@TempDir Path root)
+            throws Exception {
+        Path wd = Files.createDirectories(root.resolve("workspace"));
+        PermissionEngine engine =
+                new PermissionEngine(
+                        contextWithWorkingDir(PermissionMode.ACCEPT_EDITS, wd.toString()));
+        FakePermissionTool tool = new FakePermissionTool("read_file", true);
+
+        PermissionDecision decision =
+                engine.checkPermission(tool, Map.of("path", wd.resolve("a.md").toString())).block();
+
+        assertEquals(PermissionBehavior.ALLOW, decision.getBehavior());
+    }
+
+    @Test
+    void acceptEdits_explicitAllowRuleStillAppliesWhenTheToolAsks(@TempDir Path root)
+            throws Exception {
+        // Priority: an explicit allow rule outranks the tool's default opinion, which outranks
+        // the working-directory auto-allow. The tool asked and the target is out of scope, yet
+        // the user's rule decides.
+        Path wd = Files.createDirectories(root.resolve("workspace"));
+        PermissionEngine engine =
+                new PermissionEngine(
+                        PermissionContextState.builder()
+                                .mode(PermissionMode.ACCEPT_EDITS)
+                                .addWorkingDirectory(
+                                        wd.toString(),
+                                        new AdditionalWorkingDirectory(
+                                                wd.toString(), "userSettings"))
+                                .addAllowRule("write_file", allowAll("write_file"))
+                                .build());
+        FakePermissionTool tool =
+                new FakePermissionTool("write_file", false)
+                        .withPermissionDecision(PermissionDecision.ask("confirm write"));
+
+        PermissionDecision decision =
+                engine.checkPermission(
+                                tool, Map.of("path", root.resolve("elsewhere.md").toString()))
+                        .block();
+
+        assertEquals(PermissionBehavior.ALLOW, decision.getBehavior());
+    }
+
+    @Test
+    void acceptEdits_askingRuleStillAsksForAnInScopeTarget(@TempDir Path root) throws Exception {
+        // An explicit ask rule outranks the working-directory auto-allow.
+        Path wd = Files.createDirectories(root.resolve("workspace"));
+        PermissionEngine engine =
+                new PermissionEngine(
+                        PermissionContextState.builder()
+                                .mode(PermissionMode.ACCEPT_EDITS)
+                                .addWorkingDirectory(
+                                        wd.toString(),
+                                        new AdditionalWorkingDirectory(
+                                                wd.toString(), "userSettings"))
+                                .addAskRule("write_file", askAll("write_file"))
+                                .build());
+        FakePermissionTool tool = new FakePermissionTool("write_file", false);
+
+        PermissionDecision decision =
+                engine.checkPermission(tool, Map.of("path", wd.resolve("notes.md").toString()))
+                        .block();
+
+        assertEquals(PermissionBehavior.ASK, decision.getBehavior());
+    }
+
+    // ==================== ACCEPT_EDITS review boundaries (#3716) ====================
+    // The engine cannot tell an edit tool from any other tool that happens to take a
+    // path-shaped argument, and cannot resolve paths the way the executing tool will. So
+    // the auto-allow must defer to the tool's own decision and must only ever apply to
+    // absolute targets whose real location is provably inside a working directory.
+
+    @Test
+    void acceptEdits_doesNotOverrideToolDeny_evenForPathInsideWorkingDirectory(@TempDir Path root)
+            throws Exception {
+        Path wd = Files.createDirectories(root.resolve("workspace"));
+        PermissionEngine engine =
+                new PermissionEngine(
+                        contextWithWorkingDir(PermissionMode.ACCEPT_EDITS, wd.toString()));
+        FakePermissionTool tool =
+                new FakePermissionTool("custom_tool", false)
+                        .withPermissionDecision(PermissionDecision.deny("hard deny"));
+
+        PermissionDecision decision =
+                engine.checkPermission(tool, Map.of("path", wd.resolve("a.md").toString())).block();
+
+        assertEquals(PermissionBehavior.DENY, decision.getBehavior());
+        assertEquals("hard deny", decision.getMessage());
+    }
+
+    @Test
+    void acceptEdits_doesNotOverrideToolSafetyAsk_evenForPathInsideWorkingDirectory(
+            @TempDir Path root) throws Exception {
+        Path wd = Files.createDirectories(root.resolve("workspace"));
+        PermissionEngine engine =
+                new PermissionEngine(
+                        contextWithWorkingDir(PermissionMode.ACCEPT_EDITS, wd.toString()));
+        // A non-edit tool that asks for a safety reason: the path-shaped argument must not
+        // turn that into an ALLOW.
+        FakePermissionTool tool =
+                new FakePermissionTool("deploy", false)
+                        .withPermissionDecision(PermissionDecision.ask("irreversible action"));
+
+        PermissionDecision decision =
+                engine.checkPermission(tool, Map.of("path", wd.resolve("a.md").toString())).block();
+
+        assertEquals(PermissionBehavior.ASK, decision.getBehavior());
+        assertEquals("irreversible action", decision.getMessage());
+    }
+
+    @Test
+    void acceptEdits_relativeTargetFallsThroughToTheToolDecision(@TempDir Path root)
+            throws Exception {
+        // The engine does not know the tool's execution root, so a relative target cannot be
+        // proven to land inside a working directory. It must not be auto-allowed.
+        Path wd = Files.createDirectories(root.resolve("workspace"));
+        PermissionEngine engine =
+                new PermissionEngine(
+                        contextWithWorkingDir(PermissionMode.ACCEPT_EDITS, wd.toString()));
+        FakePermissionTool asking =
+                new FakePermissionTool("write_file", false)
+                        .withPermissionDecision(PermissionDecision.ask("confirm write"));
+
+        PermissionDecision decision =
+                engine.checkPermission(asking, Map.of("path", "notes/idea.md")).block();
+
+        assertEquals(PermissionBehavior.ASK, decision.getBehavior());
+    }
+
+    @Test
+    void acceptEdits_relativeTargetWithoutToolOpinionFallsThroughToDefaultAsk(@TempDir Path root)
+            throws Exception {
+        // Same as above when the tool defers: the engine's default is ASK, not ALLOW.
+        Path wd = Files.createDirectories(root.resolve("workspace"));
+        PermissionEngine engine =
+                new PermissionEngine(
+                        contextWithWorkingDir(PermissionMode.ACCEPT_EDITS, wd.toString()));
+        FakePermissionTool deferring = new FakePermissionTool("write_file", false);
+
+        PermissionDecision decision =
+                engine.checkPermission(deferring, Map.of("path", "notes/idea.md")).block();
+
+        assertEquals(PermissionBehavior.ASK, decision.getBehavior());
+    }
+
+    @Test
+    void acceptEdits_symlinkEscapeOutOfWorkingDirectory_stillAsks(@TempDir Path root)
+            throws Exception {
+        assumeTrue(isSymlinkSupported(root));
+        Path allowed = Files.createDirectories(root.resolve("allowed"));
+        Path outside = Files.createDirectories(root.resolve("outside"));
+        Files.createSymbolicLink(allowed.resolve("link"), outside);
+
+        PermissionEngine engine =
+                new PermissionEngine(
+                        contextWithWorkingDir(PermissionMode.ACCEPT_EDITS, allowed.toString()));
+        // The tool defers on purpose: the outcome must depend only on where the target really
+        // is. A tool that asks would yield ASK whatever the path check says, and so could not
+        // tell a resolved symlink from a lexical prefix.
+        FakePermissionTool tool = new FakePermissionTool("write_file", false);
+
+        // Lexically inside `allowed`; really inside `outside`. A lexical prefix check would
+        // auto-allow this write outside the working directory.
+        PermissionDecision decision =
+                engine.checkPermission(
+                                tool, Map.of("path", allowed.resolve("link/new.txt").toString()))
+                        .block();
+
+        assertEquals(PermissionBehavior.ASK, decision.getBehavior());
+    }
+
+    @Test
+    void acceptEdits_symlinkEscapeViaNewFileInLinkedDirectory_stillAsks(@TempDir Path root)
+            throws Exception {
+        assumeTrue(isSymlinkSupported(root));
+        // The same escape for a not-yet-existing file: its existing parent is the link, so the
+        // real location is still outside.
+        Path allowed = Files.createDirectories(root.resolve("allowed"));
+        Path outside = Files.createDirectories(root.resolve("outside"));
+        Files.createSymbolicLink(allowed.resolve("link"), outside);
+
+        PermissionEngine engine =
+                new PermissionEngine(
+                        contextWithWorkingDir(PermissionMode.ACCEPT_EDITS, allowed.toString()));
+        FakePermissionTool tool = new FakePermissionTool("write_file", false);
+
+        PermissionDecision decision =
+                engine.checkPermission(
+                                tool,
+                                Map.of(
+                                        "path",
+                                        allowed.resolve("link/new/deeper/file.txt").toString()))
+                        .block();
+
+        assertEquals(PermissionBehavior.ASK, decision.getBehavior());
+    }
+
+    @Test
+    void acceptEdits_symlinkedWorkingDirectoryItself_stillAutoAllows(@TempDir Path root)
+            throws Exception {
+        assumeTrue(isSymlinkSupported(root));
+        // The configured directory may itself be reached through a link (temp roots often
+        // are). Its real location is the base, so a direct write inside is still auto-allowed.
+        Path real = Files.createDirectories(root.resolve("real-workspace"));
+        Path viaLink = root.resolve("linked-workspace");
+        Files.createSymbolicLink(viaLink, real);
+
+        PermissionEngine engine =
+                new PermissionEngine(
+                        contextWithWorkingDir(PermissionMode.ACCEPT_EDITS, viaLink.toString()));
+        FakePermissionTool tool = new FakePermissionTool("write_file", false);
+
+        PermissionDecision decision =
+                engine.checkPermission(tool, Map.of("path", real.resolve("notes.md").toString()))
+                        .block();
+
+        assertEquals(PermissionBehavior.ALLOW, decision.getBehavior());
+    }
+
+    @Test
+    void acceptEdits_symlinkInsideWorkingDirectory_stillAutoAllows(@TempDir Path root)
+            throws Exception {
+        // A link that stays within the working directory must not be mistaken for an escape.
+        assumeTrue(isSymlinkSupported(root));
+        Path allowed = Files.createDirectories(root.resolve("allowed"));
+        Files.createDirectories(allowed.resolve("real"));
+        Files.createSymbolicLink(allowed.resolve("link"), allowed.resolve("real"));
+
+        PermissionEngine engine =
+                new PermissionEngine(
+                        contextWithWorkingDir(PermissionMode.ACCEPT_EDITS, allowed.toString()));
+        FakePermissionTool tool = new FakePermissionTool("write_file", false);
+
+        PermissionDecision decision =
+                engine.checkPermission(
+                                tool, Map.of("path", allowed.resolve("link/new.txt").toString()))
+                        .block();
+
+        assertEquals(PermissionBehavior.ALLOW, decision.getBehavior());
+    }
+
+    @Test
+    void acceptEdits_newFileWhoseExistingParentIsInsideWorkingDirectory_autoAllows(
+            @TempDir Path root) throws Exception {
+        Path allowed = Files.createDirectories(root.resolve("allowed"));
+        Files.createDirectories(allowed.resolve("nested"));
+        PermissionEngine engine =
+                new PermissionEngine(
+                        contextWithWorkingDir(PermissionMode.ACCEPT_EDITS, allowed.toString()));
+        FakePermissionTool tool = new FakePermissionTool("write_file", false);
+
+        // The leaf does not exist yet; its nearest existing ancestor decides.
+        PermissionDecision decision =
+                engine.checkPermission(
+                                tool,
+                                Map.of(
+                                        "path",
+                                        allowed.resolve("nested/new/deeper/file.txt").toString()))
+                        .block();
+
+        assertEquals(PermissionBehavior.ALLOW, decision.getBehavior());
+    }
+
+    /** Creating symlinks needs a privilege Windows hosts do not grant by default. */
+    private static boolean isSymlinkSupported(Path root) {
+        try {
+            Path probe = root.resolve("symlink-probe-target");
+            Files.createDirectories(probe);
+            Files.createSymbolicLink(root.resolve("symlink-probe"), probe);
+            return true;
+        } catch (Exception unsupported) {
+            return false;
+        }
     }
 
     private static PermissionRule rule(String tool, String content, PermissionBehavior behavior) {
