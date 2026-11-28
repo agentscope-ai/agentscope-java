@@ -40,6 +40,69 @@ import org.junit.jupiter.api.Test;
 class McpContentConverterTest {
 
     @Test
+    void resourceLinkPreservesPublicDescriptorWithoutServerMetadata() {
+        McpSchema.ResourceLink link =
+                McpSchema.ResourceLink.builder()
+                        .name("report.csv")
+                        .title("季度报告")
+                        .uri("https://example.test/reports/quarter?part=1&lang=zh")
+                        .description("Report with \"quoted\" columns\nand newlines")
+                        .mimeType("text/csv")
+                        .size(1024L)
+                        .meta(Map.of("private-token", "do-not-expose"))
+                        .build();
+
+        TextBlock converted =
+                org.junit.jupiter.api.Assertions.assertInstanceOf(
+                        TextBlock.class, McpContentConverter.convertContent(link));
+        assertTrue(
+                converted.getText().contains(link.uri()),
+                "The tool result must retain its resource URI");
+        Map<?, ?> descriptor =
+                io.agentscope.core.util.JsonUtils.getJsonCodec()
+                        .fromJson(converted.getText(), Map.class);
+        assertEquals("resource_link", descriptor.get("type"));
+        assertEquals(link.name(), descriptor.get("name"));
+        assertEquals(link.title(), descriptor.get("title"));
+        assertEquals(link.uri(), descriptor.get("uri"));
+        assertEquals(link.description(), descriptor.get("description"));
+        assertEquals(link.mimeType(), descriptor.get("mimeType"));
+        assertEquals(1024L, ((Number) descriptor.get("size")).longValue());
+        assertFalse(converted.getText().contains("private-token"));
+        assertFalse(converted.getText().contains("do-not-expose"));
+    }
+
+    @Test
+    void resourceLinkKeepsMinimalDescriptorInMixedToolResult() {
+        McpSchema.ResourceLink link =
+                McpSchema.ResourceLink.builder()
+                        .name("reference")
+                        .uri("notes://reference/42")
+                        .build();
+        McpSchema.CallToolResult source =
+                new McpSchema.CallToolResult(
+                        List.of(McpSchema.TextContent.builder("See reference").build(), link),
+                        false,
+                        Map.of("count", 1),
+                        null);
+
+        ToolResultBlock result = McpContentConverter.convertCallToolResult(source);
+
+        assertEquals(3, result.getOutput().size());
+        assertEquals("See reference", ((TextBlock) result.getOutput().get(0)).getText());
+        assertTrue(
+                ((TextBlock) result.getOutput().get(1)).getText().contains(link.uri()),
+                "The tool result must retain its resource URI");
+        Map<?, ?> descriptor =
+                io.agentscope.core.util.JsonUtils.getJsonCodec()
+                        .fromJson(((TextBlock) result.getOutput().get(1)).getText(), Map.class);
+        assertEquals(
+                Map.of("type", "resource_link", "name", "reference", "uri", "notes://reference/42"),
+                descriptor);
+        assertEquals("{\"count\":1}", ((TextBlock) result.getOutput().get(2)).getText());
+    }
+
+    @Test
     void testConstructorThrowsException() {
         // Test that utility class cannot be instantiated
         var exception =

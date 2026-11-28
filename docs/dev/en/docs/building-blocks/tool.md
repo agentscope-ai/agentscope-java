@@ -404,6 +404,10 @@ toolkit.registerMcpClient(search).block();
 
 Runnable examples: `agentscope-examples/documentation/.../mcp/McpStdioExample.java`, `mcp/McpSseExample.java`, `mcp/McpStreamableHttpExample.java`.
 
+### MCP resource links
+
+When a successful MCP tool result includes a `resource_link`, AgentScope keeps its public descriptor as a JSON `TextBlock` in the original content position. The descriptor contains `type`, `name`, `uri`, and any supplied `title`, `description`, `mimeType` and `size`. A resource link is a reference, not embedded content: conversion does not fetch the URI, so applications must provide a separate resource-reading path if the agent needs its contents. Non-HTTP resource URIs are preserved as references too. Server `_meta` and annotations are not copied into this model-visible descriptor; result metadata remains opt-in as described below.
+
 ### MCP tool result metadata
 
 An MCP server may attach a `_meta` map to a tool result. AgentScope does not expose that raw map by default. To expose selected values, register an ordered `resultCustomizers` list on the connection. The mutable map passed to the customizers starts empty and becomes the value stored under `McpTool.METADATA_MCP_RESULT_META` (`io.agentscope/mcpResultMeta`) on the tool result block. The runtime then copies the block metadata onto the `ToolResultEndEvent` it emits. The model never sees this metadata: the result's `output` is unchanged.

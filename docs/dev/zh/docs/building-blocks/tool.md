@@ -404,6 +404,10 @@ toolkit.registerMcpClient(search).block();
 
 完整运行示例：`agentscope-examples/documentation/.../mcp/McpStdioExample.java`、`mcp/McpSseExample.java`、`mcp/McpStreamableHttpExample.java`。
 
+### MCP 资源链接
+
+成功的 MCP 工具结果包含 `resource_link` 时，AgentScope 会在原内容位置将其公开描述保留为 JSON `TextBlock`。描述包含 `type`、`name`、`uri`，以及服务端提供的 `title`、`description`、`mimeType` 和 `size`。资源链接是引用而非内嵌内容，转换过程不会访问 URI；如果 Agent 需要资源内容，应用应另行提供读取路径。非 HTTP 的资源 URI 也会原样保留为引用。服务端 `_meta` 和 annotations 不会被复制到这个模型可见的描述中；结果元数据仍按下文所述显式启用。
+
 ### MCP 工具结果元数据
 
 MCP server 可以在工具结果里附带 `_meta` 映射。AgentScope 默认不会暴露这份原始映射。如需暴露选中的字段，可以在连接上注册有序的 `resultCustomizers` 列表。传给 customizer 的可变 map 从空开始，所有 customizer 执行完后会作为 `McpTool.METADATA_MCP_RESULT_META`（`io.agentscope/mcpResultMeta`）的值写入 tool result。运行时随后把该元数据复制到发出的 `ToolResultEndEvent` 上。模型看不到这些元数据：结果里的 `output` 不受影响。

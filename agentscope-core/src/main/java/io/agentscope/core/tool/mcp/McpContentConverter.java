@@ -25,7 +25,9 @@ import io.agentscope.core.message.URLSource;
 import io.agentscope.core.util.JsonUtils;
 import io.modelcontextprotocol.spec.McpSchema;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 
 /**
@@ -38,6 +40,7 @@ import java.util.stream.Collectors;
  *   <li>MCP TextContent → AgentScope TextBlock</li>
  *   <li>MCP ImageContent → AgentScope ImageBlock</li>
  *   <li>MCP AudioContent → AgentScope AudioBlock</li>
+ *   <li>MCP ResourceLink → AgentScope TextBlock (public JSON descriptor, without fetching)</li>
  *   <li>MCP CallToolResult → AgentScope ToolResultBlock</li>
  *   <li>MCP CallToolResult.structuredContent → AgentScope TextBlock (JSON)</li>
  * </ul>
@@ -120,6 +123,8 @@ public class McpContentConverter {
             return convertAudioContent(audioContent);
         } else if (content instanceof McpSchema.EmbeddedResource embeddedResource) {
             return convertEmbeddedResource(embeddedResource);
+        } else if (content instanceof McpSchema.ResourceLink resourceLink) {
+            return convertResourceLink(resourceLink);
         }
 
         return TextBlock.builder()
@@ -137,6 +142,27 @@ public class McpContentConverter {
         return TextBlock.builder()
                 .text(textContent.text() != null ? textContent.text() : "")
                 .build();
+    }
+
+    /** Preserves a link's public descriptor without fetching it or exposing server metadata. */
+    private static TextBlock convertResourceLink(McpSchema.ResourceLink link) {
+        Map<String, Object> descriptor = new LinkedHashMap<>();
+        descriptor.put("type", "resource_link");
+        descriptor.put("name", link.name());
+        descriptor.put("uri", link.uri());
+        if (link.title() != null) {
+            descriptor.put("title", link.title());
+        }
+        if (link.description() != null) {
+            descriptor.put("description", link.description());
+        }
+        if (link.mimeType() != null) {
+            descriptor.put("mimeType", link.mimeType());
+        }
+        if (link.size() != null) {
+            descriptor.put("size", link.size());
+        }
+        return TextBlock.builder().text(toJson(descriptor)).build();
     }
 
     /**
