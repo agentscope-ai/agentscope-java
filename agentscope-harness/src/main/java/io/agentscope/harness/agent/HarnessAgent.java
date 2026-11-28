@@ -291,6 +291,10 @@ public class HarnessAgent implements Agent, AutoCloseable {
         return delegate.threadJournal(ensureSessionDefaults(context));
     }
 
+    /**
+     * Reads the caller's native Thread, including uncertain tool call IDs, without acquiring a
+     * writer or attempting recovery. A cancelled request can leave external effects unresolved.
+     */
     public JournalProjection inspectThread(RuntimeContext context) {
         return JournalProjection.read(threadJournal(context));
     }
@@ -299,6 +303,13 @@ public class HarnessAgent implements Agent, AutoCloseable {
         return ThreadHistory.transcript(threadJournal(context));
     }
 
+    /**
+     * Records independently verified outcomes for every uncertain call in this native Thread.
+     * Each result must retain the original call ID. Wait for the invocation's writer to release
+     * ownership first; cancellation alone does not prove that external work stopped. Unknown or
+     * suspended results cannot reconcile a call. Use the managed recovery path instead for
+     * Durable-owned execution.
+     */
     public void reconcileToolOutcomes(
             RuntimeContext context, Map<String, ToolResultBlock> outcomes, String reason) {
         ThreadRecovery.reconcile(threadJournal(context), outcomes, reason);
