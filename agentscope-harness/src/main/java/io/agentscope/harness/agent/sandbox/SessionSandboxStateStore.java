@@ -41,6 +41,20 @@ public final class SessionSandboxStateStore {
         this.agentId = Objects.requireNonNull(agentId, "agentId must not be null");
     }
 
+    /**
+     * The agent id this store scopes sandbox slots by (e.g. {@code sandbox/agent/{agentId}},
+     * {@code sandbox/user/{agentId}/{userId}}).
+     *
+     * <p>Exposed so callers that also derive execution-guard keys from an agent id
+     * (see {@link SandboxIsolationKey#forExecutionGuard}) can assert both sides use the same
+     * value — equal slots must imply equal guard locks.
+     *
+     * @return the agent id supplied at construction
+     */
+    public String getAgentId() {
+        return agentId;
+    }
+
     public Optional<String> load(SandboxIsolationKey key) throws IOException {
         try {
             String slotSid = slotSessionId(key);

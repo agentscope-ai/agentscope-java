@@ -19,10 +19,11 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -349,7 +350,12 @@ class SandboxManagerIsolationTest {
 
     @Test
     void nestedSubagent_usesDistinctGuardKeys_whileKeepingTheSlotKeyStable() throws Exception {
-        when(stateStore.load(any())).thenReturn(Optional.empty());
+        // Faithful wiring: parent and child each own a SessionSandboxStateStore scoped by their
+        // own agent id, mirroring what HarnessAgent.build constructs.
+        SessionSandboxStateStore parentStore = storeScopedTo("parent-agent");
+        SessionSandboxStateStore workerStore = storeScopedTo("worker-agent");
+        when(parentStore.load(any())).thenReturn(Optional.empty());
+        when(workerStore.load(any())).thenReturn(Optional.empty());
         when(client.create(any(), any(), any())).thenReturn(freshSandbox);
 
         List<SandboxIsolationKey> guardKeys = new ArrayList<>();
@@ -362,8 +368,8 @@ class SandboxManagerIsolationTest {
         RuntimeContext rtx = RuntimeContext.builder().userId("user-42").sessionId("sess-1").build();
         SandboxContext sCtx = SandboxContext.builder().isolationScope(IsolationScope.USER).build();
 
-        new SandboxManager(client, stateStore, "parent-agent", guard).acquire(sCtx, rtx);
-        new SandboxManager(client, stateStore, "worker-agent", guard).acquire(sCtx, rtx);
+        new SandboxManager(client, parentStore, "parent-agent", guard).acquire(sCtx, rtx);
+        new SandboxManager(client, workerStore, "worker-agent", guard).acquire(sCtx, rtx);
 
         assertEquals(2, guardKeys.size());
         assertNotEquals(guardKeys.get(0), guardKeys.get(1));
@@ -372,7 +378,37 @@ class SandboxManagerIsolationTest {
         // agent dimension itself (sandbox/user/{agentId}/{userId}), so existing state survives.
         ArgumentCaptor<SandboxIsolationKey> slotKey =
                 ArgumentCaptor.forClass(SandboxIsolationKey.class);
-        verify(stateStore, times(2)).load(slotKey.capture());
+        verify(parentStore).load(slotKey.capture());
+        verify(workerStore).load(slotKey.capture());
         assertEquals(slotKey.getAllValues().get(0), slotKey.getAllValues().get(1));
+    }
+
+    // ---- Constructor wiring validation ----
+
+    @Test
+    void constructor_agentIdMismatchWithStore_failsAtBuildTime() {
+        SessionSandboxStateStore mismatched = storeScopedTo("other-agent");
+
+        IllegalArgumentException ex =
+                assertThrows(
+                        IllegalArgumentException.class,
+                        () -> new SandboxManager(client, mismatched, AGENT_ID));
+        assertTrue(ex.getMessage().contains("does not match"));
+    }
+
+    @Test
+    void constructor_blankAgentId_failsAtBuildTime() {
+        IllegalArgumentException ex =
+                assertThrows(
+                        IllegalArgumentException.class,
+                        () -> new SandboxManager(client, stateStore, "  "));
+        assertTrue(ex.getMessage().contains("must not be null or blank"));
+    }
+
+    /** A store mock whose agent id matches the given value, as real wiring always does. */
+    private static SessionSandboxStateStore storeScopedTo(String agentId) {
+        SessionSandboxStateStore store = mock(SessionSandboxStateStore.class);
+        when(store.getAgentId()).thenReturn(agentId);
+        return store;
     }
 }

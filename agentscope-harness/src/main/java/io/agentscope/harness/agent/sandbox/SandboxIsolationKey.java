@@ -137,7 +137,9 @@ public final class SandboxIsolationKey {
      * persisted slot by definition, where serialisation is required.
      *
      * @param agentId the agent id of the execution acquiring the sandbox; required for
-     *     {@link IsolationScope#USER}
+     *     {@link IsolationScope#USER}. Callers going through {@code SandboxManager} are covered
+     *     by its constructor, which already rejects a null/blank id and asserts it matches the
+     *     state store's agent id; this check remains as a guard for direct callers
      * @return the guard key for {@code agentId}
      * @throws IllegalArgumentException if the scope is {@link IsolationScope#USER} and
      *     {@code agentId} is null or blank — returning {@code this} would hand back exactly the

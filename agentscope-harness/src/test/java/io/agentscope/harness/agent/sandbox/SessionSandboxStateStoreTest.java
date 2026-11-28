@@ -95,6 +95,44 @@ class SessionSandboxStateStoreTest {
     }
 
     @Test
+    void agentScope_slotEndsWithGuardValue_compositionsStayInLockstep() throws Exception {
+        // AGENT has the same two-source coupling as USER: the slot is composed from the store's
+        // agent id, the guard key from the id passed to resolve(). Pin them together too.
+        RecordingStateStore stateStore = new RecordingStateStore();
+        SessionSandboxStateStore recordingStore =
+                new SessionSandboxStateStore(stateStore, AGENT_ID);
+        SandboxIsolationKey slotKey = isolationKey(IsolationScope.AGENT, AGENT_ID);
+        SandboxIsolationKey guardKey = slotKey.forExecutionGuard(AGENT_ID);
+
+        recordingStore.save(slotKey, JSON);
+
+        String slotId = stateStore.lastSessionId;
+        assertTrue(slotId.startsWith("sandbox/agent/"), "unexpected slot id: " + slotId);
+        assertEquals(
+                "sandbox/agent/" + guardKey.getValue(),
+                slotId,
+                "the slot and the execution-guard key drifted for AGENT scope");
+    }
+
+    @Test
+    void sessionScope_slotMatchesGuardValue_compositionsStayInLockstep() throws Exception {
+        // SESSION is self-consistent (both sides use the key's value), but pin it anyway so a
+        // future change to either side surfaces here instead of in production.
+        RecordingStateStore stateStore = new RecordingStateStore();
+        SessionSandboxStateStore recordingStore =
+                new SessionSandboxStateStore(stateStore, AGENT_ID);
+        SandboxIsolationKey slotKey = isolationKey(IsolationScope.SESSION, "sess-001");
+        SandboxIsolationKey guardKey = slotKey.forExecutionGuard(AGENT_ID);
+
+        recordingStore.save(slotKey, JSON);
+
+        assertEquals(
+                "sandbox/session/" + guardKey.getValue(),
+                stateStore.lastSessionId,
+                "the slot and the execution-guard key drifted for SESSION scope");
+    }
+
+    @Test
     void deleteUsesTombstone_evenWhenSessionDeleteUnsupported() throws Exception {
         SessionSandboxStateStore redisLikeStore =
                 new SessionSandboxStateStore(new NoDeleteSession(), AGENT_ID);

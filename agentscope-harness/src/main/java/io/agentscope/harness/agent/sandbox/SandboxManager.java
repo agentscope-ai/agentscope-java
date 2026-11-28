@@ -61,9 +61,50 @@ public class SandboxManager {
             SandboxExecutionGuard executionGuard) {
         this.client = Objects.requireNonNull(client, "client must not be null");
         this.stateStore = Objects.requireNonNull(stateStore, "stateStore must not be null");
-        this.agentId = Objects.requireNonNull(agentId, "agentId must not be null");
+        this.agentId = requireConsistentAgentId(stateStore, agentId);
         this.executionGuard =
                 executionGuard != null ? executionGuard : SandboxExecutionGuard.noop();
+    }
+
+    /**
+     * The execution guard and the persisted slot must be scoped by the <b>same</b> agent id:
+     * {@link SandboxManager} uses it for the guard key (see
+     * {@link SandboxIsolationKey#forExecutionGuard}), while {@link SessionSandboxStateStore}
+     * uses it to compose the slot ({@code sandbox/user/{agentId}/{userId}},
+     * {@code sandbox/agent/{agentId}}). If the two ever diverge, equal slots no longer imply
+     * equal locks and the guard silently stops serialising the right executions — so fail at
+     * build time rather than at first acquire.
+     *
+     * <p>Also rejects a null/blank agentId here: a blank id would make the guard-key derivation
+     * throw on the first call — including on the default {@code noop()} guard path, where a
+     * configuration that previously worked would suddenly fail. Failing in the constructor
+     * instead moves that to build time.
+     *
+     * @param stateStore the store whose agent id must match
+     * @param agentId the agent id supplied for guard-key derivation
+     * @return the validated agent id
+     */
+    private static String requireConsistentAgentId(
+            SessionSandboxStateStore stateStore, String agentId) {
+        if (agentId == null || agentId.isBlank()) {
+            throw new IllegalArgumentException(
+                    "agentId must not be null or blank: guard-key derivation for the USER scope"
+                            + " requires it, and failing at first acquire is harder to diagnose"
+                            + " than failing here");
+        }
+        String storeAgentId = stateStore.getAgentId();
+        // SessionSandboxStateStore's constructor guarantees a non-null agent id for real
+        // instances, so a null here can only come from a test mock — skip the comparison then.
+        if (storeAgentId != null && !agentId.equals(storeAgentId)) {
+            throw new IllegalArgumentException(
+                    "agentId '"
+                            + agentId
+                            + "' does not match the state store's agent id '"
+                            + storeAgentId
+                            + "' — guard keys and persisted slots would be scoped by different"
+                            + " agents, and equal slots would no longer imply equal locks");
+        }
+        return agentId;
     }
 
     public SandboxAcquireResult acquire(
