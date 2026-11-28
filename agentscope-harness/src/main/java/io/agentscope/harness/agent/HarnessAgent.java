@@ -1312,7 +1312,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
         boolean hostedChild = source.get(SubagentExecution.class) != null;
         String ctxSessionId = source.getSessionId();
         if (ctxSessionId == null || ctxSessionId.isBlank()) {
-            ctxSessionId = getName();
+            ctxSessionId = getDefaultSessionId();
         }
         AbstractFilesystem sourceFs = source.get(AbstractFilesystem.class);
         SandboxContext sandboxCtx =

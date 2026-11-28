@@ -245,6 +245,10 @@ agent.clearContext(RuntimeContext.builder()
     .build());
 ```
 
+`HarnessAgent` uses the builder's `defaultSessionId` when the runtime context does not specify a
+session. `call`, `streamEvents`, and `clearContext` use the same default conversation. An explicit
+`sessionId` takes precedence; the Agent name supplies the default only when none is configured.
+
 Call it after the session's current request has completed; it does not cancel an in-flight call.
 The next request can still load System, workspace references and retained task/plan projections.
 It is not a complete model-input reset. For a fresh session, use a new sessionId rather than merely clearing history.
