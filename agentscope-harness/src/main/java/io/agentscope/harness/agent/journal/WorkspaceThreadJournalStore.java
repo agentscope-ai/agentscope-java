@@ -69,14 +69,8 @@ public final class WorkspaceThreadJournalStore implements ThreadJournalStore {
         return filesystem.journalStorage(rc).listPaths("agents/").stream()
                 .filter(path -> path.endsWith(HEAD_FILE_SUFFIX))
                 .map(path -> path.split("/"))
-                .filter(WorkspaceThreadJournalStore::isThreadKeyPath)
-                .map(
-                        parts ->
-                                new ThreadKey(
-                                        decodeUser(parts[3]),
-                                        decode(parts[1]),
-                                        decode(parts[4]),
-                                        decode(parts[6])))
+                .map(WorkspaceThreadJournalStore::threadKey)
+                .filter(Objects::nonNull)
                 .filter(key -> Objects.equals(key.userId(), normalizeUser(rc.getUserId())))
                 .distinct()
                 .sorted(
@@ -87,29 +81,43 @@ public final class WorkspaceThreadJournalStore implements ThreadJournalStore {
     }
 
     /**
-     * Whether a split path addresses a thread journal, i.e.
+     * Decode a split path addressing a thread journal, i.e.
      * {@code agents/<agent>/sessions/<user>/<session>/threads/<thread>/head.json}.
      *
-     * <p>Every segment is validated before any segment is indexed or decoded. A storage backend
+     * <p>The path shape is checked before indexing, and key decoding is checked per entry. A storage backend
      * may also list {@code head.json} files that belong to other layouts, partially written
      * trees, or foreign tenants; discovery must skip those instead of failing the whole listing
      * with an index or decoding error.
      *
      * @param parts the path split on {@code /}
-     * @return true when the path is a thread journal of this namespace layout
+     * @return the canonical journal key, or null for a malformed or foreign path
      */
-    private static boolean isThreadKeyPath(String[] parts) {
+    private static ThreadKey threadKey(String[] parts) {
         if (parts.length != THREAD_KEY_SEGMENTS
                 || !"sessions".equals(parts[SESSIONS_INDEX])
                 || !"threads".equals(parts[THREADS_INDEX])) {
-            return false;
+            return null;
         }
         for (int index : ENCODED_SEGMENTS) {
             if (!parts[index].startsWith(SESSION_KEY_PREFIX)) {
-                return false;
+                return null;
             }
         }
-        return true;
+        try {
+            ThreadKey key =
+                    new ThreadKey(
+                            decodeUser(parts[3]),
+                            decode(parts[1]),
+                            decode(parts[4]),
+                            decode(parts[6]));
+            // Reject lossy UTF-8 decoding and Base64 aliases: reopening the discovered key
+            // must address the same object, not a different canonical path.
+            return (key.storagePath() + HEAD_FILE_SUFFIX).equals(String.join("/", parts))
+                    ? key
+                    : null;
+        } catch (IllegalArgumentException malformedIdentity) {
+            return null;
+        }
     }
 
     private static String normalizeUser(String user) {
